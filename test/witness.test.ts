@@ -8,10 +8,10 @@ import { bytesToHex, hexToBytes } from '../src/core/bytes.js';
 import { encodeWitnessSet, txHash } from '../src/core/cbor/tx.js';
 import { decode } from '../src/core/cbor/decode.js';
 import { publicKey } from '../src/core/keys.js';
-import { syntheticInput } from '../src/core/ledger.js';
 import { signWithKeys } from '../src/core/sign-tx.js';
 import { deriveAccount } from '../src/derive/index.js';
 import { buildTx } from './helpers/build-tx.js';
+import { syntheticInput } from './helpers/synthetic.js';
 import { MNEMONIC } from './fixtures/vectors.js';
 
 const fixtureHex = readFileSync('test/fixtures/preprod-0a399be6.hex', 'utf8').trim();

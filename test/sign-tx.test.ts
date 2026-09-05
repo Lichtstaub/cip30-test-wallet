@@ -8,10 +8,11 @@ import { encodeWitnessSet, extractBodyBytes } from '../src/core/cbor/tx.js';
 import { baseAddressBytes, rewardAddressBytes } from '../src/core/addresses.js';
 import { APIErrorCode, ChwError, TxSignErrorCode } from '../src/core/errors.js';
 import { keyHash, publicKey } from '../src/core/keys.js';
-import { MemoryLedger, encodeUtxo, syntheticInput, type Utxo } from '../src/core/ledger.js';
+import { MemoryLedger, encodeUtxo, type Utxo } from '../src/core/ledger.js';
 import { signTx, signWithKeys, type SignContext } from '../src/core/sign-tx.js';
 import { deriveAccount } from '../src/derive/index.js';
 import { buildTx } from './helpers/build-tx.js';
+import { syntheticInput } from './helpers/synthetic.js';
 import { MNEMONIC } from './fixtures/vectors.js';
 
 const me = deriveAccount(MNEMONIC);

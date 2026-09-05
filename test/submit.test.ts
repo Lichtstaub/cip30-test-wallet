@@ -26,8 +26,21 @@ describe('exit criterion 6: submitTx returns hash32 and records the transaction'
   });
 
   it('keeps the id stable no matter how many witnesses are attached', async () => {
+    const account = deriveAccount(MNEMONIC);
     const ledger = new MemoryLedger({ owned: [] });
-    const a = await ledger.submit(hexToBytes(fixtureHex));
-    expect(bytesToHex(a)).toBe(FIXTURE_TX_HASH);
+
+    const zero = await ledger.submit(hexToBytes(fixtureHex));
+    expect(bytesToHex(zero)).toBe(FIXTURE_TX_HASH);
+
+    const onePaymentHex = Transaction.addVKeyWitnessesHex(fixtureHex, signWithKeys(fixtureHex, [account.payment]));
+    const one = await ledger.submit(hexToBytes(onePaymentHex));
+    expect(bytesToHex(one)).toBe(FIXTURE_TX_HASH);
+
+    const twoWitnessesHex = Transaction.addVKeyWitnessesHex(
+      fixtureHex,
+      signWithKeys(fixtureHex, [account.payment, account.stake]),
+    );
+    const two = await ledger.submit(hexToBytes(twoWitnessesHex));
+    expect(bytesToHex(two)).toBe(FIXTURE_TX_HASH);
   });
 });

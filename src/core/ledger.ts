@@ -1,4 +1,3 @@
-import { blake2b } from '@noble/hashes/blake2.js';
 import { bytesEqual } from './bytes.js';
 import { encode } from './cbor/encode.js';
 import { txHash, type TxInput } from './cbor/tx.js';
@@ -50,11 +49,6 @@ export class MemoryLedger implements Ledger {
     this.submitted.push(tx);
     return txHash(tx);
   }
-}
-
-/** Deterministic fake outpoint so tests read the same ids every run. */
-export function syntheticInput(seed: string, index: bigint): TxInput {
-  return { txId: blake2b(new TextEncoder().encode(seed), { dkLen: 32 }), index };
 }
 
 /**

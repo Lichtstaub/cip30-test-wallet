@@ -60,12 +60,15 @@ export function txHash(tx: Uint8Array): Uint8Array {
   return blake2b(extractBodyBytes(tx), { dkLen: 32 });
 }
 
-/** Conway sets may be plain arrays or tag 258 around an array. */
+/** Conway sets may be plain arrays or tag 258 around an array. No other tag is a set. */
 function unwrapSet(value: CborValue | undefined): CborValue[] {
   if (value === undefined) return [];
-  const inner = value instanceof Tagged ? value.value : value;
-  if (!Array.isArray(inner)) throw new Error('expected a CBOR array or tagged set');
-  return inner;
+  if (value instanceof Tagged) {
+    if (value.tag !== 258n || !Array.isArray(value.value)) throw new Error('expected a CBOR array or a tag 258 set');
+    return value.value;
+  }
+  if (!Array.isArray(value)) throw new Error('expected a CBOR array or a tag 258 set');
+  return value;
 }
 
 function asBytes(value: CborValue, what: string): Uint8Array {

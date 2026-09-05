@@ -89,3 +89,10 @@ describe('cbor encode', () => {
     expect(decode(encode(v as never))).toEqual(v);
   });
 });
+
+describe('hexToBytes', () => {
+  it('rejects a non-hex character', () => {
+    expect(() => hexToBytes('1z')).toThrow(/non-hex/);
+    expect(() => hexToBytes('-1')).toThrow(/non-hex/);
+  });
+});
