@@ -23,7 +23,7 @@ for (const file of result.outputFiles) {
   if (/\bfrom\s+["']node:/.test(text) || /require\(/.test(text)) problems.push('references node or require');
   if (/\bimport\s+[^;]*from\s+["'][^./]/.test(text)) problems.push('has an unresolved external import');
   if (/WebAssembly/.test(text)) problems.push('references WebAssembly');
-  if (/Buffer\./.test(text)) problems.push('uses Buffer');
+  if (/\bBuffer\./.test(text)) problems.push('uses Buffer');
   if (text.length > 120 * 1024) problems.push(`is larger than 120 KB (${kb} KB)`);
   console.log(`${file.path.split('/').pop()}: ${kb} KB${problems.length ? ' FAIL ' + problems.join(', ') : ' ok'}`);
   if (problems.length) failed = true;

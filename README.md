@@ -22,6 +22,6 @@ Conceptual predecessor: [cardano-test-wallet](https://github.com/cardanoapi/card
 
 Typecheck (`npm run typecheck`): pass, no errors. All 52 tests pass.
 
-Bundle check (`npm run bundle:check`): fail. Sizes were sign-tx.js 91.8 KB, ledger.js 22.5 KB, addresses.js 12.3 KB, all well under the 120 KB limit and free of WebAssembly and unresolved external imports. The check still fails because its Buffer detection regex also matches the substring inside `ArrayBuffer.isView`, a call the allowed dependency `@scure/base` uses internally. No file in `src/core` imports outside the allowed set (`@noble/curves`, `@noble/hashes`, `@scure/base`, `src/core`), and no actual Node `Buffer` is referenced anywhere in the bundles.
+Bundle check: sign-tx.js 91.8 KB, ledger.js 22.5 KB, addresses.js 12.3 KB (no Node, no WASM, no externals).
 
-Decision: open. Tests and typecheck are fully green and the bundles carry no real Node, WASM or external dependency, but the bundle check as written reports a false failure on `ArrayBuffer.isView` and needs a decision on how to refine it before milestone 2 starts on a clean signal.
+Decision: the WASM-free core is viable. Milestone 2 builds the CIP-30 surface on it.
