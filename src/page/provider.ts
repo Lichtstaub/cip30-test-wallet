@@ -1,7 +1,10 @@
-import { bytesToHex } from '../core/bytes.js';
-import { APIErrorCode, apiError } from '../core/errors.js';
+import { bytesToHex, hexToBytes } from '../core/bytes.js';
+import { decode } from '../core/cbor/decode.js';
+import { encode } from '../core/cbor/encode.js';
+import { APIErrorCode, apiError, TxSignErrorCode, txSignError } from '../core/errors.js';
 import type { SigningKey } from '../core/keys.js';
-import type { MemoryLedger } from '../core/ledger.js';
+import { encodeUtxo, type MemoryLedger } from '../core/ledger.js';
+import { signTx as coreSignTx } from '../core/sign-tx.js';
 import type { Control } from './control.js';
 import type { PageConfig } from './config.js';
 
@@ -71,9 +74,70 @@ export function buildApi(ctx: WalletContext): Cip30Api {
     getChangeAddress: () => control.record('getChangeAddress', [], async () => baseHex),
     getRewardAddresses: () => control.record('getRewardAddresses', [], async () => [rewardHex]),
     getExtensions: () => control.record('getExtensions', [], async () => []),
-    getUtxos: () => control.record('getUtxos', [], async () => { throw apiError(APIErrorCode.InternalError, 'getUtxos arrives with task 2'); }),
-    getBalance: () => control.record('getBalance', [], async () => { throw apiError(APIErrorCode.InternalError, 'getBalance arrives with task 2'); }),
-    signTx: () => control.record('signTx', [], async () => { throw apiError(APIErrorCode.InternalError, 'signTx arrives with task 2'); }),
-    submitTx: () => control.record('submitTx', [], async () => { throw apiError(APIErrorCode.InternalError, 'submitTx arrives with task 2'); }),
+    getUtxos: (amount, paginate) =>
+      control.record('getUtxos', [amount, paginate], async () => {
+        let utxos = await ledger.getWalletUtxos();
+        if (amount !== undefined) {
+          const target = lovelaceOfValue(amount);
+          const picked = [];
+          let sum = 0n;
+          for (const u of utxos) {
+            if (sum >= target) break;
+            picked.push(u);
+            sum += u.lovelace;
+          }
+          if (sum < target) return null;
+          utxos = picked;
+        }
+        if (paginate !== undefined) utxos = paginateList(utxos, paginate);
+        return utxos.map((u) => bytesToHex(encodeUtxo(u)));
+      }),
+    getBalance: () =>
+      control.record('getBalance', [], async () => {
+        const total = (await ledger.getWalletUtxos()).reduce((sum, u) => sum + u.lovelace, 0n);
+        return bytesToHex(encode(total));
+      }),
+    signTx: (tx, partialSign = false) =>
+      control.record('signTx', [tx, partialSign], async () => {
+        requireHex(tx, 'tx');
+        if (control.quirks.signHangs) await control.wait('signTx');
+        if (control.quirks.signRejected) throw txSignError(TxSignErrorCode.UserDeclined, 'user declined to sign the transaction');
+        return coreSignTx(tx, partialSign, { payment: ctx.payment, stake: ctx.stake, ledger });
+      }),
+    submitTx: (tx) =>
+      control.record('submitTx', [tx], async () => {
+        requireHex(tx, 'tx');
+        return bytesToHex(await ledger.submit(hexToBytes(tx)));
+      }),
   };
+}
+
+function requireHex(value: unknown, what: string): void {
+  if (typeof value !== 'string' || value.length % 2 !== 0 || !/^[0-9a-fA-F]*$/.test(value)) {
+    throw apiError(APIErrorCode.InvalidRequest, `${what} must be an even-length hex string`);
+  }
+}
+
+/** cbor<value> is either a uint (coin) or [coin, multiasset]. Assets are ignored in this milestone. */
+function lovelaceOfValue(hex: string): bigint {
+  requireHex(hex, 'amount');
+  let value: unknown;
+  try {
+    value = decode(hexToBytes(hex));
+  } catch {
+    throw apiError(APIErrorCode.InvalidRequest, 'amount is not valid cbor');
+  }
+  if (typeof value === 'bigint' && value >= 0n) return value;
+  if (Array.isArray(value) && typeof value[0] === 'bigint' && value[0] >= 0n) return value[0];
+  throw apiError(APIErrorCode.InvalidRequest, 'amount must be a cbor value');
+}
+
+function paginateList<T>(items: T[], paginate: { page: number; limit: number }): T[] {
+  const { page, limit } = paginate;
+  if (!Number.isInteger(page) || !Number.isInteger(limit) || page < 0 || limit <= 0) {
+    throw apiError(APIErrorCode.InvalidRequest, 'paginate needs a non-negative integer page and a positive integer limit');
+  }
+  const maxSize = Math.max(1, Math.ceil(items.length / limit));
+  if (page >= maxSize) throw { maxSize };
+  return items.slice(page * limit, page * limit + limit);
 }
