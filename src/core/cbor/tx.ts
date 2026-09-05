@@ -35,6 +35,18 @@ function bodyBounds(tx: Uint8Array): { start: number; end: number } {
   }
   const start = top.next;
   const { next: end } = decodeItem(tx, start);
+  if (top.indefinite) {
+    // Definite-length arrays already carry their item count in the header.
+    // An indefinite-length array does not, so walk the remaining items up
+    // to the break byte and count them instead.
+    let count = 1;
+    let p = end;
+    while (tx[p] !== 0xff) {
+      count++;
+      p = decodeItem(tx, p).next;
+    }
+    if (count !== 4) throw new Error('not a transaction: expected a CBOR array of 4 items');
+  }
   return { start, end };
 }
 

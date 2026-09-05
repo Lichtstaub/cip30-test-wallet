@@ -39,7 +39,12 @@ describe('exit criterion 1: body hash', () => {
   });
 
   it('rejects something that is not a 4-element transaction array', () => {
-    expect(() => extractBodyBytes(hexToBytes('8301020'))).toThrow();
-    expect(() => extractBodyBytes(hexToBytes('a0'))).toThrow(/transaction/i);
+    expect(() => extractBodyBytes(hexToBytes('83010203'))).toThrow(/transaction/i); // definite, 3 items
+    expect(() => extractBodyBytes(hexToBytes('9f010203ff'))).toThrow(/transaction/i); // indefinite, 3 items
+    expect(() => extractBodyBytes(hexToBytes('a0'))).toThrow(/transaction/i); // not an array
+  });
+
+  it('accepts an indefinite-length transaction array with exactly 4 items', () => {
+    expect(bytesToHex(extractBodyBytes(hexToBytes('9fa0a0f5f6ff')))).toBe('a0');
   });
 });
