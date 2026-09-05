@@ -8,7 +8,7 @@ export default defineConfig({
   webServer: {
     command: 'node examples/minimal-dapp/serve.mjs',
     url: 'http://localhost:4173/strict/',
-    reuseExistingServer: true,
+    reuseExistingServer: !process.env.CI,
   },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },

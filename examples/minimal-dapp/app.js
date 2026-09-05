@@ -14,6 +14,12 @@
   var countEl = document.getElementById('scan-count');
   var scans = 0;
 
+  function walletKeys(cardano) {
+    return Object.getOwnPropertyNames(cardano).filter(function (k) {
+      return cardano[k] && typeof cardano[k].enable === 'function';
+    });
+  }
+
   function scan() {
     scans += 1;
     countEl.textContent = String(scans);
@@ -22,9 +28,7 @@
       walletsEl.textContent = 'none';
       return false;
     }
-    var keys = Object.getOwnPropertyNames(cardano).filter(function (k) {
-      return cardano[k] && typeof cardano[k].enable === 'function';
-    });
+    var keys = walletKeys(cardano);
     walletsEl.textContent = keys.length ? keys.join(',') : 'none';
     return keys.length > 0;
   }
@@ -43,7 +47,7 @@
   document.getElementById('connect').addEventListener('click', function () {
     var out = document.getElementById('connect-result');
     var cardano = window.cardano;
-    var key = cardano && Object.getOwnPropertyNames(cardano)[0];
+    var key = cardano && walletKeys(cardano)[0];
     if (!key) {
       out.textContent = 'no wallet';
       return;
