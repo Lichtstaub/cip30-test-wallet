@@ -1,5 +1,6 @@
 import { blake2b } from '@noble/hashes/blake2.js';
 import { Tagged, decodeItem, readHeader, type CborValue } from './decode.js';
+import { encode } from './encode.js';
 
 // A Cardano transaction is [body, witness_set, is_valid, auxiliary_data].
 // The body is never re-encoded here. Hash and signature run over the exact
@@ -120,4 +121,13 @@ export function existingVKeyWitnesses(tx: Uint8Array): VKeyWitness[] {
     if (!Array.isArray(item) || item.length !== 2) throw new Error('malformed vkey witness');
     return { vkey: asBytes(item[0], 'witness vkey'), signature: asBytes(item[1], 'witness signature') };
   });
+}
+
+// transaction_witness_set = { ? 0: nonempty_set<vkeywitness>, ... }
+// Conway allows the set as a plain array or as tag 258. The plain array is
+// accepted by every consumer we know, so that is what we emit.
+export function encodeWitnessSet(witnesses: VKeyWitness[]): Uint8Array {
+  const map = new Map<bigint, unknown>();
+  if (witnesses.length > 0) map.set(0n, witnesses.map((w) => [w.vkey, w.signature]));
+  return encode(map as never);
 }
