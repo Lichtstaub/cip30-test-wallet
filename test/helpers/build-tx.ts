@@ -10,7 +10,7 @@
 // was signed over. Emitting tag 258 ourselves keeps a round trip through
 // Evolution byte-for-byte stable.
 import { encode } from '../../src/core/cbor/encode.js';
-import { Tagged } from '../../src/core/cbor/decode.js';
+import { Tagged, type CborValue } from '../../src/core/cbor/decode.js';
 import type { TxInput } from '../../src/core/cbor/tx.js';
 import { bytesToHex } from '../../src/core/bytes.js';
 
@@ -23,11 +23,14 @@ export interface BuildTxOptions {
   certificatesPlaceholder?: boolean;
   /** Arbitrary extra body map entries, applied last so they can override the fields above. */
   extraBodyEntries?: Map<bigint, unknown>;
+  /** Skip the tag 258 wrapping for inputs and required signers, emitting plain CDDL arrays instead. */
+  plainArraySets?: boolean;
 }
 
 export function buildTx(opts: BuildTxOptions): string {
+  const set = (items: CborValue[]) => (opts.plainArraySets ? items : new Tagged(258n, items));
   const body = new Map<bigint, unknown>();
-  body.set(0n, new Tagged(258n, opts.inputs.map((i) => [i.txId, i.index])));
+  body.set(0n, set(opts.inputs.map((i) => [i.txId, i.index])));
   body.set(1n, opts.outputs.map((o) => [o.address, o.lovelace]));
   body.set(2n, opts.fee);
   if (opts.certificatesPlaceholder) {
@@ -38,7 +41,7 @@ export function buildTx(opts: BuildTxOptions): string {
     body.set(5n, new Map(opts.withdrawals.map((w) => [w.rewardAddress, w.lovelace])));
   }
   if (opts.requiredSigners && opts.requiredSigners.length > 0) {
-    body.set(14n, new Tagged(258n, opts.requiredSigners));
+    body.set(14n, set(opts.requiredSigners));
   }
   if (opts.extraBodyEntries) {
     for (const [key, value] of opts.extraBodyEntries) body.set(key, value);

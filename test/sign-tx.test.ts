@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import CSL from '@emurgo/cardano-serialization-lib-nodejs';
 import { Transaction, TransactionWitnessSet } from '@evolution-sdk/evolution';
 import { bytesToHex, concat, hexToBytes } from '../src/core/bytes.js';
 import { Tagged } from '../src/core/cbor/decode.js';
@@ -54,6 +55,9 @@ describe('synthetic transactions and UTxOs are valid for Evolution', () => {
     const hex = bytesToHex(encodeUtxo(mine));
     expect(hex.startsWith('82')).toBe(true);
     expect(hex).toContain(bytesToHex(myAddress));
+    const unspent = CSL.TransactionUnspentOutput.from_hex(hex);
+    expect(unspent.input().transaction_id().to_hex()).toBe(bytesToHex(mine.input.txId));
+    expect(unspent.output().amount().coin().to_str()).toBe(mine.lovelace.toString());
   });
 });
 
