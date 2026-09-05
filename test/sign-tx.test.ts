@@ -58,57 +58,57 @@ describe('synthetic transactions and UTxOs are valid for Evolution', () => {
 });
 
 describe('exit criterion 5: ownership decision', () => {
-  it('signs an input at my own key address', () => {
-    const ws = signTx(pay([mine.input]), false, ctx());
+  it('signs an input at my own key address', async () => {
+    const ws = await signTx(pay([mine.input]), false, ctx());
     expect(witnessCount(ws)).toBe(1);
   });
 
-  it('refuses a script input as an unsupported form, signs only its own share when partial', () => {
+  it('refuses a script input as an unsupported form, signs only its own share when partial', async () => {
     const tx = pay([mine.input, scripts.input]);
-    expect(() => signTx(tx, false, ctx({ foreign: [scripts] }))).toThrow(/CHW_UNSUPPORTED_TX_FORM/);
-    expect(witnessCount(signTx(tx, true, ctx({ foreign: [scripts] })))).toBe(1);
+    await expect(signTx(tx, false, ctx({ foreign: [scripts] }))).rejects.toThrow(/CHW_UNSUPPORTED_TX_FORM/);
+    expect(witnessCount(await signTx(tx, true, ctx({ foreign: [scripts] })))).toBe(1);
   });
 
-  it('completes a transaction another party already signed (multi-party)', () => {
+  it('completes a transaction another party already signed (multi-party)', async () => {
     // Party "other" signs first with the raw primitive, Evolution merges, then
     // our wallet is asked for a full signature. The foreign input is covered
     // by a valid witness, so no ProofGeneration is raised.
     const unsigned = pay([mine.input, theirs.input]);
     const theirWitness = signWithKeys(unsigned, [other.payment]);
     const partiallySigned = Transaction.addVKeyWitnessesHex(unsigned, theirWitness);
-    const ws = signTx(partiallySigned, false, ctx({ foreign: [theirs] }));
+    const ws = await signTx(partiallySigned, false, ctx({ foreign: [theirs] }));
     expect(witnessCount(ws)).toBe(1);
     const fully = Transaction.addVKeyWitnessesHex(partiallySigned, ws);
     expect(Transaction.fromCBORHex(fully).toJSON().witnessSet?.vkeyWitnesses).toHaveLength(2);
   });
 
-  it('does not accept a witness with a bad signature as coverage', () => {
+  it('does not accept a witness with a bad signature as coverage', async () => {
     const unsigned = pay([mine.input, theirs.input]);
     const theirWitness = signWithKeys(unsigned, [other.payment]);
     // Flip one signature byte inside the witness set hex (last byte of the hex string).
     const corrupted = theirWitness.slice(0, -2) + (theirWitness.endsWith('00') ? '01' : '00');
     const partiallySigned = Transaction.addVKeyWitnessesHex(unsigned, corrupted);
-    expect(() => signTx(partiallySigned, false, ctx({ foreign: [theirs] }))).toThrow(
+    await expect(signTx(partiallySigned, false, ctx({ foreign: [theirs] }))).rejects.toEqual(
       expect.objectContaining({ code: TxSignErrorCode.ProofGeneration }),
     );
   });
 
-  it('throws ProofGeneration for an uncovered foreign key input when partialSign is false', () => {
-    expect(() => signTx(pay([mine.input, theirs.input]), false, ctx({ foreign: [theirs] }))).toThrow(
+  it('throws ProofGeneration for an uncovered foreign key input when partialSign is false', async () => {
+    await expect(signTx(pay([mine.input, theirs.input]), false, ctx({ foreign: [theirs] }))).rejects.toEqual(
       expect.objectContaining({ code: TxSignErrorCode.ProofGeneration }),
     );
   });
 
-  it('signs what it can for a foreign key input when partialSign is true', () => {
-    const ws = signTx(pay([mine.input, theirs.input]), true, ctx({ foreign: [theirs] }));
+  it('signs what it can for a foreign key input when partialSign is true', async () => {
+    const ws = await signTx(pay([mine.input, theirs.input]), true, ctx({ foreign: [theirs] }));
     expect(witnessCount(ws)).toBe(1);
   });
 
-  it('throws a mock error, never ProofGeneration, for an unconfigured input', () => {
+  it('throws a mock error, never ProofGeneration, for an unconfigured input', async () => {
     for (const partial of [false, true]) {
       let caught: unknown;
       try {
-        signTx(pay([unknown]), partial, ctx());
+        await signTx(pay([unknown]), partial, ctx());
       } catch (e) {
         caught = e;
       }
@@ -118,31 +118,31 @@ describe('exit criterion 5: ownership decision', () => {
     }
   });
 
-  it('signs required signers it owns and refuses foreign ones', () => {
-    const ws = signTx(pay([mine.input], { requiredSigners: [myPay, myStake] }), false, ctx());
+  it('signs required signers it owns and refuses foreign ones', async () => {
+    const ws = await signTx(pay([mine.input], { requiredSigners: [myPay, myStake] }), false, ctx());
     expect(witnessCount(ws)).toBe(2);
-    expect(() => signTx(pay([mine.input], { requiredSigners: [otherPay] }), false, ctx())).toThrow(
+    await expect(signTx(pay([mine.input], { requiredSigners: [otherPay] }), false, ctx())).rejects.toEqual(
       expect.objectContaining({ code: TxSignErrorCode.ProofGeneration }),
     );
-    expect(witnessCount(signTx(pay([mine.input], { requiredSigners: [otherPay] }), true, ctx()))).toBe(1);
+    expect(witnessCount(await signTx(pay([mine.input], { requiredSigners: [otherPay] }), true, ctx()))).toBe(1);
   });
 
-  it('signs a withdrawal from my own reward address with the stake key', () => {
+  it('signs a withdrawal from my own reward address with the stake key', async () => {
     const tx = pay([mine.input], { withdrawals: [{ rewardAddress: rewardAddressBytes(0, myStake), lovelace: 1n }] });
-    expect(witnessCount(signTx(tx, false, ctx()))).toBe(2);
+    expect(witnessCount(await signTx(tx, false, ctx()))).toBe(2);
   });
 
-  it('refuses a body with certificates as an unsupported form in the spike', () => {
+  it('refuses a body with certificates as an unsupported form in the spike', async () => {
     const tx = pay([mine.input], { certificatesPlaceholder: true });
-    expect(() => signTx(tx, false, ctx())).toThrow(ChwError);
-    expect(() => signTx(tx, false, ctx())).toThrow(/CHW_UNSUPPORTED_TX_FORM/);
-    expect(witnessCount(signTx(tx, true, ctx()))).toBe(1);
+    await expect(signTx(tx, false, ctx())).rejects.toBeInstanceOf(ChwError);
+    await expect(signTx(tx, false, ctx())).rejects.toThrow(/CHW_UNSUPPORTED_TX_FORM/);
+    expect(witnessCount(await signTx(tx, true, ctx()))).toBe(1);
   });
 
-  it('never puts key material into an error message', () => {
+  it('never puts key material into an error message', async () => {
     let message = '';
     try {
-      signTx(pay([mine.input, theirs.input]), false, ctx({ foreign: [theirs] }));
+      await signTx(pay([mine.input, theirs.input]), false, ctx({ foreign: [theirs] }));
     } catch (e) {
       message = JSON.stringify(e);
     }
@@ -152,30 +152,30 @@ describe('exit criterion 5: ownership decision', () => {
 });
 
 describe('supported transaction forms are an allowlist, checked before ownership', () => {
-  it('refuses an unsupported body key (collateral inputs, 13) naming the key, signs its own share when partial', () => {
+  it('refuses an unsupported body key (collateral inputs, 13) naming the key, signs its own share when partial', async () => {
     const tx = pay([mine.input], {
       extraBodyEntries: new Map([[13n, new Tagged(258n, [[theirs.input.txId, theirs.input.index]])]]),
     });
-    expect(() => signTx(tx, false, ctx())).toThrow(ChwError);
-    expect(() => signTx(tx, false, ctx())).toThrow(/CHW_UNSUPPORTED_TX_FORM/);
-    expect(() => signTx(tx, false, ctx())).toThrow(/13/);
-    expect(witnessCount(signTx(tx, true, ctx()))).toBe(1);
+    await expect(signTx(tx, false, ctx())).rejects.toBeInstanceOf(ChwError);
+    await expect(signTx(tx, false, ctx())).rejects.toThrow(/CHW_UNSUPPORTED_TX_FORM/);
+    await expect(signTx(tx, false, ctx())).rejects.toThrow(/13/);
+    expect(witnessCount(await signTx(tx, true, ctx()))).toBe(1);
   });
 
-  it('refuses an unsupported body key (voting procedures, 19) the same way', () => {
+  it('refuses an unsupported body key (voting procedures, 19) the same way', async () => {
     const tx = pay([mine.input], { extraBodyEntries: new Map([[19n, new Map()]]) });
-    expect(() => signTx(tx, false, ctx())).toThrow(ChwError);
-    expect(() => signTx(tx, false, ctx())).toThrow(/CHW_UNSUPPORTED_TX_FORM/);
-    expect(witnessCount(signTx(tx, true, ctx()))).toBe(1);
+    await expect(signTx(tx, false, ctx())).rejects.toBeInstanceOf(ChwError);
+    await expect(signTx(tx, false, ctx())).rejects.toThrow(/CHW_UNSUPPORTED_TX_FORM/);
+    expect(witnessCount(await signTx(tx, true, ctx()))).toBe(1);
   });
 
-  it('refuses a script withdrawal as an unsupported form, never ProofGeneration', () => {
+  it('refuses a script withdrawal as an unsupported form, never ProofGeneration', async () => {
     const scriptReward = new Uint8Array(29);
     scriptReward[0] = 0xf0; // reward address, script credential
     const tx = pay([mine.input], { withdrawals: [{ rewardAddress: scriptReward, lovelace: 1n }] });
     let caught: unknown;
     try {
-      signTx(tx, false, ctx());
+      await signTx(tx, false, ctx());
     } catch (e) {
       caught = e;
     }
@@ -183,11 +183,11 @@ describe('supported transaction forms are an allowlist, checked before ownership
     expect((caught as ChwError).code).toBe('CHW_UNSUPPORTED_TX_FORM');
   });
 
-  it('reports unsupported form, not ProofGeneration, for a foreign key input alongside a certificate', () => {
+  it('reports unsupported form, not ProofGeneration, for a foreign key input alongside a certificate', async () => {
     const tx = pay([mine.input, theirs.input], { certificatesPlaceholder: true });
     let caught: unknown;
     try {
-      signTx(tx, false, ctx({ foreign: [theirs] }));
+      await signTx(tx, false, ctx({ foreign: [theirs] }));
     } catch (e) {
       caught = e;
     }
@@ -197,16 +197,16 @@ describe('supported transaction forms are an allowlist, checked before ownership
 });
 
 describe('signTx error boundary', () => {
-  it('ignores a malformed witness (31-byte vkey) as coverage and refuses the foreign input', () => {
+  it('ignores a malformed witness (31-byte vkey) as coverage and refuses the foreign input', async () => {
     const unsigned = pay([mine.input, theirs.input]);
     const junkWitnessSet = encodeWitnessSet([{ vkey: new Uint8Array(31), signature: new Uint8Array(64) }]);
     const tampered = withWitnessSet(unsigned, junkWitnessSet);
-    expect(() => signTx(tampered, false, ctx({ foreign: [theirs] }))).toThrow(
+    await expect(signTx(tampered, false, ctx({ foreign: [theirs] }))).rejects.toEqual(
       expect.objectContaining({ code: TxSignErrorCode.ProofGeneration }),
     );
   });
 
-  it('reports InvalidRequest for input that is not valid CBOR', () => {
-    expect(() => signTx('ffff', false, ctx())).toThrow(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
+  it('reports InvalidRequest for input that is not valid CBOR', async () => {
+    await expect(signTx('ffff', false, ctx())).rejects.toEqual(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
   });
 });

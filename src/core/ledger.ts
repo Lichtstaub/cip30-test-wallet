@@ -11,14 +11,15 @@ export interface Utxo {
 
 /**
  * Everything signTx and the CIP-30 surface need from "the chain". In the
- * spike there is only the in-memory implementation. A Yaci or preprod
- * provider later implements the same three methods.
+ * spike there is only the in-memory implementation. A chain provider
+ * (Yaci, preprod, or similar) implements the same three async methods
+ * later, before milestone 2 builds the CIP-30 surface against it.
  */
 export interface Ledger {
   /** Any output this ledger knows, owned by the wallet or not. */
-  resolveInput(input: TxInput): Utxo | undefined;
+  resolveInput(input: TxInput): Promise<Utxo | undefined>;
   /** Outputs the wallet controls, in the order they were configured. */
-  getWalletUtxos(): Utxo[];
+  getWalletUtxos(): Promise<Utxo[]>;
   /** Record or broadcast a signed transaction, return its id (32 bytes). */
   submit(tx: Uint8Array): Promise<Uint8Array>;
 }
@@ -37,11 +38,11 @@ export class MemoryLedger implements Ledger {
     this.foreign = [...(opts.foreign ?? [])];
   }
 
-  resolveInput(input: TxInput): Utxo | undefined {
+  async resolveInput(input: TxInput): Promise<Utxo | undefined> {
     return [...this.owned, ...this.foreign].find((u) => sameInput(u.input, input));
   }
 
-  getWalletUtxos(): Utxo[] {
+  async getWalletUtxos(): Promise<Utxo[]> {
     return [...this.owned];
   }
 

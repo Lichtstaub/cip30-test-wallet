@@ -38,7 +38,7 @@ const BODY_KEY_NAMES: Record<string, string> = {
  * naming the first offending item. With partialSign true the ownership
  * loops below simply skip these instead.
  */
-function checkSupportedForm(body: ParsedBody, ledger: Ledger, unsupported: (what: string) => never): void {
+async function checkSupportedForm(body: ParsedBody, ledger: Ledger, unsupported: (what: string) => never): Promise<void> {
   for (const key of body.bodyKeys) {
     if (!SUPPORTED_BODY_KEYS.has(key)) {
       const name = BODY_KEY_NAMES[key.toString()];
@@ -46,7 +46,7 @@ function checkSupportedForm(body: ParsedBody, ledger: Ledger, unsupported: (what
     }
   }
   for (const input of body.inputs) {
-    const utxo = ledger.resolveInput(input);
+    const utxo = await ledger.resolveInput(input);
     if (!utxo) continue; // an unresolved input is CHW_UNRESOLVED_INPUT, raised later by the ownership loop
     if (isScriptPayment(utxo.address)) unsupported('an input at a script address');
     if (isByronAddress(utxo.address)) unsupported('an input at a Byron address');
@@ -94,7 +94,7 @@ export interface SignContext {
  * oversized or undersized witness) becomes a plain CIP-30 InvalidRequest,
  * never a raw Error a dApp would not know how to handle.
  */
-export function signTx(txHex: string, partialSign: boolean, ctx: SignContext): string {
+export async function signTx(txHex: string, partialSign: boolean, ctx: SignContext): Promise<string> {
   let tx: Uint8Array;
   let body: ParsedBody;
   let myPay: Uint8Array;
@@ -127,10 +127,10 @@ export function signTx(txHex: string, partialSign: boolean, ctx: SignContext): s
     throw new ChwError('CHW_UNSUPPORTED_TX_FORM', `${what} is not supported by the milestone 1 spike, use partialSign: true to sign only the wallet's own share`);
   };
 
-  if (!partialSign) checkSupportedForm(body, ctx.ledger, unsupported);
+  if (!partialSign) await checkSupportedForm(body, ctx.ledger, unsupported);
 
   for (const input of body.inputs) {
-    const utxo = ctx.ledger.resolveInput(input);
+    const utxo = await ctx.ledger.resolveInput(input);
     if (!utxo) {
       throw new ChwError(
         'CHW_UNRESOLVED_INPUT',
