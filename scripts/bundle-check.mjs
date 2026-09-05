@@ -1,10 +1,10 @@
-// Bundles src/core as one self-contained ESM file and fails when anything
-// external, Node specific or WASM survives. This is the shape the page will
-// receive through addInitScript, so it must stand alone.
+// Bundles src/core plus the page entry as self-contained files and fails
+// when anything external, Node specific or WASM survives. This is the shape
+// the page will receive through addInitScript, so it must stand alone.
 import { build } from 'esbuild';
 
 const result = await build({
-  entryPoints: ['src/core/sign-tx.ts', 'src/core/ledger.ts', 'src/core/addresses.ts'],
+  entryPoints: ['src/core/sign-tx.ts', 'src/core/ledger.ts', 'src/core/addresses.ts', 'src/page/index.ts'],
   bundle: true,
   format: 'esm',
   platform: 'browser',

@@ -5,13 +5,21 @@
   "license": "Apache-2.0",
   "type": "module",
   "private": true,
+  "main": "./dist/node/index.js",
+  "types": "./dist/node/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/node/index.d.ts", "default": "./dist/node/index.js" },
+    "./playwright": { "types": "./dist/node/playwright/index.d.ts", "default": "./dist/node/playwright/index.js" }
+  },
+  "files": ["dist", "quirks", "README.md", "LICENSE"],
   "engines": { "node": ">=20.19" },
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:browser": "playwright test",
+    "test:browser": "npm run build && playwright test",
     "serve:demo": "node examples/minimal-dapp/serve.mjs",
     "typecheck": "tsc --noEmit",
+    "build": "node scripts/build.mjs",
     "bundle:check": "node scripts/bundle-check.mjs"
   },
   "dependencies": {
