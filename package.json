@@ -9,6 +9,8 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:browser": "playwright test",
+    "serve:demo": "node examples/minimal-dapp/serve.mjs",
     "typecheck": "tsc --noEmit",
     "bundle:check": "node scripts/bundle-check.mjs"
   },
@@ -21,6 +23,7 @@
   },
   "devDependencies": {
     "@emurgo/cardano-serialization-lib-nodejs": "^17.0.0",
+    "@playwright/test": "^1.50.0",
     "@types/node": "^22.0.0",
     "esbuild": "^0.28.0",
     "typescript": "^5.9.0",
