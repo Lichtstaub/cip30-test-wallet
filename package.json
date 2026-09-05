@@ -1,0 +1,29 @@
+{
+  "name": "cardano-headless-wallet",
+  "version": "0.0.0",
+  "description": "Headless CIP-30 wallet for automated Cardano dApp tests. Milestone 1 spike: CBOR, keys and signing.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "private": true,
+  "engines": { "node": ">=20.19" },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "bundle:check": "node scripts/bundle-check.mjs"
+  },
+  "dependencies": {
+    "@noble/curves": "^2.4.0",
+    "@noble/hashes": "^2.4.0",
+    "@scure/base": "^2.0.0",
+    "@scure/bip39": "^2.4.0",
+    "@evolution-sdk/evolution": "^0.5.9"
+  },
+  "devDependencies": {
+    "@emurgo/cardano-serialization-lib-nodejs": "^17.0.0",
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.28.0",
+    "typescript": "^5.9.0",
+    "vitest": "^5.0.0"
+  }
+}
