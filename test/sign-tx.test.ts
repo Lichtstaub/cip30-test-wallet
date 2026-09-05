@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { Transaction, TransactionWitnessSet } from '@evolution-sdk/evolution';
-import { bytesToHex } from '../src/core/bytes.js';
+import { bytesToHex, concat, hexToBytes } from '../src/core/bytes.js';
 import { Tagged } from '../src/core/cbor/decode.js';
+import { encode } from '../src/core/cbor/encode.js';
+import { encodeWitnessSet, extractBodyBytes } from '../src/core/cbor/tx.js';
 import { baseAddressBytes, rewardAddressBytes } from '../src/core/addresses.js';
-import { ChwError, TxSignErrorCode } from '../src/core/errors.js';
+import { APIErrorCode, ChwError, TxSignErrorCode } from '../src/core/errors.js';
 import { keyHash, publicKey } from '../src/core/keys.js';
 import { MemoryLedger, encodeUtxo, syntheticInput, type Utxo } from '../src/core/ledger.js';
 import { signTx, signWithKeys, type SignContext } from '../src/core/sign-tx.js';
@@ -37,6 +39,10 @@ const pay = (inputs: Parameters<typeof buildTx>[0]['inputs'], extra: Partial<Par
   buildTx({ inputs, outputs: [{ address: otherAddress, lovelace: 1_000_000n }], fee: 200_000n, ...extra });
 
 const witnessCount = (wsHex: string) => TransactionWitnessSet.fromCBORHex(wsHex).toJSON().vkeyWitnesses?.length ?? 0;
+
+/** Replaces the witness set of an unsigned transaction with arbitrary raw bytes, bypassing Evolution's own validation. */
+const withWitnessSet = (txHex: string, witnessSetBytes: Uint8Array) =>
+  bytesToHex(concat(Uint8Array.of(0x84), extractBodyBytes(hexToBytes(txHex)), witnessSetBytes, encode(true), encode(null)));
 
 describe('synthetic transactions and UTxOs are valid for Evolution', () => {
   it('Evolution parses a transaction built with our encoder', () => {
@@ -187,5 +193,20 @@ describe('supported transaction forms are an allowlist, checked before ownership
     }
     expect(caught).toBeInstanceOf(ChwError);
     expect((caught as ChwError).code).toBe('CHW_UNSUPPORTED_TX_FORM');
+  });
+});
+
+describe('signTx error boundary', () => {
+  it('ignores a malformed witness (31-byte vkey) as coverage and refuses the foreign input', () => {
+    const unsigned = pay([mine.input, theirs.input]);
+    const junkWitnessSet = encodeWitnessSet([{ vkey: new Uint8Array(31), signature: new Uint8Array(64) }]);
+    const tampered = withWitnessSet(unsigned, junkWitnessSet);
+    expect(() => signTx(tampered, false, ctx({ foreign: [theirs] }))).toThrow(
+      expect.objectContaining({ code: TxSignErrorCode.ProofGeneration }),
+    );
+  });
+
+  it('reports InvalidRequest for input that is not valid CBOR', () => {
+    expect(() => signTx('ffff', false, ctx())).toThrow(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
   });
 });
