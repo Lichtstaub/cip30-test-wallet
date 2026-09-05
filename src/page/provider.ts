@@ -1,5 +1,5 @@
 import { bytesToHex, hexToBytes } from '../core/bytes.js';
-import { decode } from '../core/cbor/decode.js';
+import { Tagged, decode } from '../core/cbor/decode.js';
 import { encode } from '../core/cbor/encode.js';
 import { APIErrorCode, apiError, TxSignErrorCode, txSignError } from '../core/errors.js';
 import type { SigningKey } from '../core/keys.js';
@@ -69,7 +69,11 @@ export function buildApi(ctx: WalletContext): Cip30Api {
 
   return {
     getNetworkId: () => control.record('getNetworkId', [], async () => config.networkId),
-    getUsedAddresses: (paginate) => control.record('getUsedAddresses', [paginate], async () => ((await hasFunds()) ? [baseHex] : [])),
+    getUsedAddresses: (paginate) =>
+      control.record('getUsedAddresses', [paginate], async () => {
+        const used = (await hasFunds()) ? [baseHex] : [];
+        return paginate === undefined ? used : paginateList(used, paginate);
+      }),
     getUnusedAddresses: () => control.record('getUnusedAddresses', [], async () => ((await hasFunds()) ? [] : [baseHex])),
     getChangeAddress: () => control.record('getChangeAddress', [], async () => baseHex),
     getRewardAddresses: () => control.record('getRewardAddresses', [], async () => [rewardHex]),
@@ -78,7 +82,9 @@ export function buildApi(ctx: WalletContext): Cip30Api {
       control.record('getUtxos', [amount, paginate], async () => {
         let utxos = await ledger.getWalletUtxos();
         if (amount !== undefined) {
-          const target = lovelaceOfValue(amount);
+          const { coin: target, hasAssets } = parseValue(amount);
+          // The wallet holds lovelace only, so any positive asset demand is unsatisfiable.
+          if (hasAssets) return null;
           const picked = [];
           let sum = 0n;
           for (const u of utxos) {
@@ -107,7 +113,9 @@ export function buildApi(ctx: WalletContext): Cip30Api {
     submitTx: (tx) =>
       control.record('submitTx', [tx], async () => {
         requireHex(tx, 'tx');
-        return bytesToHex(await ledger.submit(hexToBytes(tx)));
+        const bytes = hexToBytes(tx);
+        requireTransactionShape(bytes);
+        return bytesToHex(await ledger.submit(bytes));
       }),
   };
 }
@@ -118,8 +126,39 @@ function requireHex(value: unknown, what: string): void {
   }
 }
 
-/** cbor<value> is either a uint (coin) or [coin, multiasset]. Assets are ignored in this milestone. */
-function lovelaceOfValue(hex: string): bigint {
+/**
+ * Syntactic gate for submitTx: one complete CBOR item shaped like a
+ * transaction, [body map, witness set map, is_valid boolean, auxiliary data].
+ * Auxiliary data is null, a map (Shelley), an array (Shelley-MA) or tag 259
+ * (Alonzo and later). Fees, validity and scripts are not checked, the ledger
+ * only records. Without this gate 84a0 (truncated) or 8400000000 (four
+ * integers) would be recorded and get a transaction id.
+ */
+function requireTransactionShape(bytes: Uint8Array): void {
+  let value: unknown;
+  try {
+    value = decode(bytes);
+  } catch (error) {
+    throw apiError(APIErrorCode.InvalidRequest, `tx is not valid cbor: ${(error as Error).message}`);
+  }
+  if (!Array.isArray(value) || value.length !== 4) {
+    throw apiError(APIErrorCode.InvalidRequest, 'tx must be a cbor array of 4 items');
+  }
+  const [body, witnessSet, isValid, aux] = value;
+  if (!(body instanceof Map)) throw apiError(APIErrorCode.InvalidRequest, 'tx body must be a cbor map');
+  if (!(witnessSet instanceof Map)) throw apiError(APIErrorCode.InvalidRequest, 'tx witness set must be a cbor map');
+  if (typeof isValid !== 'boolean') throw apiError(APIErrorCode.InvalidRequest, 'tx is_valid must be a boolean');
+  const auxOk = aux === null || aux instanceof Map || Array.isArray(aux) || (aux instanceof Tagged && aux.tag === 259n);
+  if (!auxOk) throw apiError(APIErrorCode.InvalidRequest, 'tx auxiliary data must be null, a map, an array or tag 259');
+}
+
+/**
+ * cbor<value> is either a uint (coin) or [coin, multiasset] with
+ * multiasset = { policy_id => { asset_name => quantity } }. The structure is
+ * validated. Asset quantities are only summarised, because this wallet
+ * cannot hold assets yet, so a positive demand can never be covered.
+ */
+function parseValue(hex: string): { coin: bigint; hasAssets: boolean } {
   requireHex(hex, 'amount');
   let value: unknown;
   try {
@@ -127,8 +166,20 @@ function lovelaceOfValue(hex: string): bigint {
   } catch {
     throw apiError(APIErrorCode.InvalidRequest, 'amount is not valid cbor');
   }
-  if (typeof value === 'bigint' && value >= 0n) return value;
-  if (Array.isArray(value) && typeof value[0] === 'bigint' && value[0] >= 0n) return value[0];
+  if (typeof value === 'bigint' && value >= 0n) return { coin: value, hasAssets: false };
+  if (Array.isArray(value) && value.length === 2 && typeof value[0] === 'bigint' && value[0] >= 0n && value[1] instanceof Map) {
+    let hasAssets = false;
+    for (const [policy, assets] of value[1]) {
+      if (!(policy instanceof Uint8Array) || policy.length !== 28) throw apiError(APIErrorCode.InvalidRequest, 'amount policy ids must be 28 bytes');
+      if (!(assets instanceof Map)) throw apiError(APIErrorCode.InvalidRequest, 'amount multiasset must map policies to asset maps');
+      for (const [name, quantity] of assets) {
+        if (!(name instanceof Uint8Array) || name.length > 32) throw apiError(APIErrorCode.InvalidRequest, 'amount asset names must be at most 32 bytes');
+        if (typeof quantity !== 'bigint' || quantity < 0n) throw apiError(APIErrorCode.InvalidRequest, 'amount asset quantities must be non-negative integers');
+        if (quantity > 0n) hasAssets = true;
+      }
+    }
+    return { coin: value[0], hasAssets };
+  }
   throw apiError(APIErrorCode.InvalidRequest, 'amount must be a cbor value');
 }
 

@@ -46,8 +46,10 @@ export class MemoryLedger implements Ledger {
   }
 
   async submit(tx: Uint8Array): Promise<Uint8Array> {
+    // Hash first, so a transaction the hash rejects leaves no record behind.
+    const id = txHash(tx);
     this.submitted.push(tx);
-    return txHash(tx);
+    return id;
   }
 }
 

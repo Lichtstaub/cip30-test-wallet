@@ -44,10 +44,27 @@ describe('getUtxos', () => {
     expect(await api.getUtxos(valueHex(20_000_000n))).toBeNull();
   });
 
-  it('reads the coin out of a multi-asset value and ignores the assets', async () => {
+  it('reads the coin out of a multi-asset value with an empty asset map', async () => {
     const { api } = await setup();
     const multi = bytesToHex(encode([3_000_000n, new Map()] as never));
     expect(await api.getUtxos(multi)).toHaveLength(1);
+  });
+
+  it('returns null when the value asks for assets, because the wallet holds none', async () => {
+    const { api } = await setup();
+    // [3_000_000, { policy(28 x 01) => { "A" => 1 } }], written out so the test does not depend on map encoding
+    const withToken = '821a002dc6c0a1581c' + '01'.repeat(28) + 'a1414101';
+    expect(await api.getUtxos(withToken)).toBeNull();
+  });
+
+  it('rejects a malformed value with InvalidRequest', async () => {
+    const { api } = await setup();
+    const oneElement = '811a002dc6c0';
+    const bytesInsteadOfMap = '821a002dc6c04100';
+    const shortPolicy = '821a002dc6c0a14101a1414101';
+    for (const bad of [oneElement, bytesInsteadOfMap, shortPolicy]) {
+      await expect(api.getUtxos(bad)).rejects.toEqual(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
+    }
   });
 
   it('paginates and throws { maxSize } past the last page', async () => {
@@ -68,6 +85,21 @@ describe('getBalance', () => {
   it('sums the owned lovelace as a cbor uint', async () => {
     const { api } = await setup();
     expect(decode(hexToBytes(await api.getBalance()))).toBe(14_500_000n);
+  });
+});
+
+describe('getUsedAddresses', () => {
+  it('applies paginate to the single used address and throws { maxSize } past the end', async () => {
+    const { api } = await setup();
+    const [address] = await api.getUsedAddresses();
+    expect(await api.getUsedAddresses({ page: 0, limit: 1 })).toEqual([address]);
+    await expect(api.getUsedAddresses({ page: 1, limit: 1 })).rejects.toEqual({ maxSize: 1 });
+    await expect(api.getUsedAddresses({ page: 0, limit: 0 })).rejects.toEqual(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
+  });
+
+  it('paginates an empty wallet to an empty first page', async () => {
+    const { api } = await setup({ utxos: [] });
+    expect(await api.getUsedAddresses({ page: 0, limit: 5 })).toEqual([]);
   });
 });
 
@@ -111,5 +143,24 @@ describe('signTx and submitTx', () => {
     const { api } = await setup();
     await expect(api.signTx('nope')).rejects.toEqual(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
     await expect(api.submitTx('nope')).rejects.toEqual(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
+  });
+
+  it('rejects submitTx input that is not one complete cbor array of four, and journals the failures', async () => {
+    const { api, control } = await setup();
+    // '' passes the hex check, '00' is a cbor uint, '84a0' announces four items and delivers one
+    for (const bad of ['', '00', '84a0']) {
+      await expect(api.submitTx(bad)).rejects.toEqual(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
+    }
+    const failed = control.journal.filter((e) => e.method === 'submitTx');
+    expect(failed).toHaveLength(3);
+    expect(failed.every((e) => e.error !== undefined && e.result === undefined)).toBe(true);
+  });
+
+  it('rejects a complete array of four whose items are not transaction parts', async () => {
+    const { api } = await setup();
+    // [0, {}, true, null], [{}, 0, true, null], [{}, {}, 0, null], [{}, {}, true, 0]
+    for (const bad of ['8400a0f5f6', '84a000f5f6', '84a0a000f6', '84a0a0f500']) {
+      await expect(api.submitTx(bad)).rejects.toEqual(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
+    }
   });
 });
