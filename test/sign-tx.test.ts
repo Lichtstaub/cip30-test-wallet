@@ -1,0 +1,145 @@
+import { describe, expect, it } from 'vitest';
+import { Transaction, TransactionWitnessSet } from '@evolution-sdk/evolution';
+import { bytesToHex } from '../src/core/bytes.js';
+import { baseAddressBytes, rewardAddressBytes } from '../src/core/addresses.js';
+import { ChwError, TxSignErrorCode } from '../src/core/errors.js';
+import { keyHash, publicKey } from '../src/core/keys.js';
+import { MemoryLedger, encodeUtxo, syntheticInput, type Utxo } from '../src/core/ledger.js';
+import { signTx, signWithKeys, type SignContext } from '../src/core/sign-tx.js';
+import { deriveAccount } from '../src/derive/index.js';
+import { buildTx } from './helpers/build-tx.js';
+import { MNEMONIC } from './fixtures/vectors.js';
+
+const me = deriveAccount(MNEMONIC);
+const other = deriveAccount(MNEMONIC, 1); // same seed, account 1, so a different payment key
+const myPay = keyHash(publicKey(me.payment));
+const myStake = keyHash(publicKey(me.stake));
+const otherPay = keyHash(publicKey(other.payment));
+const myAddress = baseAddressBytes(0, myPay, myStake);
+const otherAddress = baseAddressBytes(0, otherPay, myStake);
+const scriptAddress = (() => {
+  const a = new Uint8Array(myAddress);
+  a[0] = 0x10; // script payment credential
+  return a;
+})();
+
+const mine: Utxo = { input: syntheticInput('mine', 0n), address: myAddress, lovelace: 10_000_000n };
+const theirs: Utxo = { input: syntheticInput('theirs', 0n), address: otherAddress, lovelace: 5_000_000n };
+const scripts: Utxo = { input: syntheticInput('script', 0n), address: scriptAddress, lovelace: 3_000_000n };
+const unknown = syntheticInput('unknown', 0n);
+
+function ctx(opts: { foreign?: Utxo[] } = {}): SignContext {
+  return { payment: me.payment, stake: me.stake, ledger: new MemoryLedger({ owned: [mine], foreign: opts.foreign ?? [] }) };
+}
+
+const pay = (inputs: Parameters<typeof buildTx>[0]['inputs'], extra: Partial<Parameters<typeof buildTx>[0]> = {}) =>
+  buildTx({ inputs, outputs: [{ address: otherAddress, lovelace: 1_000_000n }], fee: 200_000n, ...extra });
+
+const witnessCount = (wsHex: string) => TransactionWitnessSet.fromCBORHex(wsHex).toJSON().vkeyWitnesses?.length ?? 0;
+
+describe('synthetic transactions and UTxOs are valid for Evolution', () => {
+  it('Evolution parses a transaction built with our encoder', () => {
+    const tx = Transaction.fromCBORHex(pay([mine.input]));
+    expect(tx.toJSON().body.inputs).toHaveLength(1);
+  });
+
+  it('encodes a TransactionUnspentOutput as [input, [address, coin]]', () => {
+    const hex = bytesToHex(encodeUtxo(mine));
+    expect(hex.startsWith('82')).toBe(true);
+    expect(hex).toContain(bytesToHex(myAddress));
+  });
+});
+
+describe('exit criterion 5: ownership decision', () => {
+  it('signs an input at my own key address', () => {
+    const ws = signTx(pay([mine.input]), false, ctx());
+    expect(witnessCount(ws)).toBe(1);
+  });
+
+  it('refuses a script input as an unsupported form, signs only its own share when partial', () => {
+    const tx = pay([mine.input, scripts.input]);
+    expect(() => signTx(tx, false, ctx({ foreign: [scripts] }))).toThrow(/CHW_UNSUPPORTED_TX_FORM/);
+    expect(witnessCount(signTx(tx, true, ctx({ foreign: [scripts] })))).toBe(1);
+  });
+
+  it('completes a transaction another party already signed (multi-party)', () => {
+    // Party "other" signs first with the raw primitive, Evolution merges, then
+    // our wallet is asked for a full signature. The foreign input is covered
+    // by a valid witness, so no ProofGeneration is raised.
+    const unsigned = pay([mine.input, theirs.input]);
+    const theirWitness = signWithKeys(unsigned, [other.payment]);
+    const partiallySigned = Transaction.addVKeyWitnessesHex(unsigned, theirWitness);
+    const ws = signTx(partiallySigned, false, ctx({ foreign: [theirs] }));
+    expect(witnessCount(ws)).toBe(1);
+    const fully = Transaction.addVKeyWitnessesHex(partiallySigned, ws);
+    expect(Transaction.fromCBORHex(fully).toJSON().witnessSet?.vkeyWitnesses).toHaveLength(2);
+  });
+
+  it('does not accept a witness with a bad signature as coverage', () => {
+    const unsigned = pay([mine.input, theirs.input]);
+    const theirWitness = signWithKeys(unsigned, [other.payment]);
+    // Flip one signature byte inside the witness set hex (last byte of the hex string).
+    const corrupted = theirWitness.slice(0, -2) + (theirWitness.endsWith('00') ? '01' : '00');
+    const partiallySigned = Transaction.addVKeyWitnessesHex(unsigned, corrupted);
+    expect(() => signTx(partiallySigned, false, ctx({ foreign: [theirs] }))).toThrow(
+      expect.objectContaining({ code: TxSignErrorCode.ProofGeneration }),
+    );
+  });
+
+  it('throws ProofGeneration for an uncovered foreign key input when partialSign is false', () => {
+    expect(() => signTx(pay([mine.input, theirs.input]), false, ctx({ foreign: [theirs] }))).toThrow(
+      expect.objectContaining({ code: TxSignErrorCode.ProofGeneration }),
+    );
+  });
+
+  it('signs what it can for a foreign key input when partialSign is true', () => {
+    const ws = signTx(pay([mine.input, theirs.input]), true, ctx({ foreign: [theirs] }));
+    expect(witnessCount(ws)).toBe(1);
+  });
+
+  it('throws a mock error, never ProofGeneration, for an unconfigured input', () => {
+    for (const partial of [false, true]) {
+      let caught: unknown;
+      try {
+        signTx(pay([unknown]), partial, ctx());
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught).toBeInstanceOf(ChwError);
+      expect((caught as ChwError).code).toBe('CHW_UNRESOLVED_INPUT');
+      expect((caught as ChwError).message).toMatch(/foreignUtxos/);
+    }
+  });
+
+  it('signs required signers it owns and refuses foreign ones', () => {
+    const ws = signTx(pay([mine.input], { requiredSigners: [myPay, myStake] }), false, ctx());
+    expect(witnessCount(ws)).toBe(2);
+    expect(() => signTx(pay([mine.input], { requiredSigners: [otherPay] }), false, ctx())).toThrow(
+      expect.objectContaining({ code: TxSignErrorCode.ProofGeneration }),
+    );
+    expect(witnessCount(signTx(pay([mine.input], { requiredSigners: [otherPay] }), true, ctx()))).toBe(1);
+  });
+
+  it('signs a withdrawal from my own reward address with the stake key', () => {
+    const tx = pay([mine.input], { withdrawals: [{ rewardAddress: rewardAddressBytes(0, myStake), lovelace: 1n }] });
+    expect(witnessCount(signTx(tx, false, ctx()))).toBe(2);
+  });
+
+  it('refuses a body with certificates as an unsupported form in the spike', () => {
+    const tx = pay([mine.input], { certificatesPlaceholder: true });
+    expect(() => signTx(tx, false, ctx())).toThrow(ChwError);
+    expect(() => signTx(tx, false, ctx())).toThrow(/CHW_UNSUPPORTED_TX_FORM/);
+    expect(witnessCount(signTx(tx, true, ctx()))).toBe(1);
+  });
+
+  it('never puts key material into an error message', () => {
+    let message = '';
+    try {
+      signTx(pay([mine.input, theirs.input]), false, ctx({ foreign: [theirs] }));
+    } catch (e) {
+      message = JSON.stringify(e);
+    }
+    expect(message).not.toContain(bytesToHex(me.payment.bytes));
+    expect(message).not.toContain(bytesToHex(me.stake.bytes));
+  });
+});

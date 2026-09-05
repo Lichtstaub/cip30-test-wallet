@@ -1,0 +1,66 @@
+import { blake2b } from '@noble/hashes/blake2.js';
+import { bytesEqual } from './bytes.js';
+import { encode } from './cbor/encode.js';
+import { txHash, type TxInput } from './cbor/tx.js';
+
+export interface Utxo {
+  input: TxInput;
+  address: Uint8Array;
+  lovelace: bigint;
+}
+
+/**
+ * Everything signTx and the CIP-30 surface need from "the chain". In the
+ * spike there is only the in-memory implementation. A Yaci or preprod
+ * provider later implements the same three methods.
+ */
+export interface Ledger {
+  /** Any output this ledger knows, owned by the wallet or not. */
+  resolveInput(input: TxInput): Utxo | undefined;
+  /** Outputs the wallet controls, in the order they were configured. */
+  getWalletUtxos(): Utxo[];
+  /** Record or broadcast a signed transaction, return its id (32 bytes). */
+  submit(tx: Uint8Array): Promise<Uint8Array>;
+}
+
+function sameInput(a: TxInput, b: TxInput): boolean {
+  return a.index === b.index && bytesEqual(a.txId, b.txId);
+}
+
+export class MemoryLedger implements Ledger {
+  readonly submitted: Uint8Array[] = [];
+  private readonly owned: Utxo[];
+  private readonly foreign: Utxo[];
+
+  constructor(opts: { owned: Utxo[]; foreign?: Utxo[] }) {
+    this.owned = [...opts.owned];
+    this.foreign = [...(opts.foreign ?? [])];
+  }
+
+  resolveInput(input: TxInput): Utxo | undefined {
+    return [...this.owned, ...this.foreign].find((u) => sameInput(u.input, input));
+  }
+
+  getWalletUtxos(): Utxo[] {
+    return [...this.owned];
+  }
+
+  async submit(tx: Uint8Array): Promise<Uint8Array> {
+    this.submitted.push(tx);
+    return txHash(tx);
+  }
+}
+
+/** Deterministic fake outpoint so tests read the same ids every run. */
+export function syntheticInput(seed: string, index: bigint): TxInput {
+  return { txId: blake2b(new TextEncoder().encode(seed), { dkLen: 32 }), index };
+}
+
+/**
+ * transaction_unspent_output = [transaction_input, transaction_output]
+ * The output uses the legacy array form [address, coin], which every
+ * CIP-30 consumer accepts. Assets come with milestone 2.
+ */
+export function encodeUtxo(u: Utxo): Uint8Array {
+  return encode([[u.input.txId, u.input.index], [u.address, u.lovelace]] as never);
+}
