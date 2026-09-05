@@ -42,6 +42,6 @@ export async function appendProbeToFirstPartyScript(page: Page, variant: Variant
   catch (e) { window.__chwRouteProbeEval = 'blocked'; }
 })();
 `;
-    await route.fulfill({ response, body: body + probe, headers: { ...response.headers() } });
+    await route.fulfill({ response, body: body + probe });
   });
 }

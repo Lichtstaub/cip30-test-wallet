@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { CSP } from '../examples/minimal-dapp/csp.mjs';
 import { VARIANTS, appendProbeToFirstPartyScript, url } from './helpers/csp.js';
 
 // Third probe path from the milestone 1b findings: addInitScript and
@@ -20,6 +21,6 @@ for (const variant of VARIANTS) {
 test('the intercepted script still carries the CSP header of the document', async ({ page }) => {
   await appendProbeToFirstPartyScript(page, 'strict');
   const response = await page.goto(url('strict'));
-  expect(response?.headers()['content-security-policy']).toContain("script-src 'self'");
+  expect(response?.headers()['content-security-policy']).toBe(CSP.strict);
   await expect(page.locator('#eval-result')).toHaveText('blocked');
 });

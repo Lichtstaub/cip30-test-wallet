@@ -16,6 +16,20 @@ test.describe('criterion 3: an injected wallet appears under strict CSP', () => 
     await expect(page.locator('#eval-result')).toHaveText('blocked');
     await expect(page.locator('#wallets')).toHaveText('chw');
   });
+
+  test('augments an existing window.cardano instead of overwriting it', async ({ page }) => {
+    await page.addInitScript(`
+      window.cardano = window.cardano || {};
+      window.cardano.other = {
+        apiVersion: '1', name: 'other', icon: '', supportedExtensions: [],
+        isEnabled: () => Promise.resolve(false),
+        enable: () => Promise.resolve({ getNetworkId: () => Promise.resolve(0) }),
+      };
+    `);
+    await page.addInitScript(walletStub());
+    await page.goto(url('strict'));
+    await expect(page.locator('#wallets')).toHaveText('other,chw');
+  });
 });
 
 test.describe('criterion 4: late injection is only found by a dApp that retries', () => {
@@ -25,6 +39,7 @@ test.describe('criterion 4: late injection is only found by a dApp that retries'
     await expect(page.locator('#wallets')).toHaveText('none');
     // Wait past the injection and confirm the page never looked again.
     await page.waitForTimeout(1200);
+    expect(await page.evaluate(() => Boolean((window as unknown as { cardano?: unknown }).cardano))).toBe(true);
     await expect(page.locator('#wallets')).toHaveText('none');
     await expect(page.locator('#scan-count')).toHaveText('1');
   });

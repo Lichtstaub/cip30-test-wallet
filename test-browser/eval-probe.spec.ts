@@ -19,6 +19,17 @@ for (const variant of VARIANTS) {
       expect(probe, `addInitScript probe on ${variant}`).toBe(truth);
     });
 
+    if (variant === 'strict') {
+      test('documents the CSP bypass of addInitScript probe in this engine', async ({ page, browserName }) => {
+        test.skip(browserName === 'webkit', 'WebKit enforces CSP on addInitScript code, this engine has no bypass to pin');
+        await page.addInitScript(EVAL_PROBE);
+        await page.goto(url(variant));
+        await expect(page.locator('#eval-result')).toHaveText('blocked');
+        const probe = await page.evaluate(() => (window as unknown as { __chwProbeEval: string }).__chwProbeEval);
+        expect(probe).toBe('ok');
+      });
+    }
+
     test('page.evaluate probe agrees with page-native eval', async ({ page }) => {
       test.fixme(
         variant === 'strict',
@@ -37,6 +48,22 @@ for (const variant of VARIANTS) {
       expect(probe, `page.evaluate probe on ${variant}`).toBe(truth);
     });
 
+    if (variant === 'strict') {
+      test('documents the CSP bypass of page.evaluate probe in this engine', async ({ page }) => {
+        await page.goto(url(variant));
+        await expect(page.locator('#eval-result')).toHaveText('blocked');
+        const probe = await page.evaluate(() => {
+          try {
+            new Function('return 1')();
+            return 'ok';
+          } catch {
+            return 'blocked';
+          }
+        });
+        expect(probe).toBe('ok');
+      });
+    }
+
     test('a securitypolicyviolation event is observable from an init script', async ({ page }) => {
       await page.addInitScript(`
         window.__chwViolations = [];
@@ -49,9 +76,11 @@ for (const variant of VARIANTS) {
       const violations = await page.evaluate(() => (window as unknown as { __chwViolations: string[] }).__chwViolations);
       // The automatic favicon.ico request falls back to default-src 'none' in both
       // variants and Firefox alone reports it as an img-src violation, unrelated
-      // to eval. Filter to script-src so that quirk does not fail this assertion.
-      if (variant === 'strict') expect(violations.join(' ')).toContain('script-src');
-      else expect(violations.filter((v) => v.startsWith('script-src'))).toEqual([]);
+      // to eval. Filter both branches to script-src so that quirk cannot affect
+      // either assertion.
+      const scriptSrcViolations = violations.filter((v) => v.startsWith('script-src'));
+      if (variant === 'strict') expect(scriptSrcViolations).toContain('script-src:eval');
+      else expect(scriptSrcViolations).toEqual([]);
     });
   });
 }
