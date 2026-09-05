@@ -27,8 +27,8 @@ describe('exit criterion 1: body hash', () => {
     expect(body.inputs).toHaveLength(1);
     expect(body.inputs[0]!.txId).toHaveLength(32);
     expect(body.requiredSigners).toEqual([]);
-    expect(body.withdrawalStakeHashes).toEqual([]);
-    expect(body.hasCertificates).toBe(false);
+    expect(body.withdrawals).toEqual([]);
+    expect(body.bodyKeys).not.toContain(4n);
   });
 
   it('reads the vkey witnesses the fixture already carries', () => {

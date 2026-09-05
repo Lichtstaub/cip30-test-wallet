@@ -14,13 +14,13 @@ export interface TxInput {
 export interface ParsedBody {
   inputs: TxInput[];
   requiredSigners: Uint8Array[];
-  /** Stake key hashes of every withdrawal reward address (28 bytes each). */
-  withdrawalStakeHashes: Uint8Array[];
-  hasCertificates: boolean;
+  /** One entry per withdrawal, in map order. hash is the 28 byte stake credential. */
+  withdrawals: { hash: Uint8Array; isScript: boolean }[];
+  /** Every top-level body map key, in map order. Used to reject unsupported transaction forms. */
+  bodyKeys: bigint[];
 }
 
 const BODY_INPUTS = 0n;
-const BODY_CERTIFICATES = 4n;
 const BODY_WITHDRAWALS = 5n;
 const BODY_REQUIRED_SIGNERS = 14n;
 
@@ -87,21 +87,26 @@ export function parseBody(tx: Uint8Array): ParsedBody {
 
   const requiredSigners = unwrapSet(mapGet(body, BODY_REQUIRED_SIGNERS)).map((k) => asBytes(k, 'required signer'));
 
-  const withdrawals = mapGet(body, BODY_WITHDRAWALS);
-  const withdrawalStakeHashes: Uint8Array[] = [];
-  if (withdrawals instanceof Map) {
-    for (const key of withdrawals.keys()) {
+  const rawWithdrawals = mapGet(body, BODY_WITHDRAWALS);
+  const withdrawals: { hash: Uint8Array; isScript: boolean }[] = [];
+  if (rawWithdrawals instanceof Map) {
+    for (const key of rawWithdrawals.keys()) {
       const rewardAddress = asBytes(key, 'withdrawal reward address');
+      if (rewardAddress.length < 29) throw new Error('malformed withdrawal reward address');
       // reward address = 1 header byte + 28 byte credential hash
-      withdrawalStakeHashes.push(rewardAddress.slice(1, 29));
+      const header = rewardAddress[0]!;
+      withdrawals.push({ hash: rewardAddress.slice(1, 29), isScript: (header >> 4) === 0x0f });
     }
   }
 
   return {
     inputs,
     requiredSigners,
-    withdrawalStakeHashes,
-    hasCertificates: mapGet(body, BODY_CERTIFICATES) !== undefined,
+    withdrawals,
+    bodyKeys: [...body.keys()].map((k) => {
+      if (typeof k !== 'bigint') throw new Error('transaction body key must be an integer');
+      return k;
+    }),
   };
 }
 

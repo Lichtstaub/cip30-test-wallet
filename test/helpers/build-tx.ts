@@ -21,6 +21,8 @@ export interface BuildTxOptions {
   requiredSigners?: Uint8Array[];
   withdrawals?: { rewardAddress: Uint8Array; lovelace: bigint }[];
   certificatesPlaceholder?: boolean;
+  /** Arbitrary extra body map entries, applied last so they can override the fields above. */
+  extraBodyEntries?: Map<bigint, unknown>;
 }
 
 export function buildTx(opts: BuildTxOptions): string {
@@ -37,6 +39,9 @@ export function buildTx(opts: BuildTxOptions): string {
   }
   if (opts.requiredSigners && opts.requiredSigners.length > 0) {
     body.set(14n, new Tagged(258n, opts.requiredSigners));
+  }
+  if (opts.extraBodyEntries) {
+    for (const [key, value] of opts.extraBodyEntries) body.set(key, value);
   }
   const tx = [body, new Map(), true, null];
   return bytesToHex(encode(tx as never));

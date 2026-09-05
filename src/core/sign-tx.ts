@@ -1,10 +1,55 @@
 import { ed25519 } from '@noble/curves/ed25519.js';
-import { isScriptPayment, paymentHash } from './addresses.js';
+import { isByronAddress, isScriptPayment, paymentHash } from './addresses.js';
 import { bytesEqual, bytesToHex, hexToBytes } from './bytes.js';
-import { encodeWitnessSet, existingVKeyWitnesses, parseBody, txHash } from './cbor/tx.js';
+import { encodeWitnessSet, existingVKeyWitnesses, parseBody, txHash, type ParsedBody } from './cbor/tx.js';
 import { ChwError, TxSignErrorCode, txSignError } from './errors.js';
 import { keyHash, publicKey, sign, type SigningKey } from './keys.js';
 import type { Ledger } from './ledger.js';
+
+// The spike only reasons about these top-level transaction body keys. Every
+// other key (certificates, mint, script data hash, collateral, reference
+// inputs, governance fields, and anything unknown) is an unsupported form.
+const SUPPORTED_BODY_KEYS = new Set<bigint>([0n, 1n, 2n, 3n, 5n, 7n, 8n, 14n, 15n]);
+
+const BODY_KEY_NAMES: Record<string, string> = {
+  '4': 'certificates',
+  '6': 'update',
+  '9': 'mint',
+  '11': 'script data hash',
+  '13': 'collateral inputs',
+  '16': 'collateral return',
+  '17': 'total collateral',
+  '18': 'reference inputs',
+  '19': 'voting procedures',
+  '20': 'proposal procedures',
+  '21': 'treasury value',
+  '22': 'donation',
+};
+
+/**
+ * Runs before the ownership decision and only when partialSign is false. Any
+ * body key outside the allowlist, a key input at a script or Byron address,
+ * or a withdrawal with a script credential raises CHW_UNSUPPORTED_TX_FORM,
+ * naming the first offending item. With partialSign true the ownership
+ * loops below simply skip these instead.
+ */
+function checkSupportedForm(body: ParsedBody, ledger: Ledger, unsupported: (what: string) => never): void {
+  for (const key of body.bodyKeys) {
+    if (!SUPPORTED_BODY_KEYS.has(key)) {
+      const name = BODY_KEY_NAMES[key.toString()];
+      unsupported(`body key ${key}${name ? ` (${name})` : ''}`);
+    }
+  }
+  for (const input of body.inputs) {
+    const utxo = ledger.resolveInput(input);
+    if (!utxo) continue; // an unresolved input is CHW_UNRESOLVED_INPUT, raised later by the ownership loop
+    if (isScriptPayment(utxo.address)) unsupported('an input at a script address');
+    if (isByronAddress(utxo.address)) unsupported('an input at a Byron address');
+  }
+  for (const withdrawal of body.withdrawals) {
+    if (withdrawal.isScript) unsupported('a withdrawal with a script credential');
+  }
+}
 
 /**
  * Sign the transaction body hash with every given key and return the
@@ -26,16 +71,19 @@ export interface SignContext {
 
 /**
  * CIP-30 signTx for a single-account wallet over the transaction forms the
- * spike supports: key inputs, required signers, withdrawals. Returns only
- * the witnesses this call created.
+ * spike supports: key inputs, required signers, withdrawals, all listed in
+ * SUPPORTED_BODY_KEYS. Returns only the witnesses this call created.
  *
  * partialSign false: every requirement must be ours or already covered by
  * a valid witness in the transaction, otherwise TxSignError ProofGeneration.
- * partialSign true: sign what is ours, ignore the rest.
- * Script inputs and certificates are not evaluated yet. With partialSign
- * false they raise CHW_UNSUPPORTED_TX_FORM, a harness diagnosis, never a
- * fake wallet error. An input the ledger does not know raises
- * CHW_UNRESOLVED_INPUT in both modes.
+ * Any unsupported transaction form (an unlisted body key, a script or Byron
+ * input, a script withdrawal) raises CHW_UNSUPPORTED_TX_FORM before the
+ * ownership decision runs at all, a harness diagnosis, never a fake wallet
+ * error.
+ * partialSign true: sign what is ours, ignore the rest, including
+ * unsupported forms.
+ * An input the ledger does not know raises CHW_UNRESOLVED_INPUT in both
+ * modes.
  */
 export function signTx(txHex: string, partialSign: boolean, ctx: SignContext): string {
   const tx = hexToBytes(txHex);
@@ -55,8 +103,10 @@ export function signTx(txHex: string, partialSign: boolean, ctx: SignContext): s
     throw txSignError(TxSignErrorCode.ProofGeneration, `wallet cannot sign for ${what}`);
   };
   const unsupported = (what: string): never => {
-    throw new ChwError('CHW_UNSUPPORTED_TX_FORM', `${what} are not evaluated in the milestone 1 spike, use partialSign: true to sign only the wallet's own share`);
+    throw new ChwError('CHW_UNSUPPORTED_TX_FORM', `${what} is not supported by the milestone 1 spike, use partialSign: true to sign only the wallet's own share`);
   };
+
+  if (!partialSign) checkSupportedForm(body, ctx.ledger, unsupported);
 
   for (const input of body.inputs) {
     const utxo = ctx.ledger.resolveInput(input);
@@ -66,10 +116,9 @@ export function signTx(txHex: string, partialSign: boolean, ctx: SignContext): s
         `input ${bytesToHex(input.txId)}#${input.index} is unknown to the mock ledger, add it to utxos or foreignUtxos`,
       );
     }
-    if (isScriptPayment(utxo.address)) {
-      if (!partialSign) unsupported('script inputs');
-      continue;
-    }
+    // Script and Byron inputs are unsupported forms, already rejected above
+    // when partialSign is false. Here they are simply skipped.
+    if (isScriptPayment(utxo.address) || isByronAddress(utxo.address)) continue;
     const hash = paymentHash(utxo.address);
     if (bytesEqual(hash, myPay)) needed.add('payment');
     else if (!partialSign && !isCovered(hash)) refuse('an input owned by another key');
@@ -81,12 +130,13 @@ export function signTx(txHex: string, partialSign: boolean, ctx: SignContext): s
     else if (!partialSign && !isCovered(signer)) refuse('a required signer the wallet does not hold');
   }
 
-  for (const stakeHash of body.withdrawalStakeHashes) {
-    if (bytesEqual(stakeHash, myStake)) needed.add('stake');
-    else if (!partialSign && !isCovered(stakeHash)) refuse('a withdrawal from another stake key');
+  for (const withdrawal of body.withdrawals) {
+    // A script withdrawal is an unsupported form, already rejected above
+    // when partialSign is false. Here it is simply skipped.
+    if (withdrawal.isScript) continue;
+    if (bytesEqual(withdrawal.hash, myStake)) needed.add('stake');
+    else if (!partialSign && !isCovered(withdrawal.hash)) refuse('a withdrawal from another stake key');
   }
-
-  if (body.hasCertificates && !partialSign) unsupported('certificates');
 
   const keys: SigningKey[] = [];
   if (needed.has('payment')) keys.push(ctx.payment);

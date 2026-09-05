@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Transaction, TransactionWitnessSet } from '@evolution-sdk/evolution';
 import { bytesToHex } from '../src/core/bytes.js';
+import { Tagged } from '../src/core/cbor/decode.js';
 import { baseAddressBytes, rewardAddressBytes } from '../src/core/addresses.js';
 import { ChwError, TxSignErrorCode } from '../src/core/errors.js';
 import { keyHash, publicKey } from '../src/core/keys.js';
@@ -141,5 +142,50 @@ describe('exit criterion 5: ownership decision', () => {
     }
     expect(message).not.toContain(bytesToHex(me.payment.bytes));
     expect(message).not.toContain(bytesToHex(me.stake.bytes));
+  });
+});
+
+describe('supported transaction forms are an allowlist, checked before ownership', () => {
+  it('refuses an unsupported body key (collateral inputs, 13) naming the key, signs its own share when partial', () => {
+    const tx = pay([mine.input], {
+      extraBodyEntries: new Map([[13n, new Tagged(258n, [[theirs.input.txId, theirs.input.index]])]]),
+    });
+    expect(() => signTx(tx, false, ctx())).toThrow(ChwError);
+    expect(() => signTx(tx, false, ctx())).toThrow(/CHW_UNSUPPORTED_TX_FORM/);
+    expect(() => signTx(tx, false, ctx())).toThrow(/13/);
+    expect(witnessCount(signTx(tx, true, ctx()))).toBe(1);
+  });
+
+  it('refuses an unsupported body key (voting procedures, 19) the same way', () => {
+    const tx = pay([mine.input], { extraBodyEntries: new Map([[19n, new Map()]]) });
+    expect(() => signTx(tx, false, ctx())).toThrow(ChwError);
+    expect(() => signTx(tx, false, ctx())).toThrow(/CHW_UNSUPPORTED_TX_FORM/);
+    expect(witnessCount(signTx(tx, true, ctx()))).toBe(1);
+  });
+
+  it('refuses a script withdrawal as an unsupported form, never ProofGeneration', () => {
+    const scriptReward = new Uint8Array(29);
+    scriptReward[0] = 0xf0; // reward address, script credential
+    const tx = pay([mine.input], { withdrawals: [{ rewardAddress: scriptReward, lovelace: 1n }] });
+    let caught: unknown;
+    try {
+      signTx(tx, false, ctx());
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ChwError);
+    expect((caught as ChwError).code).toBe('CHW_UNSUPPORTED_TX_FORM');
+  });
+
+  it('reports unsupported form, not ProofGeneration, for a foreign key input alongside a certificate', () => {
+    const tx = pay([mine.input, theirs.input], { certificatesPlaceholder: true });
+    let caught: unknown;
+    try {
+      signTx(tx, false, ctx({ foreign: [theirs] }));
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ChwError);
+    expect((caught as ChwError).code).toBe('CHW_UNSUPPORTED_TX_FORM');
   });
 });

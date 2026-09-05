@@ -42,6 +42,11 @@ export function isScriptPayment(address: Uint8Array): boolean {
   return ((header(address) >> 4) & 0x01) === 1;
 }
 
+/** Byron addresses (type 8) predate the Shelley header layout. Not evaluated in the spike. */
+export function isByronAddress(address: Uint8Array): boolean {
+  return (header(address) >> 4) === 0x08;
+}
+
 /** The 28-byte credential hash that follows the header, payment or stake for reward addresses. */
 export function paymentHash(address: Uint8Array): Uint8Array {
   if (address.length < 1 + HASH_LENGTH) throw new Error('address too short for a credential');
