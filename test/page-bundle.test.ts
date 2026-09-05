@@ -26,6 +26,6 @@ describe('page bundle', () => {
   it('emits the node entry points the package exports point at', () => {
     expect(existsSync('dist/node/index.js')).toBe(true);
     expect(existsSync('dist/node/index.d.ts')).toBe(true);
-    expect(existsSync('dist/node/playwright/index.js')).toBe(false); // arrives with task 5
+    expect(existsSync('dist/node/playwright/index.js')).toBe(true);
   });
 });

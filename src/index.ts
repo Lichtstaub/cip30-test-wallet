@@ -10,3 +10,6 @@ export * from './core/sign-tx.js';
 export * from './derive/index.js';
 export * from './page/config.js';
 export { installWallet, syntheticOwnedUtxo, buildLedger } from './page/install.js';
+export * from './host/config.js';
+export * from './host/bundle.js';
+export * from './host/assert.js';
