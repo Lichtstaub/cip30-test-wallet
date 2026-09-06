@@ -44,6 +44,13 @@
     }, 200);
   }, 100);
 
+  var EXPECTED_NETWORK = 0;
+  var connectedApi = null;
+
+  function networkName(id) {
+    return id === 1 ? 'mainnet' : 'preprod';
+  }
+
   document.getElementById('connect').addEventListener('click', function () {
     var out = document.getElementById('connect-result');
     var cardano = window.cardano;
@@ -53,11 +60,35 @@
       return;
     }
     cardano[key].enable().then(function (api) {
-      return api.getNetworkId();
-    }).then(function (id) {
-      out.textContent = 'network ' + id;
+      return api.getNetworkId().then(function (id) {
+        if (id !== EXPECTED_NETWORK) {
+          // The human message the design asks for, instead of a cryptic SDK error later.
+          out.textContent = 'wrong network: wallet is on ' + networkName(id) + ', this demo expects ' + networkName(EXPECTED_NETWORK);
+          return;
+        }
+        connectedApi = api;
+        out.textContent = 'network ' + id;
+      });
     }).catch(function (e) {
       out.textContent = 'error ' + (e && e.code);
+    });
+  });
+
+  document.getElementById('commit').addEventListener('click', function () {
+    var out = document.getElementById('commit-result');
+    if (!connectedApi) {
+      out.textContent = 'not connected';
+      return;
+    }
+    out.textContent = 'signing';
+    connectedApi.signTx(DEMO_TX.unsignedHex, false).then(function (witnessSetHex) {
+      // Replace the empty witness set (a0) with the wallet's witness set.
+      var signed = DEMO_TX.unsignedHex.slice(0, DEMO_TX.bodyEndHex) + witnessSetHex + DEMO_TX.unsignedHex.slice(DEMO_TX.bodyEndHex + 2);
+      return connectedApi.submitTx(signed);
+    }).then(function (hash) {
+      out.textContent = 'submitted ' + hash;
+    }).catch(function (e) {
+      out.textContent = e && e.code === 2 ? 'declined' : 'error ' + (e && e.code);
     });
   });
 })();
