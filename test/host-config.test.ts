@@ -28,4 +28,26 @@ describe('prepareWallet', () => {
   it('rejects an invalid mnemonic before anything reaches the page', () => {
     expect(() => prepareWallet({ mnemonic: 'not a mnemonic' })).toThrow(/mnemonic/);
   });
+
+  it('rejects a negative lovelace amount', () => {
+    expect(() => prepareWallet({ utxos: [{ lovelace: -1 }] })).toThrow(/non-negative/);
+  });
+
+  it('rejects a lovelace amount that is not an integer', () => {
+    expect(() => prepareWallet({ utxos: [{ lovelace: 'abc' }] })).toThrow();
+  });
+
+  it('rejects a networkId outside 0 or 1', () => {
+    expect(() => prepareWallet({ networkId: 2 as never })).toThrow(/networkId/);
+  });
+
+  it('rejects a negative accountIndex', () => {
+    expect(() => prepareWallet({ accountIndex: -1 })).toThrow(/accountIndex/);
+  });
+
+  it('returns equal configs for two calls with the same options', () => {
+    const a = prepareWallet({ accountIndex: 1 });
+    const b = prepareWallet({ accountIndex: 1 });
+    expect(a.config).toEqual(b.config);
+  });
 });

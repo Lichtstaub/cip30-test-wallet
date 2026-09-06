@@ -4,7 +4,7 @@
 import { baseAddressBytes, rewardAddressBytes, toBech32 } from '../core/addresses.js';
 import { bytesToHex } from '../core/bytes.js';
 import { keyHash, publicKey } from '../core/keys.js';
-import { deriveAccount } from '../derive/index.js';
+import { deriveAccount, type DerivedAccount } from '../derive/index.js';
 import type { PageConfig, QuirkConfig } from '../page/config.js';
 
 /** Public test vector from the CSL documentation. Holds no funds, safe to ship. */
@@ -20,6 +20,8 @@ export interface WalletOptions {
   networkId?: 0 | 1;
   mnemonic?: string;
   accountIndex?: number;
+  /** Whether the fixture installs the provider into the page at all. Defaults to true. */
+  install?: boolean;
   utxos?: { lovelace: number | bigint | string }[];
   foreignUtxos?: { txId: string; index: number; addressHex: string; lovelace: number | bigint | string }[];
   quirks?: QuirkConfig;
@@ -32,11 +34,43 @@ export interface PreparedWallet {
   stakePublicKeyHex: string;
 }
 
-const lovelaceString = (v: number | bigint | string): string => BigInt(v).toString();
+function lovelaceString(v: number | bigint | string): string {
+  let n: bigint;
+  try {
+    n = BigInt(v);
+  } catch {
+    throw new Error(`lovelace must be a non-negative integer, got ${v}`);
+  }
+  if (n < 0n) throw new Error(`lovelace must be a non-negative integer, got ${v}`);
+  return n.toString();
+}
+
+function validateAccountIndex(v: number): void {
+  if (!Number.isInteger(v) || v < 0) throw new Error(`accountIndex must be a non-negative integer, got ${v}`);
+}
+
+function validateNetworkId(v: number): void {
+  if (v !== 0 && v !== 1) throw new Error(`networkId must be 0 or 1, got ${v}`);
+}
+
+/** Repeated prepareWallet calls with the same mnemonic and accountIndex do not re-derive. */
+const accountCache = new Map<string, DerivedAccount>();
+
+function cachedDeriveAccount(mnemonic: string, accountIndex: number): DerivedAccount {
+  const key = `${accountIndex}:${mnemonic}`;
+  const cached = accountCache.get(key);
+  if (cached) return cached;
+  const account = deriveAccount(mnemonic, accountIndex);
+  accountCache.set(key, account);
+  return account;
+}
 
 export function prepareWallet(options: WalletOptions = {}): PreparedWallet {
   const networkId = options.networkId ?? 0;
-  const account = deriveAccount(options.mnemonic ?? DEFAULT_MNEMONIC, options.accountIndex ?? 0);
+  validateNetworkId(networkId);
+  const accountIndex = options.accountIndex ?? 0;
+  validateAccountIndex(accountIndex);
+  const account = cachedDeriveAccount(options.mnemonic ?? DEFAULT_MNEMONIC, accountIndex);
   const paymentPub = publicKey(account.payment);
   const stakePub = publicKey(account.stake);
   const base = baseAddressBytes(networkId, keyHash(paymentPub), keyHash(stakePub));

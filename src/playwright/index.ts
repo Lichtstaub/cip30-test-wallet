@@ -17,9 +17,14 @@ export interface WalletHandle {
   /** Hex CBOR of the last transaction handed to submitTx, never broadcast. */
   lastSubmittedTx(): Promise<string | undefined>;
   setQuirk<K extends QuirkName>(name: K, value: QuirkConfig[K]): Promise<void>;
-  release(method: 'signTx'): Promise<void>;
-  reject(method: 'signTx'): Promise<void>;
+  release(method: 'signTx'): Promise<number>;
+  reject(method: 'signTx'): Promise<number>;
 }
+
+const NOT_INSTALLED_ON_PAGE = 'the headless wallet is not installed on this page: navigate first, or window.cardano is not writable';
+const NOT_INSTALLED_FOR_TEST = 'the wallet was not installed for this test (walletOptions.install is false)';
+
+type ChwWindow = { __chw?: { journal: JournalEntry[]; setQuirk: (a: string, b: unknown) => void; release: (a: string) => number; reject: (a: string) => number } };
 
 function makeHandle(page: Page, prepared: ReturnType<typeof prepareWallet>): WalletHandle {
   return {
@@ -28,22 +33,63 @@ function makeHandle(page: Page, prepared: ReturnType<typeof prepareWallet>): Wal
     paymentPublicKeyHex: prepared.paymentPublicKeyHex,
     stakePublicKeyHex: prepared.stakePublicKeyHex,
     calls: (method) =>
-      page.evaluate((m) => {
-        const chw = (window as unknown as { __chw: { journal: JournalEntry[] } }).__chw;
-        return chw.journal.filter((e) => m === undefined || e.method === m);
-      }, method),
-    lastSubmittedTx: async () => {
-      const entries = await page.evaluate(() => (window as unknown as { __chw: { journal: JournalEntry[] } }).__chw.journal);
-      const last = [...entries].reverse().find((e) => e.method === 'submitTx');
-      return last ? (last.args[0] as string) : undefined;
-    },
+      page.evaluate(
+        ([m, notInstalled]) => {
+          const chw = (window as unknown as ChwWindow).__chw;
+          if (!chw) throw new Error(notInstalled);
+          return chw.journal.filter((e) => m === undefined || e.method === m);
+        },
+        [method, NOT_INSTALLED_ON_PAGE] as const,
+      ),
+    lastSubmittedTx: () =>
+      page.evaluate((notInstalled) => {
+        const chw = (window as unknown as ChwWindow).__chw;
+        if (!chw) throw new Error(notInstalled);
+        const last = [...chw.journal].reverse().find((e) => e.method === 'submitTx' && e.error === undefined);
+        return last ? (last.args[0] as string) : undefined;
+      }, NOT_INSTALLED_ON_PAGE),
     setQuirk: (name, value) =>
       page.evaluate(
-        ([n, v]) => (window as unknown as { __chw: { setQuirk: (a: string, b: unknown) => void } }).__chw.setQuirk(n as string, v),
-        [name, value] as const,
+        ([n, v, notInstalled]) => {
+          const chw = (window as unknown as ChwWindow).__chw;
+          if (!chw) throw new Error(notInstalled);
+          chw.setQuirk(n as string, v);
+        },
+        [name, value, NOT_INSTALLED_ON_PAGE] as const,
       ),
-    release: (method) => page.evaluate((m) => (window as unknown as { __chw: { release: (a: string) => void } }).__chw.release(m), method),
-    reject: (method) => page.evaluate((m) => (window as unknown as { __chw: { reject: (a: string) => void } }).__chw.reject(m), method),
+    release: (method) =>
+      page.evaluate(
+        ([m, notInstalled]) => {
+          const chw = (window as unknown as ChwWindow).__chw;
+          if (!chw) throw new Error(notInstalled);
+          return chw.release(m);
+        },
+        [method, NOT_INSTALLED_ON_PAGE] as const,
+      ),
+    reject: (method) =>
+      page.evaluate(
+        ([m, notInstalled]) => {
+          const chw = (window as unknown as ChwWindow).__chw;
+          if (!chw) throw new Error(notInstalled);
+          return chw.reject(m);
+        },
+        [method, NOT_INSTALLED_ON_PAGE] as const,
+      ),
+  };
+}
+
+function makeUninstalledHandle(prepared: ReturnType<typeof prepareWallet>): WalletHandle {
+  const notInstalled = () => Promise.reject(new Error(NOT_INSTALLED_FOR_TEST));
+  return {
+    name: prepared.config.name,
+    addresses: prepared.addresses,
+    paymentPublicKeyHex: prepared.paymentPublicKeyHex,
+    stakePublicKeyHex: prepared.stakePublicKeyHex,
+    calls: notInstalled,
+    lastSubmittedTx: notInstalled,
+    setQuirk: notInstalled,
+    release: notInstalled,
+    reject: notInstalled,
   };
 }
 
@@ -52,8 +98,13 @@ export const test = base.extend<{ walletOptions: WalletOptions; wallet: WalletHa
   wallet: [
     async ({ page, walletOptions }, use) => {
       const prepared = prepareWallet(walletOptions);
-      // Runs after any init script the test registered before requesting the fixture, so a
-      // pre-existing window.cardano from the test is augmented, not replaced.
+      if (walletOptions.install === false) {
+        await use(makeUninstalledHandle(prepared));
+        return;
+      }
+      // The fixture is automatic, its init script is registered during fixture setup, before
+      // hooks and the test body, so a test cannot register a provider ahead of it, only the
+      // page itself can.
       await page.addInitScript({ content: initScript(prepared.config) });
       await use(makeHandle(page, prepared));
     },

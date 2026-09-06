@@ -24,3 +24,13 @@ test.describe('renamed wallet', () => {
     await expect(page.locator('#wallets')).toHaveText('eternl');
   });
 });
+
+test.describe('install opt-out', () => {
+  test.use({ walletOptions: { install: false } });
+  test('nothing is injected into the page, but the handle still describes the wallet', async ({ page, wallet }) => {
+    await page.goto('/strict/');
+    await expect(page.locator('#wallets')).toHaveText('none');
+    expect(wallet.name).toBe('chw');
+    await expect(wallet.calls()).rejects.toThrow(/not installed/);
+  });
+});
