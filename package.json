@@ -1,7 +1,7 @@
 {
   "name": "cardano-headless-wallet",
-  "version": "0.0.0",
-  "description": "Headless CIP-30 wallet for automated Cardano dApp tests. Milestone 1 spike: CBOR, keys and signing.",
+  "version": "0.1.0-alpha.0",
+  "description": "Headless CIP-30 wallet for automated Cardano dApp transaction tests, with a catalogue of real wallet quirks.",
   "license": "Apache-2.0",
   "type": "module",
   "private": true,
@@ -11,7 +11,8 @@
     ".": { "types": "./dist/node/index.d.ts", "default": "./dist/node/index.js" },
     "./playwright": { "types": "./dist/node/playwright/index.d.ts", "default": "./dist/node/playwright/index.js" }
   },
-  "files": ["dist", "quirks", "README.md", "LICENSE"],
+  "files": ["dist", "docs", "quirks", "README.md", "LICENSE"],
+  "keywords": ["cardano", "cip30", "cip-30", "wallet", "playwright", "testing", "headless", "dapp"],
   "engines": { "node": ">=20.19" },
   "scripts": {
     "test": "vitest run",
@@ -36,5 +37,11 @@
     "esbuild": "^0.28.0",
     "typescript": "^5.9.0",
     "vitest": "^5.0.0"
+  },
+  "peerDependencies": {
+    "@playwright/test": ">=1.50"
+  },
+  "peerDependenciesMeta": {
+    "@playwright/test": { "optional": true }
   }
 }

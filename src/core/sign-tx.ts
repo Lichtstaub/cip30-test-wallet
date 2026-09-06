@@ -124,7 +124,7 @@ export async function signTx(txHex: string, partialSign: boolean, ctx: SignConte
     throw txSignError(TxSignErrorCode.ProofGeneration, `wallet cannot sign for ${what}`);
   };
   const unsupported = (what: string): never => {
-    throw new ChwError('CHW_UNSUPPORTED_TX_FORM', `${what} is not supported by the milestone 1 spike, use partialSign: true to sign only the wallet's own share`);
+    throw new ChwError('CHW_UNSUPPORTED_TX_FORM', `${what} is not supported by this release, use partialSign: true to sign only the wallet's own share`);
   };
 
   if (!partialSign) await checkSupportedForm(body, ctx.ledger, unsupported);

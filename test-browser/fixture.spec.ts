@@ -11,7 +11,7 @@ test.describe('fixture basics', () => {
     expect(wallet.addresses.payment.startsWith('addr_test1')).toBe(true);
   });
 
-  test('a custom name lands under that key', async ({ page, wallet }) => {
+  test('a custom name is used as the window.cardano key', async ({ page, wallet }) => {
     await page.goto('/strict/');
     await expect(page.locator('#wallets')).toHaveText(wallet.name);
   });
