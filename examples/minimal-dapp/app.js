@@ -52,6 +52,7 @@
   }
 
   document.getElementById('connect').addEventListener('click', function () {
+    connectedApi = null;
     var out = document.getElementById('connect-result');
     var cardano = window.cardano;
     var key = cardano && walletKeys(cardano)[0];

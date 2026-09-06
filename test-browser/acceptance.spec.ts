@@ -27,7 +27,8 @@ test.describe('acceptance: the two tests commitproof cannot write today', () => 
     test('the demo shows the human network message instead of building a transaction', async ({ page, wallet }) => {
       await connect(page);
       await expect(page.locator('#connect-result')).toHaveText('wrong network: wallet is on mainnet, this demo expects preprod');
-      expect(wallet.addresses.payment.startsWith('addr1')).toBe(true);
+      const getNetworkId = (await wallet.calls('getNetworkId'))[0]!;
+      expect(getNetworkId.result).toBe(1);
       expect(await wallet.calls('signTx')).toHaveLength(0);
     });
   });
@@ -98,5 +99,15 @@ test.describe('quirks through the fixture', () => {
     await wallet.setQuirk('signRejected', true);
     await page.locator('#commit').click();
     await expect(page.locator('#commit-result')).toHaveText('declined');
+  });
+
+  test('a failed reconnect resets the demo connection, so commit sees not connected', async ({ page, wallet }) => {
+    await connect(page);
+    await expect(page.locator('#connect-result')).toHaveText('network 0');
+    await wallet.setQuirk('enableRejected', true);
+    await page.locator('#connect').click();
+    await expect(page.locator('#connect-result')).toHaveText('error -3');
+    await page.locator('#commit').click();
+    await expect(page.locator('#commit-result')).toHaveText('not connected');
   });
 });
