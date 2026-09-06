@@ -90,6 +90,34 @@ describe('signHangs', () => {
   });
 });
 
+describe('setQuirk validation', () => {
+  it('rejects an unknown quirk name with InvalidRequest', () => {
+    const target: InstallTarget = {};
+    const control = installWallet(testConfig(), target);
+    // Casting the name to never also collapses the value type to never, the runtime check is what is under test here.
+    expect(() => control.setQuirk('signRejcted' as never, true as never)).toThrow(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
+  });
+
+  it('rejects lateInjection after install with InvalidRequest, it only applies at install time', () => {
+    const target: InstallTarget = {};
+    const control = installWallet(testConfig(), target);
+    expect(() => control.setQuirk('lateInjection', 100)).toThrow(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
+  });
+});
+
+describe('release and reject return the settled count', () => {
+  it('release returns 0 with nothing pending and 1 with one pending call', async () => {
+    const target: InstallTarget = {};
+    const control = installWallet(testConfig({ quirks: { signHangs: true } }), target);
+    expect(control.release('signTx')).toBe(0);
+    const api = await enableChw(target);
+    const pending = api.signTx(unsigned(), false);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(control.release('signTx')).toBe(1);
+    await pending;
+  });
+});
+
 describe('journal redaction', () => {
   it('never contains key material, not even after errors', async () => {
     const config = testConfig({ quirks: { signRejected: true } });

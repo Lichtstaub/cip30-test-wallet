@@ -1,10 +1,11 @@
 import { bytesToHex, hexToBytes } from '../core/bytes.js';
 import { Tagged, decode } from '../core/cbor/decode.js';
 import { encode } from '../core/cbor/encode.js';
+import { parseBody } from '../core/cbor/tx.js';
 import { APIErrorCode, apiError, TxSignErrorCode, txSignError } from '../core/errors.js';
 import type { SigningKey } from '../core/keys.js';
 import { encodeUtxo, type MemoryLedger } from '../core/ledger.js';
-import { signTx as coreSignTx } from '../core/sign-tx.js';
+import { signTx as coreSignTx, unsupportedForms } from '../core/sign-tx.js';
 import type { Control } from './control.js';
 import type { PageConfig } from './config.js';
 
@@ -53,7 +54,7 @@ export function buildProvider(ctx: WalletContext): Cip30Provider {
     supportedExtensions: [],
     isEnabled: () => control.record('isEnabled', [], async () => enabled),
     enable: (options) =>
-      control.record('enable', [options ?? {}], async () => {
+      control.record('enable', [options], async () => {
         if (control.quirks.enableRejected) throw apiError(APIErrorCode.Refused, 'user declined to connect the wallet');
         enabled = true;
         return api;
@@ -106,6 +107,16 @@ export function buildApi(ctx: WalletContext): Cip30Api {
     signTx: (tx, partialSign = false) =>
       control.record('signTx', [tx, partialSign], async () => {
         requireHex(tx, 'tx');
+        if (partialSign) {
+          try {
+            const skipped = await unsupportedForms(parseBody(hexToBytes(tx)), ledger);
+            if (skipped.length > 0) {
+              console.warn('[cardano-headless-wallet] partialSign: true skipped unsupported transaction forms: ' + skipped.join(', '));
+            }
+          } catch {
+            // Malformed input is reported as InvalidRequest by coreSignTx below, not warned about here.
+          }
+        }
         if (control.quirks.signHangs) await control.wait('signTx');
         if (control.quirks.signRejected) throw txSignError(TxSignErrorCode.UserDeclined, 'user declined to sign the transaction');
         return coreSignTx(tx, partialSign, { payment: ctx.payment, stake: ctx.stake, ledger });
@@ -156,7 +167,9 @@ function requireTransactionShape(bytes: Uint8Array): void {
  * cbor<value> is either a uint (coin) or [coin, multiasset] with
  * multiasset = { policy_id => { asset_name => quantity } }. The structure is
  * validated. Asset quantities are only summarised, because this wallet
- * cannot hold assets yet, so a positive demand can never be covered.
+ * cannot hold assets yet, so a positive demand can never be covered. The
+ * bounds below are enforced only so malformed input is caught early, assets
+ * themselves are otherwise unsupported in this release.
  */
 function parseValue(hex: string): { coin: bigint; hasAssets: boolean } {
   requireHex(hex, 'amount');

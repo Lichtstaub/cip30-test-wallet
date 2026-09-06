@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Transaction, TransactionWitnessSet } from '@evolution-sdk/evolution';
 import { bytesToHex, hexToBytes } from '../src/core/bytes.js';
 import { decode } from '../src/core/cbor/decode.js';
@@ -17,6 +17,18 @@ const setup = async (overrides = {}) => {
 };
 
 const valueHex = (lovelace: bigint) => bytesToHex(encode(lovelace));
+
+describe('journal argument trimming', () => {
+  it('trims a missing argument so getUtxos() and enable() without argument journal []', async () => {
+    const target: InstallTarget = {};
+    const control = installWallet(testConfig(), target);
+    const provider = (target.cardano as Record<string, { enable: (o?: unknown) => Promise<unknown> }>)['chw']!;
+    const api = (await provider.enable()) as { getUtxos: () => Promise<unknown> };
+    await api.getUtxos();
+    expect(control.journal.find((e) => e.method === 'enable')!.args).toEqual([]);
+    expect(control.journal.find((e) => e.method === 'getUtxos')!.args).toEqual([]);
+  });
+});
 
 describe('getUtxos', () => {
   it('returns every owned utxo as TransactionUnspentOutput cbor hex', async () => {
@@ -154,6 +166,23 @@ describe('signTx and submitTx', () => {
     const failed = control.journal.filter((e) => e.method === 'submitTx');
     expect(failed).toHaveLength(3);
     expect(failed.every((e) => e.error !== undefined && e.result === undefined)).toBe(true);
+  });
+
+  it('warns once naming the skipped form when partialSign signs around an unsupported certificate', async () => {
+    const { api, target } = await setup();
+    const utxo = syntheticOwnedUtxo(config.name, 0, address(), 10_000_000n);
+    const tx = buildTx({
+      inputs: [utxo.input],
+      outputs: [{ address: address(), lovelace: 9_800_000n }],
+      fee: 200_000n,
+      certificatesPlaceholder: true,
+    });
+    expect(target.cardano).toBeDefined();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    await api.signTx(tx, true);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]![0]).toContain('certificates');
+    warn.mockRestore();
   });
 
   it('rejects a complete array of four whose items are not transaction parts', async () => {

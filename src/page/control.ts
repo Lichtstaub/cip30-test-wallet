@@ -1,5 +1,5 @@
-import { TxSignErrorCode, txSignError } from '../core/errors.js';
-import type { HangableMethod, JournalEntry, QuirkConfig, QuirkName } from './config.js';
+import { apiError, APIErrorCode, TxSignErrorCode, txSignError } from '../core/errors.js';
+import { QUIRK_NAMES, type HangableMethod, type JournalEntry, type QuirkConfig, type QuirkName } from './config.js';
 
 interface Deferred {
   resolve: () => void;
@@ -21,6 +21,12 @@ export class Control {
   }
 
   setQuirk<K extends QuirkName>(name: K, value: QuirkConfig[K]): void {
+    if (!(QUIRK_NAMES as readonly string[]).includes(name)) {
+      throw apiError(APIErrorCode.InvalidRequest, `unknown quirk "${name}", known quirks: ${QUIRK_NAMES.join(', ')}`);
+    }
+    if (name === 'lateInjection') {
+      throw apiError(APIErrorCode.InvalidRequest, 'lateInjection only applies at install time, set it in walletOptions.quirks');
+    }
     this.quirks[name] = value;
   }
 
@@ -33,19 +39,25 @@ export class Control {
     });
   }
 
-  /** Lets every hanging call of the method continue. */
-  release(method: HangableMethod): void {
-    for (const d of this.take(method)) d.resolve();
+  /** Lets every hanging call of the method continue. Returns how many it settled. */
+  release(method: HangableMethod): number {
+    const list = this.take(method);
+    for (const d of list) d.resolve();
+    return list.length;
   }
 
-  /** Fails every hanging call of the method the way a user cancelling would. */
-  reject(method: HangableMethod): void {
-    for (const d of this.take(method)) d.reject(txSignError(TxSignErrorCode.UserDeclined, 'user declined to sign the transaction'));
+  /** Fails every hanging call of the method the way a user cancelling would. Returns how many it settled. */
+  reject(method: HangableMethod): number {
+    const list = this.take(method);
+    for (const d of list) d.reject(txSignError(TxSignErrorCode.UserDeclined, 'user declined to sign the transaction'));
+    return list.length;
   }
 
-  /** Runs fn and journals method, arguments, result or error. */
+  /** Runs fn and journals method, arguments (trailing undefined entries trimmed), result or error. */
   async record<T>(method: string, args: unknown[], fn: () => Promise<T>): Promise<T> {
-    const entry: JournalEntry = { method, args, t: Date.now() };
+    const trimmedArgs = args.slice();
+    while (trimmedArgs.length > 0 && trimmedArgs[trimmedArgs.length - 1] === undefined) trimmedArgs.pop();
+    const entry: JournalEntry = { method, args: trimmedArgs, t: Date.now() };
     this.journal.push(entry);
     try {
       const result = await fn();

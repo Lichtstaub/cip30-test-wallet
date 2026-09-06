@@ -18,6 +18,10 @@ export interface ForeignUtxoConfig {
   lovelace: string;
 }
 
+export const QUIRK_NAMES = ['lateInjection', 'enableRejected', 'signRejected', 'signHangs'] as const;
+
+export type QuirkName = (typeof QUIRK_NAMES)[number];
+
 export interface QuirkConfig {
   /** Milliseconds before the provider appears in window.cardano. */
   lateInjection?: number;
@@ -29,7 +33,6 @@ export interface QuirkConfig {
   signHangs?: boolean;
 }
 
-export type QuirkName = keyof QuirkConfig;
 export type HangableMethod = 'signTx';
 
 export interface PageConfig {

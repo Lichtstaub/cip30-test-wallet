@@ -64,8 +64,16 @@ export function installWallet(config: PageConfig, target: InstallTarget): Contro
   const provider = buildProvider(ctx);
 
   const define = () => {
-    if (!target.cardano) target.cardano = {};
-    target.cardano[config.name] = provider;
+    if (!target.cardano) {
+      try {
+        target.cardano = {};
+      } catch {
+        // A page that defines window.cardano as a getter without a setter throws on plain
+        // assignment. Fall back to a fresh, writable property so the init script survives.
+        Object.defineProperty(target, 'cardano', { value: {}, configurable: true, writable: true, enumerable: true });
+      }
+    }
+    (target.cardano as Record<string, unknown>)[config.name] = provider;
   };
   const delay = config.quirks.lateInjection ?? 0;
   if (delay > 0) setTimeout(define, delay);

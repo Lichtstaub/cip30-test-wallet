@@ -32,28 +32,40 @@ const BODY_KEY_NAMES: Record<string, string> = {
 };
 
 /**
- * Runs before the ownership decision and only when partialSign is false. Any
- * body key outside the allowlist, a key input at a script or Byron address,
- * or a withdrawal with a script credential raises CHW_UNSUPPORTED_TX_FORM,
- * naming the first offending item. With partialSign true the ownership
- * loops below simply skip these instead.
+ * Every unsupported item in the body: a body key outside the allowlist, a
+ * key input at a script or Byron address, a withdrawal with a script
+ * credential. Named the way checkSupportedForm names the first offender, in
+ * the same order, so a caller (the page's partialSign: true path) can warn
+ * about everything signTx would otherwise have refused.
  */
-async function checkSupportedForm(body: ParsedBody, ledger: Ledger, unsupported: (what: string) => never): Promise<void> {
+export async function unsupportedForms(body: ParsedBody, ledger: Ledger): Promise<string[]> {
+  const found: string[] = [];
   for (const key of body.bodyKeys) {
     if (!SUPPORTED_BODY_KEYS.has(key)) {
       const name = BODY_KEY_NAMES[key.toString()];
-      unsupported(`body key ${key}${name ? ` (${name})` : ''}`);
+      found.push(`body key ${key}${name ? ` (${name})` : ''}`);
     }
   }
   for (const input of body.inputs) {
     const utxo = await ledger.resolveInput(input);
     if (!utxo) continue; // an unresolved input is CHW_UNRESOLVED_INPUT, raised later by the ownership loop
-    if (isScriptPayment(utxo.address)) unsupported('an input at a script address');
-    if (isByronAddress(utxo.address)) unsupported('an input at a Byron address');
+    if (isScriptPayment(utxo.address)) found.push('an input at a script address');
+    if (isByronAddress(utxo.address)) found.push('an input at a Byron address');
   }
   for (const withdrawal of body.withdrawals) {
-    if (withdrawal.isScript) unsupported('a withdrawal with a script credential');
+    if (withdrawal.isScript) found.push('a withdrawal with a script credential');
   }
+  return found;
+}
+
+/**
+ * Runs before the ownership decision and only when partialSign is false.
+ * Raises CHW_UNSUPPORTED_TX_FORM naming the first unsupported item, if any.
+ * With partialSign true the ownership loops below simply skip these instead.
+ */
+async function checkSupportedForm(body: ParsedBody, ledger: Ledger, unsupported: (what: string) => never): Promise<void> {
+  const found = await unsupportedForms(body, ledger);
+  if (found.length > 0) unsupported(found[0]!);
 }
 
 /**

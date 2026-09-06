@@ -10,6 +10,9 @@ import type { PageConfig, QuirkConfig } from '../page/config.js';
 /** Public test vector from the CSL documentation. Holds no funds, safe to ship. */
 export const DEFAULT_MNEMONIC = 'test walk nut penalty hip pave soap entry language right filter choice';
 
+/** A tiny inline SVG, so a dApp rendering <img src> does not re-request the document. */
+export const DEFAULT_ICON = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" rx="3" fill="%230033ad"/></svg>';
+
 export interface WalletOptions {
   name?: string;
   displayName?: string;
@@ -42,7 +45,7 @@ export function prepareWallet(options: WalletOptions = {}): PreparedWallet {
   const config: PageConfig = {
     name: options.name ?? 'chw',
     displayName: options.displayName ?? 'Headless Wallet',
-    icon: options.icon ?? '',
+    icon: options.icon ?? DEFAULT_ICON,
     networkId,
     keys: {
       payment: { kind: account.payment.kind, hex: bytesToHex(account.payment.bytes) },

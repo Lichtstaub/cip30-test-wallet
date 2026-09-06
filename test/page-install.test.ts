@@ -79,6 +79,14 @@ describe('installWallet', () => {
     expect(typeof control.journal[0]!.t).toBe('number');
   });
 
+  it('survives a window.cardano defined as a getter with no setter', () => {
+    const target: InstallTarget = {};
+    Object.defineProperty(target, 'cardano', { get: () => undefined, configurable: true });
+    installWallet(testConfig(), target);
+    const cardano = target.cardano as Record<string, { apiVersion: string }>;
+    expect(cardano['chw']!.apiVersion).toBe('1');
+  });
+
   it('rejects a config whose key hex has the wrong length with InvalidRequest', () => {
     const bad = testConfig();
     bad.keys.payment.hex = 'abcd';
