@@ -1,13 +1,87 @@
 # cardano-headless-wallet
 
-Headless CIP-30 wallet for automated Cardano dApp tests.
+`cardano-headless-wallet` reproduces real Cardano wallet failures in automated browser tests, with no node, faucet, extension, or shared chain state.
 
-**Status: milestone 1 spike.** This repository currently proves that a WASM-free
-signing core produces transactions that Evolution SDK and CSL accept byte for
-byte. Nothing here is published or usable yet. See the exit criteria table at
-the bottom once the spike is complete.
+It injects a headless CIP-30 wallet into the page under test. The wallet holds real keys, returns real UTxO CBOR, signs real transaction CBOR with a real Ed25519 signature, and records every call in a journal your test can read. A catalogue of quirks reproduces the failures that only show up on a user's machine: a wallet on the wrong network, a wallet that injects late, a user who declines or never answers.
 
-Conceptual predecessor: [cardano-test-wallet](https://github.com/cardanoapi/cardano-test-wallet) (MIT).
+**Status: pre-release.** Milestone 2a. The signing core and the Playwright fixture work end to end against the demo dApp in this repository. Not yet on npm.
+
+## What is in the box
+
+- A CIP-30 provider for the page: `apiVersion`, `name`, `icon`, `supportedExtensions`, `enable`, `isEnabled`, and the api methods `getNetworkId`, `getUtxos` (with `amount` and `paginate`), `getBalance`, `getUsedAddresses`, `getUnusedAddresses`, `getChangeAddress`, `getRewardAddresses`, `getExtensions`, `signTx`, `submitTx`.
+- A Playwright fixture: `test.use({ walletOptions })` configures the wallet, `wallet` in the test reads the journal and flips quirks at runtime.
+- `expectSignedBy(txHex, wallet)`: proves the transaction your dApp submitted really carries the wallet's signature over its body hash. Recording `submitTx` alone proves nothing.
+- Five quirks with provenance notes in [`quirks/`](quirks/README.md).
+
+## Not in the box yet
+
+This release is a CIP-30 subset for transaction tests. Missing on purpose, tracked for later milestones: `signData` (CIP-8 and COSE), `getCollateral`, CIP-95, native assets in balances and UTxOs, script inputs, certificates, and every transaction form outside the supported set below. `submitTx` is simulated: it records the transaction and returns its id, it never talks to a node. Fees, validity and script execution are not checked.
+
+## Quick start
+
+```ts
+// tests/commit.spec.ts
+import { test, expect, expectSignedBy } from 'cardano-headless-wallet/playwright';
+
+test.use({ walletOptions: { name: 'eternl', networkId: 0, utxos: [{ lovelace: 10_000_000 }] } });
+
+test('commit writes the expected metadata', async ({ page, wallet }) => {
+  await page.goto('/commit');
+  await page.getByRole('button', { name: 'Connect' }).click();
+  await page.getByRole('button', { name: 'Commit' }).click();
+
+  expect(await wallet.calls('signTx')).toHaveLength(1);
+  const tx = await wallet.lastSubmittedTx();
+  expectSignedBy(tx!, wallet);
+});
+```
+
+Reproduce a wrong-network user in one line:
+
+```ts
+test.use({ walletOptions: { networkId: 1 } });   // wallet on mainnet, your dApp expects preprod
+```
+
+Reproduce a user who never answers the signing prompt, and let them answer when your assertion is done:
+
+```ts
+test.use({ walletOptions: { quirks: { signHangs: true } } });
+await page.getByRole('button', { name: 'Commit' }).click();
+await expect(page.getByText('Waiting for your wallet')).toBeVisible();
+await wallet.release('signTx');
+```
+
+The full option and handle reference is in [docs/fixture-api.md](docs/fixture-api.md).
+
+## Defaults are spec-conformant, not convenient
+
+Errors are plain `{ code, info }` objects, as CIP-30 requires, never `Error` instances. Code that reads `err.message` shows up immediately. `getUtxos()` returns `[]` for an empty wallet and `null` when the requested amount cannot be reached. Addresses are hex CBOR bytes. A test that is green with the defaults already tells you something.
+
+## Supported transaction forms
+
+The wallet decides what to sign for these body fields: inputs at key addresses, `required_signers`, withdrawals, plus outputs, fee, ttl, validity start, auxiliary data hash and network id. A requirement it does not own must already be covered by a valid witness in the transaction (multi-party flows), otherwise `signTx` refuses with `TxSignError` ProofGeneration. Anything else (script inputs, certificates, mint, collateral, governance fields, unknown keys) raises a harness diagnosis `ChwError` with code `CHW_UNSUPPORTED_TX_FORM` at `partialSign: false`. A harness diagnosis is never disguised as a wallet error. An input the mock ledger does not know raises `CHW_UNRESOLVED_INPUT` with a hint to add it to `utxos` or `foreignUtxos`.
+
+## The demo dApp
+
+`examples/minimal-dapp` is a framework-free page served under a strict and a permissive Content Security Policy. It scans `window.cardano`, connects, checks the network, signs and submits a fixed transaction. `npm run serve:demo` starts it on port 4173, `npm run test:browser` runs the browser suite against it in Chromium, Firefox and WebKit.
+
+## Development
+
+```bash
+npm install
+npx playwright install chromium firefox webkit
+npm test              # core and page tests in Node
+npm run typecheck
+npm run build         # dist/node and dist/page.js
+npm run test:browser  # builds first, then Playwright in three engines
+npm run bundle:check  # the page bundle must stand alone: no Node, no WASM, no externals
+```
+
+Related work: [cardano-test-wallet](https://github.com/cardanoapi/cardano-test-wallet) (MIT) is the conceptual predecessor, a simulated wallet built for GovTool. Sorbet and Cardano Dev Wallet are browser extensions for manual testing. This project targets CI.
+
+## Spike results
+
+The two tables below record the milestone 1 and 1b spikes that this release is built on.
 
 ## Milestone 1 exit criteria
 
