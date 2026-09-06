@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { Transaction, TransactionBody, TransactionHash } from '@evolution-sdk/evolution';
 import { bytesToHex, hexToBytes } from '../src/core/bytes.js';
 import { Tagged } from '../src/core/cbor/decode.js';
-import { existingVKeyWitnesses, extractBodyBytes, parseBody, txHash } from '../src/core/cbor/tx.js';
+import { assertTransactionShape, existingVKeyWitnesses, extractBodyBytes, parseBody, txHash } from '../src/core/cbor/tx.js';
 import { buildTx } from './helpers/build-tx.js';
 import { syntheticInput } from './helpers/synthetic.js';
 import { FIXTURE_BODY_LENGTH, FIXTURE_TX_HASH } from './fixtures/vectors.js';
@@ -49,6 +49,11 @@ describe('exit criterion 1: body hash', () => {
 
   it('accepts an indefinite-length transaction array with exactly 4 items', () => {
     expect(bytesToHex(extractBodyBytes(hexToBytes('9fa0a0f5f6ff')))).toBe('a0');
+  });
+
+  it('accepts the fixture and rejects four bare integers as a transaction shape', () => {
+    expect(() => assertTransactionShape(fixture)).not.toThrow();
+    expect(() => assertTransactionShape(hexToBytes('8400000000'))).toThrow(/transaction/);
   });
 
   it('rejects a tag 24 wrapper around the inputs, only tag 258 is a set', () => {

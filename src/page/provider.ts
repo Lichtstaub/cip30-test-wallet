@@ -1,11 +1,11 @@
 import { bytesToHex, hexToBytes } from '../core/bytes.js';
-import { Tagged, decode } from '../core/cbor/decode.js';
+import { decode } from '../core/cbor/decode.js';
 import { encode } from '../core/cbor/encode.js';
-import { parseBody } from '../core/cbor/tx.js';
+import { assertTransactionShape, parseBody } from '../core/cbor/tx.js';
 import { APIErrorCode, apiError, TxSignErrorCode, txSignError } from '../core/errors.js';
 import type { SigningKey } from '../core/keys.js';
 import { encodeUtxo, type MemoryLedger } from '../core/ledger.js';
-import { signTx as coreSignTx, unsupportedForms } from '../core/sign-tx.js';
+import { resolveInputs, signTx as coreSignTx, unsupportedForms } from '../core/sign-tx.js';
 import type { Control } from './control.js';
 import type { PageConfig } from './config.js';
 
@@ -41,7 +41,7 @@ export interface Cip30Provider {
   enable(options?: { extensions?: { cip: number }[] }): Promise<Cip30Api>;
 }
 
-/** Builds the injected provider. Task 2 adds getUtxos, getBalance, signTx and submitTx to buildApi. */
+/** Builds the injected provider. */
 export function buildProvider(ctx: WalletContext): Cip30Provider {
   const { control, config } = ctx;
   let enabled = false;
@@ -106,10 +106,17 @@ export function buildApi(ctx: WalletContext): Cip30Api {
       }),
     signTx: (tx, partialSign = false) =>
       control.record('signTx', [tx, partialSign], async () => {
-        requireHex(tx, 'tx');
+        if (typeof tx !== 'string') throw apiError(APIErrorCode.InvalidRequest, 'tx must be a hex string');
+        let bytes: Uint8Array;
+        try {
+          bytes = hexToBytes(tx);
+        } catch {
+          throw apiError(APIErrorCode.InvalidRequest, 'tx must be a hex string');
+        }
         if (partialSign) {
           try {
-            const skipped = await unsupportedForms(parseBody(hexToBytes(tx)), ledger);
+            const body = parseBody(bytes);
+            const skipped = unsupportedForms(body, await resolveInputs(body, ledger));
             if (skipped.length > 0) {
               console.warn('[cardano-headless-wallet] partialSign: true skipped unsupported transaction forms: ' + skipped.join(', '));
             }
@@ -123,44 +130,17 @@ export function buildApi(ctx: WalletContext): Cip30Api {
       }),
     submitTx: (tx) =>
       control.record('submitTx', [tx], async () => {
-        requireHex(tx, 'tx');
-        const bytes = hexToBytes(tx);
-        requireTransactionShape(bytes);
+        if (typeof tx !== 'string') throw apiError(APIErrorCode.InvalidRequest, 'tx must be a hex string');
+        let bytes: Uint8Array;
+        try {
+          bytes = hexToBytes(tx);
+          assertTransactionShape(bytes);
+        } catch (error) {
+          throw apiError(APIErrorCode.InvalidRequest, (error as Error).message);
+        }
         return bytesToHex(await ledger.submit(bytes));
       }),
   };
-}
-
-function requireHex(value: unknown, what: string): void {
-  if (typeof value !== 'string' || value.length % 2 !== 0 || !/^[0-9a-fA-F]*$/.test(value)) {
-    throw apiError(APIErrorCode.InvalidRequest, `${what} must be an even-length hex string`);
-  }
-}
-
-/**
- * Syntactic gate for submitTx: one complete CBOR item shaped like a
- * transaction, [body map, witness set map, is_valid boolean, auxiliary data].
- * Auxiliary data is null, a map (Shelley), an array (Shelley-MA) or tag 259
- * (Alonzo and later). Fees, validity and scripts are not checked, the ledger
- * only records. Without this gate 84a0 (truncated) or 8400000000 (four
- * integers) would be recorded and get a transaction id.
- */
-function requireTransactionShape(bytes: Uint8Array): void {
-  let value: unknown;
-  try {
-    value = decode(bytes);
-  } catch (error) {
-    throw apiError(APIErrorCode.InvalidRequest, `tx is not valid cbor: ${(error as Error).message}`);
-  }
-  if (!Array.isArray(value) || value.length !== 4) {
-    throw apiError(APIErrorCode.InvalidRequest, 'tx must be a cbor array of 4 items');
-  }
-  const [body, witnessSet, isValid, aux] = value;
-  if (!(body instanceof Map)) throw apiError(APIErrorCode.InvalidRequest, 'tx body must be a cbor map');
-  if (!(witnessSet instanceof Map)) throw apiError(APIErrorCode.InvalidRequest, 'tx witness set must be a cbor map');
-  if (typeof isValid !== 'boolean') throw apiError(APIErrorCode.InvalidRequest, 'tx is_valid must be a boolean');
-  const auxOk = aux === null || aux instanceof Map || Array.isArray(aux) || (aux instanceof Tagged && aux.tag === 259n);
-  if (!auxOk) throw apiError(APIErrorCode.InvalidRequest, 'tx auxiliary data must be null, a map, an array or tag 259');
 }
 
 /**
@@ -172,7 +152,6 @@ function requireTransactionShape(bytes: Uint8Array): void {
  * themselves are otherwise unsupported in this release.
  */
 function parseValue(hex: string): { coin: bigint; hasAssets: boolean } {
-  requireHex(hex, 'amount');
   let value: unknown;
   try {
     value = decode(hexToBytes(hex));

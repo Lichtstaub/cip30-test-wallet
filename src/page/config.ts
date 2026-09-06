@@ -22,6 +22,9 @@ export const QUIRK_NAMES = ['lateInjection', 'enableRejected', 'signRejected', '
 
 export type QuirkName = (typeof QUIRK_NAMES)[number];
 
+/** Quirks that only take effect while the provider is being installed, so setQuirk always refuses them. */
+export const INSTALL_TIME_QUIRKS = ['lateInjection'] as const;
+
 export interface QuirkConfig {
   /** Milliseconds before the provider appears in window.cardano. */
   lateInjection?: number;

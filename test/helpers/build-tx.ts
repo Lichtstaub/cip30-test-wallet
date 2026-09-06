@@ -12,7 +12,8 @@
 import { encode } from '../../src/core/cbor/encode.js';
 import { Tagged, type CborValue } from '../../src/core/cbor/decode.js';
 import type { TxInput } from '../../src/core/cbor/tx.js';
-import { bytesToHex } from '../../src/core/bytes.js';
+import { bytesToHex, hexToBytes } from '../../src/core/bytes.js';
+import { syntheticOwnedUtxo } from '../../src/page/install.js';
 
 export interface BuildTxOptions {
   inputs: TxInput[];
@@ -48,4 +49,13 @@ export function buildTx(opts: BuildTxOptions): string {
   }
   const tx = [body, new Map(), true, null];
   return bytesToHex(encode(tx as never));
+}
+
+/** A synthetic address used across tests that need one but do not care which. */
+export const TEST_ADDRESS = hexToBytes('00' + '11'.repeat(28) + '22'.repeat(28));
+
+/** Spend synthetic utxo 0 of the named wallet, pay 9.8 ADA back, 0.2 ADA fee: the shape most signTx and submitTx tests need. */
+export function standardUnsignedTx(walletName: string, address: Uint8Array = TEST_ADDRESS): string {
+  const utxo = syntheticOwnedUtxo(walletName, 0, address, 10_000_000n);
+  return buildTx({ inputs: [utxo.input], outputs: [{ address, lovelace: 9_800_000n }], fee: 200_000n });
 }

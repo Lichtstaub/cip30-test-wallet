@@ -6,8 +6,8 @@ import { encode } from '../src/core/cbor/encode.js';
 import { txHash } from '../src/core/cbor/tx.js';
 import { APIErrorCode, ChwError } from '../src/core/errors.js';
 import { installWallet, syntheticOwnedUtxo, type InstallTarget } from '../src/page/install.js';
-import { buildTx } from './helpers/build-tx.js';
-import { enableChw, testConfig } from './helpers/page.js';
+import { buildTx, standardUnsignedTx, TEST_ADDRESS } from './helpers/build-tx.js';
+import { chwProvider, enableChw, testConfig } from './helpers/page.js';
 
 const setup = async (overrides = {}) => {
   const target: InstallTarget = {};
@@ -22,7 +22,7 @@ describe('journal argument trimming', () => {
   it('trims a missing argument so getUtxos() and enable() without argument journal []', async () => {
     const target: InstallTarget = {};
     const control = installWallet(testConfig(), target);
-    const provider = (target.cardano as Record<string, { enable: (o?: unknown) => Promise<unknown> }>)['chw']!;
+    const provider = chwProvider(target);
     const api = (await provider.enable()) as { getUtxos: () => Promise<unknown> };
     await api.getUtxos();
     expect(control.journal.find((e) => e.method === 'enable')!.args).toEqual([]);
@@ -117,14 +117,11 @@ describe('getUsedAddresses', () => {
 
 describe('signTx and submitTx', () => {
   const config = testConfig();
-  const address = () => hexToBytes('00' + '11'.repeat(28) + '22'.repeat(28));
 
   const unsignedFor = (target: InstallTarget) => {
     // Spend utxo 0 of the installed wallet. The synthetic id is deterministic.
-    const provider = (target.cardano as Record<string, unknown>)['chw'];
-    expect(provider).toBeDefined();
-    const utxo = syntheticOwnedUtxo(config.name, 0, address(), 10_000_000n);
-    return buildTx({ inputs: [utxo.input], outputs: [{ address: address(), lovelace: 9_800_000n }], fee: 200_000n });
+    expect(chwProvider(target)).toBeDefined();
+    return standardUnsignedTx(config.name);
   };
 
   it('signs an owned input and returns only the new witness set', async () => {
@@ -135,7 +132,7 @@ describe('signTx and submitTx', () => {
 
   it('defaults partialSign to false and raises the mock error for an unknown input', async () => {
     const { api } = await setup();
-    const unknown = buildTx({ inputs: [{ txId: new Uint8Array(32).fill(9), index: 0n }], outputs: [{ address: address(), lovelace: 1n }], fee: 1n });
+    const unknown = buildTx({ inputs: [{ txId: new Uint8Array(32).fill(9), index: 0n }], outputs: [{ address: TEST_ADDRESS, lovelace: 1n }], fee: 1n });
     await expect(api.signTx(unknown)).rejects.toBeInstanceOf(ChwError);
   });
 
@@ -170,10 +167,10 @@ describe('signTx and submitTx', () => {
 
   it('warns once naming the skipped form when partialSign signs around an unsupported certificate', async () => {
     const { api, target } = await setup();
-    const utxo = syntheticOwnedUtxo(config.name, 0, address(), 10_000_000n);
+    const utxo = syntheticOwnedUtxo(config.name, 0, TEST_ADDRESS, 10_000_000n);
     const tx = buildTx({
       inputs: [utxo.input],
-      outputs: [{ address: address(), lovelace: 9_800_000n }],
+      outputs: [{ address: TEST_ADDRESS, lovelace: 9_800_000n }],
       fee: 200_000n,
       certificatesPlaceholder: true,
     });

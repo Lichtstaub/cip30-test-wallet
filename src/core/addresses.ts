@@ -1,5 +1,6 @@
 import { bech32 } from '@scure/base';
 import { concat } from './bytes.js';
+import { keyHash } from './keys.js';
 
 // Shelley address header byte: high nibble is the type, low nibble the
 // network tag (0 testnets, 1 mainnet). Type 0 is key payment + key stake,
@@ -21,6 +22,15 @@ export function baseAddressBytes(networkId: 0 | 1, paymentHash: Uint8Array, stak
 export function rewardAddressBytes(networkId: 0 | 1, stakeHash: Uint8Array): Uint8Array {
   assertHash(stakeHash, 'stake');
   return concat(Uint8Array.of(0xe0 | networkId), stakeHash);
+}
+
+/** The base and reward addresses for a payment and stake public key, the pair every caller needs together. */
+export function walletAddresses(networkId: 0 | 1, paymentPub: Uint8Array, stakePub: Uint8Array): { base: Uint8Array; reward: Uint8Array } {
+  const stakeHash = keyHash(stakePub);
+  return {
+    base: baseAddressBytes(networkId, keyHash(paymentPub), stakeHash),
+    reward: rewardAddressBytes(networkId, stakeHash),
+  };
 }
 
 function header(address: Uint8Array): number {

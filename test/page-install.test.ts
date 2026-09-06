@@ -3,19 +3,19 @@ import { hexToBytes } from '../src/core/bytes.js';
 import { toBech32 } from '../src/core/addresses.js';
 import { APIErrorCode } from '../src/core/errors.js';
 import { installWallet, type InstallTarget } from '../src/page/install.js';
-import { enableChw, testConfig } from './helpers/page.js';
+import { chwProvider, enableChw, testConfig } from './helpers/page.js';
 import { EXPECTED_PAYMENT_ADDRESS, EXPECTED_REWARD_ADDRESS } from './fixtures/vectors.js';
 
 describe('installWallet', () => {
   it('adds a CIP-30 provider under window.cardano.<name> without touching other entries', () => {
     const target: InstallTarget = { cardano: { other: { marker: true } } };
     installWallet(testConfig(), target);
-    const cardano = target.cardano as Record<string, { apiVersion: string; name: string; icon: string; supportedExtensions: unknown[] }>;
-    expect(cardano['other']).toEqual({ marker: true });
-    expect(cardano['chw']!.apiVersion).toBe('1');
-    expect(cardano['chw']!.name).toBe('Headless Wallet');
-    expect(cardano['chw']!.icon).toBe('');
-    expect(cardano['chw']!.supportedExtensions).toEqual([]);
+    expect((target.cardano as Record<string, unknown>)['other']).toEqual({ marker: true });
+    const chw = chwProvider(target);
+    expect(chw.apiVersion).toBe('1');
+    expect(chw.name).toBe('Headless Wallet');
+    expect(chw.icon).toBe('');
+    expect(chw.supportedExtensions).toEqual([]);
   });
 
   it('creates window.cardano when it does not exist and exposes the control object', () => {
@@ -29,7 +29,7 @@ describe('installWallet', () => {
   it('enable() returns an api object and isEnabled() flips to true', async () => {
     const target: InstallTarget = {};
     installWallet(testConfig(), target);
-    const provider = (target.cardano as Record<string, { enable: (o?: unknown) => Promise<unknown>; isEnabled: () => Promise<boolean> }>)['chw']!;
+    const provider = chwProvider(target);
     expect(await provider.isEnabled()).toBe(false);
     const api = (await provider.enable({ extensions: [] })) as { getNetworkId: () => Promise<number> };
     expect(typeof api.getNetworkId).toBe('function');
@@ -83,8 +83,7 @@ describe('installWallet', () => {
     const target: InstallTarget = {};
     Object.defineProperty(target, 'cardano', { get: () => undefined, configurable: true });
     installWallet(testConfig(), target);
-    const cardano = target.cardano as Record<string, { apiVersion: string }>;
-    expect(cardano['chw']!.apiVersion).toBe('1');
+    expect(chwProvider(target).apiVersion).toBe('1');
   });
 
   it('rejects a config whose key hex has the wrong length with InvalidRequest', () => {

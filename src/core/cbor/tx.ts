@@ -56,6 +56,28 @@ export function extractBodyBytes(tx: Uint8Array): Uint8Array {
   return tx.slice(start, end);
 }
 
+/**
+ * Syntactic gate for submitTx: one complete CBOR item shaped like a
+ * transaction, [body map, witness set map, is_valid boolean, auxiliary data].
+ * Auxiliary data is null, a map (Shelley) or a tagged value (Alonzo and
+ * later). Fees, validity and scripts are not checked. Without this gate
+ * 84a0 (truncated) or 8400000000 (four bare integers) would be recorded and
+ * get a transaction id.
+ */
+export function assertTransactionShape(tx: Uint8Array): void {
+  const { start, end } = bodyBounds(tx);
+  const body = decodeItem(tx, start).value;
+  if (!(body instanceof Map)) throw new Error('not a transaction: body must be a cbor map');
+  const witnessSetItem = decodeItem(tx, end);
+  if (!(witnessSetItem.value instanceof Map)) throw new Error('not a transaction: witness set must be a cbor map');
+  const isValidItem = decodeItem(tx, witnessSetItem.next);
+  if (typeof isValidItem.value !== 'boolean') throw new Error('not a transaction: is_valid must be a boolean');
+  const aux = decodeItem(tx, isValidItem.next).value;
+  if (!(aux === null || aux instanceof Map || aux instanceof Tagged)) {
+    throw new Error('not a transaction: auxiliary data must be null, a map or a tagged value');
+  }
+}
+
 export function txHash(tx: Uint8Array): Uint8Array {
   return blake2b(extractBodyBytes(tx), { dkLen: 32 });
 }

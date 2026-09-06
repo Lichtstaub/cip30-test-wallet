@@ -1,9 +1,9 @@
 // Node side. Turns the friendly WalletOptions into the JSON PageConfig,
 // deriving keys through Evolution here so the page never needs bip39 or
 // BIP32 code.
-import { baseAddressBytes, rewardAddressBytes, toBech32 } from '../core/addresses.js';
+import { toBech32, walletAddresses } from '../core/addresses.js';
 import { bytesToHex } from '../core/bytes.js';
-import { keyHash, publicKey } from '../core/keys.js';
+import { publicKey } from '../core/keys.js';
 import { deriveAccount, type DerivedAccount } from '../derive/index.js';
 import type { PageConfig, QuirkConfig } from '../page/config.js';
 
@@ -73,8 +73,7 @@ export function prepareWallet(options: WalletOptions = {}): PreparedWallet {
   const account = cachedDeriveAccount(options.mnemonic ?? DEFAULT_MNEMONIC, accountIndex);
   const paymentPub = publicKey(account.payment);
   const stakePub = publicKey(account.stake);
-  const base = baseAddressBytes(networkId, keyHash(paymentPub), keyHash(stakePub));
-  const reward = rewardAddressBytes(networkId, keyHash(stakePub));
+  const { base, reward } = walletAddresses(networkId, paymentPub, stakePub);
 
   const config: PageConfig = {
     name: options.name ?? 'chw',

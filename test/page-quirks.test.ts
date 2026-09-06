@@ -1,15 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { bytesToHex, hexToBytes } from '../src/core/bytes.js';
+import { bytesToHex } from '../src/core/bytes.js';
 import { APIErrorCode, TxSignErrorCode } from '../src/core/errors.js';
-import { installWallet, syntheticOwnedUtxo, type InstallTarget } from '../src/page/install.js';
-import { buildTx } from './helpers/build-tx.js';
-import { enableChw, testConfig } from './helpers/page.js';
+import { installWallet, type InstallTarget } from '../src/page/install.js';
+import { standardUnsignedTx } from './helpers/build-tx.js';
+import { chwProvider, enableChw, testConfig } from './helpers/page.js';
 
-const address = hexToBytes('00' + '11'.repeat(28) + '22'.repeat(28));
-const unsigned = () => {
-  const utxo = syntheticOwnedUtxo('chw', 0, address, 10_000_000n);
-  return buildTx({ inputs: [utxo.input], outputs: [{ address, lovelace: 9_800_000n }], fee: 200_000n });
-};
+const unsigned = () => standardUnsignedTx('chw');
 
 afterEach(() => vi.useRealTimers());
 
@@ -23,7 +19,7 @@ describe('lateInjection', () => {
     vi.advanceTimersByTime(799);
     expect(target.cardano).toBeUndefined();
     vi.advanceTimersByTime(1);
-    expect((target.cardano as Record<string, unknown>)['chw']).toBeDefined();
+    expect(chwProvider(target)).toBeDefined();
   });
 });
 
@@ -31,7 +27,7 @@ describe('enableRejected', () => {
   it('throws APIError Refused from enable and stays disabled', async () => {
     const target: InstallTarget = {};
     installWallet(testConfig({ quirks: { enableRejected: true } }), target);
-    const provider = (target.cardano as Record<string, { enable: () => Promise<unknown>; isEnabled: () => Promise<boolean> }>)['chw']!;
+    const provider = chwProvider(target);
     await expect(provider.enable()).rejects.toEqual(expect.objectContaining({ code: APIErrorCode.Refused }));
     expect(await provider.isEnabled()).toBe(false);
   });

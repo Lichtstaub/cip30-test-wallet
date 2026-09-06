@@ -4,7 +4,7 @@ import { bytesEqual, bytesToHex, hexToBytes } from './bytes.js';
 import { encodeWitnessSet, existingVKeyWitnesses, parseBody, txHash, type ParsedBody } from './cbor/tx.js';
 import { apiError, APIErrorCode, ChwError, TxSignErrorCode, txSignError, type Cip30Error } from './errors.js';
 import { keyHash, publicKey, sign, type SigningKey } from './keys.js';
-import type { Ledger } from './ledger.js';
+import type { Ledger, Utxo } from './ledger.js';
 
 /** True for the plain { code, info } shape every CIP-30 error already has. */
 function isCip30ErrorShape(e: unknown): e is Cip30Error {
@@ -31,6 +31,11 @@ const BODY_KEY_NAMES: Record<string, string> = {
   '22': 'donation',
 };
 
+/** Resolves every input once, in body.inputs order, so callers never look an input up twice. */
+export async function resolveInputs(body: ParsedBody, ledger: Ledger): Promise<Array<Utxo | undefined>> {
+  return Promise.all(body.inputs.map((input) => ledger.resolveInput(input)));
+}
+
 /**
  * Every unsupported item in the body: a body key outside the allowlist, a
  * key input at a script or Byron address, a withdrawal with a script
@@ -38,7 +43,7 @@ const BODY_KEY_NAMES: Record<string, string> = {
  * the same order, so a caller (the page's partialSign: true path) can warn
  * about everything signTx would otherwise have refused.
  */
-export async function unsupportedForms(body: ParsedBody, ledger: Ledger): Promise<string[]> {
+export function unsupportedForms(body: ParsedBody, resolvedInputs: ReadonlyArray<Utxo | undefined>): string[] {
   const found: string[] = [];
   for (const key of body.bodyKeys) {
     if (!SUPPORTED_BODY_KEYS.has(key)) {
@@ -46,8 +51,7 @@ export async function unsupportedForms(body: ParsedBody, ledger: Ledger): Promis
       found.push(`body key ${key}${name ? ` (${name})` : ''}`);
     }
   }
-  for (const input of body.inputs) {
-    const utxo = await ledger.resolveInput(input);
+  for (const utxo of resolvedInputs) {
     if (!utxo) continue; // an unresolved input is CHW_UNRESOLVED_INPUT, raised later by the ownership loop
     if (isScriptPayment(utxo.address)) found.push('an input at a script address');
     if (isByronAddress(utxo.address)) found.push('an input at a Byron address');
@@ -63,8 +67,8 @@ export async function unsupportedForms(body: ParsedBody, ledger: Ledger): Promis
  * Raises CHW_UNSUPPORTED_TX_FORM naming the first unsupported item, if any.
  * With partialSign true the ownership loops below simply skip these instead.
  */
-async function checkSupportedForm(body: ParsedBody, ledger: Ledger, unsupported: (what: string) => never): Promise<void> {
-  const found = await unsupportedForms(body, ledger);
+function checkSupportedForm(body: ParsedBody, resolvedInputs: ReadonlyArray<Utxo | undefined>, unsupported: (what: string) => never): void {
+  const found = unsupportedForms(body, resolvedInputs);
   if (found.length > 0) unsupported(found[0]!);
 }
 
@@ -112,9 +116,11 @@ export async function signTx(txHex: string, partialSign: boolean, ctx: SignConte
   let myPay: Uint8Array;
   let myStake: Uint8Array;
   let covered: Uint8Array[];
+  let resolvedInputs: Array<Utxo | undefined>;
   try {
     tx = hexToBytes(txHex);
     body = parseBody(tx);
+    resolvedInputs = await resolveInputs(body, ctx.ledger);
     const bodyHash = txHash(tx);
     myPay = keyHash(publicKey(ctx.payment));
     myStake = keyHash(publicKey(ctx.stake));
@@ -139,10 +145,10 @@ export async function signTx(txHex: string, partialSign: boolean, ctx: SignConte
     throw new ChwError('CHW_UNSUPPORTED_TX_FORM', `${what} is not supported by this release, use partialSign: true to sign only the wallet's own share`);
   };
 
-  if (!partialSign) await checkSupportedForm(body, ctx.ledger, unsupported);
+  if (!partialSign) checkSupportedForm(body, resolvedInputs, unsupported);
 
-  for (const input of body.inputs) {
-    const utxo = await ctx.ledger.resolveInput(input);
+  for (const [i, input] of body.inputs.entries()) {
+    const utxo = resolvedInputs[i];
     if (!utxo) {
       throw new ChwError(
         'CHW_UNRESOLVED_INPUT',

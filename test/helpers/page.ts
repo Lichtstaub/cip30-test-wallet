@@ -2,7 +2,7 @@ import { bytesToHex } from '../../src/core/bytes.js';
 import { deriveAccount } from '../../src/derive/index.js';
 import type { PageConfig } from '../../src/page/config.js';
 import type { InstallTarget } from '../../src/page/install.js';
-import type { Cip30Api } from '../../src/page/provider.js';
+import type { Cip30Api, Cip30Provider } from '../../src/page/provider.js';
 import { MNEMONIC } from '../fixtures/vectors.js';
 
 export function testConfig(overrides: Partial<PageConfig> = {}): PageConfig {
@@ -25,9 +25,14 @@ export function testConfig(overrides: Partial<PageConfig> = {}): PageConfig {
 
 export type TestApi = Cip30Api;
 
+/** The chw provider under window.cardano, typed instead of cast ad hoc at every call site. */
+export function chwProvider(target: InstallTarget): Cip30Provider {
+  return (target.cardano as Record<string, Cip30Provider>)['chw']!;
+}
+
 /** Calls isEnabled and enable on the installed chw provider and returns the api. */
 export async function enableChw(target: InstallTarget): Promise<TestApi> {
-  const provider = (target.cardano as Record<string, { isEnabled: () => Promise<boolean>; enable: (o?: unknown) => Promise<unknown> }>)['chw']!;
+  const provider = chwProvider(target);
   await provider.isEnabled();
   return (await provider.enable({ extensions: [] })) as TestApi;
 }

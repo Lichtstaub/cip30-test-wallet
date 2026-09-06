@@ -1,8 +1,8 @@
 import { blake2b } from '@noble/hashes/blake2.js';
-import { assertNetwork, baseAddressBytes, rewardAddressBytes } from '../core/addresses.js';
+import { assertNetwork, walletAddresses } from '../core/addresses.js';
 import { hexToBytes } from '../core/bytes.js';
 import { APIErrorCode, apiError } from '../core/errors.js';
-import { keyHash, publicKey, type SigningKey } from '../core/keys.js';
+import { publicKey, type SigningKey } from '../core/keys.js';
 import { MemoryLedger, type Utxo } from '../core/ledger.js';
 import type { KeyConfig, PageConfig } from './config.js';
 import { Control } from './control.js';
@@ -54,8 +54,7 @@ export function buildLedger(config: PageConfig, address: Uint8Array): MemoryLedg
 export function installWallet(config: PageConfig, target: InstallTarget): Control {
   const payment = toSigningKey(config.keys.payment, 'payment');
   const stake = toSigningKey(config.keys.stake, 'stake');
-  const baseAddress = baseAddressBytes(config.networkId, keyHash(publicKey(payment)), keyHash(publicKey(stake)));
-  const rewardAddress = rewardAddressBytes(config.networkId, keyHash(publicKey(stake)));
+  const { base: baseAddress, reward: rewardAddress } = walletAddresses(config.networkId, publicKey(payment), publicKey(stake));
   assertNetwork(baseAddress, config.networkId);
   assertNetwork(rewardAddress, config.networkId);
 
@@ -64,14 +63,11 @@ export function installWallet(config: PageConfig, target: InstallTarget): Contro
   const provider = buildProvider(ctx);
 
   const define = () => {
+    // A plain target.cardano = {} throws when a page defines window.cardano as a getter
+    // without a setter. defineProperty always succeeds and leaves a fresh, writable property
+    // so the init script survives either way.
     if (!target.cardano) {
-      try {
-        target.cardano = {};
-      } catch {
-        // A page that defines window.cardano as a getter without a setter throws on plain
-        // assignment. Fall back to a fresh, writable property so the init script survives.
-        Object.defineProperty(target, 'cardano', { value: {}, configurable: true, writable: true, enumerable: true });
-      }
+      Object.defineProperty(target, 'cardano', { value: {}, configurable: true, writable: true, enumerable: true });
     }
     (target.cardano as Record<string, unknown>)[config.name] = provider;
   };

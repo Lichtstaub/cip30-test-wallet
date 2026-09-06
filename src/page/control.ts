@@ -1,5 +1,5 @@
 import { apiError, APIErrorCode, TxSignErrorCode, txSignError } from '../core/errors.js';
-import { QUIRK_NAMES, type HangableMethod, type JournalEntry, type QuirkConfig, type QuirkName } from './config.js';
+import { INSTALL_TIME_QUIRKS, QUIRK_NAMES, type HangableMethod, type JournalEntry, type QuirkConfig, type QuirkName } from './config.js';
 
 interface Deferred {
   resolve: () => void;
@@ -24,8 +24,8 @@ export class Control {
     if (!(QUIRK_NAMES as readonly string[]).includes(name)) {
       throw apiError(APIErrorCode.InvalidRequest, `unknown quirk "${name}", known quirks: ${QUIRK_NAMES.join(', ')}`);
     }
-    if (name === 'lateInjection') {
-      throw apiError(APIErrorCode.InvalidRequest, 'lateInjection only applies at install time, set it in walletOptions.quirks');
+    if ((INSTALL_TIME_QUIRKS as readonly string[]).includes(name)) {
+      throw apiError(APIErrorCode.InvalidRequest, `${name} only applies at install time, set it in walletOptions.quirks`);
     }
     this.quirks[name] = value;
   }

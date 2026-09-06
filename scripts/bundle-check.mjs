@@ -2,20 +2,16 @@
 // when anything external, Node specific or WASM survives. This is the shape
 // the page will receive through addInitScript, so it must stand alone.
 import { build } from 'esbuild';
-import { PAGE_BUNDLE_MAX_BYTES } from './bundle-limits.mjs';
+import { PAGE_BUNDLE_MAX_BYTES, PAGE_BUNDLE_OPTIONS, PAGE_ENTRY } from './page-bundle.mjs';
 
 const CORE_BUNDLE_MAX_BYTES = 120 * 1024;
-const PAGE_ENTRY = 'src/page/index.ts';
 
 const result = await build({
+  ...PAGE_BUNDLE_OPTIONS,
   entryPoints: ['src/core/sign-tx.ts', 'src/core/ledger.ts', 'src/core/addresses.ts', PAGE_ENTRY],
-  bundle: true,
   format: 'esm',
-  platform: 'browser',
-  target: 'es2022',
   write: false,
   outdir: 'dist',
-  minify: false,
   logLevel: 'silent',
 });
 
