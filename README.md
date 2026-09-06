@@ -4,7 +4,7 @@
 
 It injects a headless CIP-30 wallet into the page under test. The wallet holds real keys, returns real UTxO CBOR, signs real transaction CBOR with a real Ed25519 signature, and records every call in a journal your test can read. A catalogue of quirks reproduces the failures that only show up on a user's machine: a wallet on the wrong network, a wallet that injects late, a user who declines or never answers.
 
-**Status: pre-release.** Milestone 2a. The signing core and the Playwright fixture work end to end against the demo dApp in this repository. Not yet on npm.
+**Status: pre-release.** Milestone 2a. The signing core and the Playwright fixture work end to end against the demo dApp in this repository. Not yet on npm. Not yet supported: `signData`, `getCollateral`, CIP-95, native assets.
 
 ## What is in the box
 
@@ -53,6 +53,10 @@ await wallet.release('signTx');
 
 The full option and handle reference is in [docs/fixture-api.md](docs/fixture-api.md).
 
+## Keys and secrets
+
+The wallet's extended private keys are serialised into the page's init script by design, that is how a headless CIP-30 provider signs without a node process to call back into. So they appear in Playwright traces, HAR files and any dump of the page. Use only throwaway mnemonics for tests, never one that holds real funds. The default mnemonic is the public CSL test vector and holds no funds.
+
 ## Defaults are spec-conformant, not convenient
 
 Errors are plain `{ code, info }` objects, as CIP-30 requires, never `Error` instances. Code that reads `err.message` shows up immediately. `getUtxos()` returns `[]` for an empty wallet and `null` when the requested amount cannot be reached. Addresses are hex CBOR bytes. A test that is green with the defaults already tells you something.
@@ -60,6 +64,12 @@ Errors are plain `{ code, info }` objects, as CIP-30 requires, never `Error` ins
 ## Supported transaction forms
 
 The wallet decides what to sign for these body fields: inputs at key addresses, `required_signers`, withdrawals, plus outputs, fee, ttl, validity start, auxiliary data hash and network id. A requirement it does not own must already be covered by a valid witness in the transaction (multi-party flows), otherwise `signTx` refuses with `TxSignError` ProofGeneration. Anything else (script inputs, certificates, mint, collateral, governance fields, unknown keys) raises a harness diagnosis `ChwError` with code `CHW_UNSUPPORTED_TX_FORM` at `partialSign: false`. A harness diagnosis is never disguised as a wallet error. An input the mock ledger does not know raises `CHW_UNRESOLVED_INPUT` with a hint to add it to `utxos` or `foreignUtxos`.
+
+Evolution SDK always calls `signTx(cbor, true)`, so with Evolution the form check above never refuses. The wallet signs only its own share and logs a `console.warn` naming every skipped form instead.
+
+## Known consumer issues
+
+A consumer SDK expecting real-wallet behaviour can still misbehave against a spec-conformant wallet. See [docs/known-consumer-issues.md](docs/known-consumer-issues.md), currently one entry: Evolution SDK's `cip30Wallet(api).rewardAddress()` rejects the hex-encoded reward address CIP-30 requires.
 
 ## The demo dApp
 
