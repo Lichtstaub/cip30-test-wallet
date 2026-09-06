@@ -1,6 +1,6 @@
 import { bech32 } from '@scure/base';
 import { concat } from './bytes.js';
-import { keyHash } from './keys.js';
+import { keyHash } from './hash.js';
 
 // Shelley address header byte: high nibble is the type, low nibble the
 // network tag (0 testnets, 1 mainnet). Type 0 is key payment + key stake,

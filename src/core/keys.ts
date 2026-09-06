@@ -3,6 +3,9 @@ import { blake2b } from '@noble/hashes/blake2.js';
 import { sha512 } from '@noble/hashes/sha2.js';
 import { concat } from './bytes.js';
 
+// keyHash lives in hash.ts so address code can use it without pulling in the curve.
+export { keyHash } from './hash.js';
+
 // Two key shapes exist in Cardano:
 //   seed:     32 bytes, standard Ed25519 (RFC 8032), the seed is hashed to get
 //             scalar and nonce prefix.
@@ -64,7 +67,3 @@ export function sign(key: SigningKey, message: Uint8Array): Uint8Array {
   return concat(R, bigIntToLittleEndian32(S));
 }
 
-export function keyHash(pub: Uint8Array): Uint8Array {
-  if (pub.length !== 32) throw new Error('public key must be 32 bytes');
-  return blake2b(pub, { dkLen: 28 });
-}
