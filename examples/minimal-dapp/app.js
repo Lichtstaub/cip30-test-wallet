@@ -35,15 +35,17 @@
   }
 
   // Default: one scan shortly after load, like many real dApps.
+  // ?delay=<ms>: delay that first scan, like a page that waits on something else first.
   // ?retry=1: rescan every 200 ms for up to 3 s, like a careful dApp.
   var retry = new URLSearchParams(location.search).get('retry') === '1';
+  var delay = Number(new URLSearchParams(location.search).get('delay')) || 100;
   setTimeout(function () {
     if (scan() || !retry) return;
     var started = Date.now();
     var timer = setInterval(function () {
       if (scan() || Date.now() - started > 3000) clearInterval(timer);
     }, 200);
-  }, 100);
+  }, delay);
 
   var EXPECTED_NETWORK = 0;
   var connectedApi = null;

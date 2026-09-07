@@ -37,10 +37,13 @@ test.describe('doctor --deep against the demo', () => {
     const missed = await runDoctor(`${base}/strict/`, { deep: true, browser: browserName, injectAfterMs: 800, expect: '#wallet-found' });
     expect(missed.deep!.injection.providerVisible).toBe(true);
     expect(missed.deep!.injection.expectVisible).toBe(false);
+    expect(missed.deep!.injection.accessesAfterInjection).toBe(0);
+    expect(missed.deep!.injection.injectedAtMs).toBeGreaterThanOrEqual(800);
     expect(ids(missed)).toContain('wallet-not-detected');
 
     const found = await runDoctor(`${base}/strict/?retry=1`, { deep: true, browser: browserName, injectAfterMs: 800, expect: '#wallet-found', settleMs: 2500 });
     expect(found.deep!.injection.expectVisible).toBe(true);
+    expect(found.deep!.injection.accessesAfterInjection).toBeGreaterThan(0);
     expect(found.deep!.access.count).toBeGreaterThan(1);
     expect(ids(found)).not.toContain('wallet-not-detected');
     expect(ids(found)).not.toContain('single-scan');
@@ -49,5 +52,45 @@ test.describe('doctor --deep against the demo', () => {
   test('a click path runs before the probes are read', async ({ browserName }) => {
     const r = await runDoctor(`${base}/permissive/`, { deep: true, browser: browserName, click: '#connect' });
     expect(r.deep!.access.count).toBeGreaterThanOrEqual(2);
+  });
+
+  test('--settle bounds how long the expect wait runs against a scan delayed past it', async ({ browserName }) => {
+    const tooShort = await runDoctor(`${base}/strict/?delay=2000`, {
+      deep: true,
+      browser: browserName,
+      injectAfterMs: 0,
+      expect: '#wallet-found',
+      settleMs: 1000,
+    });
+    expect(tooShort.deep!.injection.expectVisible).toBe(false);
+    const notDetected = tooShort.findings.find((f) => f.id === 'wallet-not-detected');
+    expect(notDetected).toBeDefined();
+    expect(notDetected!.title).toContain('within 1000 ms');
+
+    const longEnough = await runDoctor(`${base}/strict/?delay=2000`, {
+      deep: true,
+      browser: browserName,
+      injectAfterMs: 0,
+      expect: '#wallet-found',
+      settleMs: 3000,
+    });
+    expect(longEnough.deep!.injection.expectVisible).toBe(true);
+  });
+
+  test('status-403: the page still loads and deep facts fill in, http-status is reported', async ({ browserName }) => {
+    const r = await runDoctor(`${base}/status-403/`, { deep: true, browser: browserName });
+    expect(r.status).toBe(403);
+    expect(ids(r)).toContain('http-status');
+    expect(r.deep).not.toBeNull();
+    expect(typeof r.deep!.access.count).toBe('number');
+    expect(r.deep!.injection.providerVisible).toBe(true);
+  });
+
+  test('a bad click selector is reported as a finding and the deep facts still fill in', async ({ browserName }) => {
+    test.slow();
+    const r = await runDoctor(`${base}/permissive/`, { deep: true, browser: browserName, click: '#does-not-exist' });
+    expect(ids(r)).toContain('click-failed');
+    expect(r.deep).not.toBeNull();
+    expect(typeof r.deep!.access.count).toBe('number');
   });
 });

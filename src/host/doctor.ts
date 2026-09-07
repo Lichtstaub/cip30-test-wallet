@@ -139,7 +139,27 @@ interface ObservedState {
   count: number;
   lastAccessMs: number | null;
   violations: string[];
-  routeProbeEval: 'ok' | 'blocked' | null;
+  routeProbeEval: 'ok' | 'blocked' | 'error' | null;
+  routeProbeError: string | null;
+  injectedAtMs: number | null;
+  countAfterInjection: number;
+}
+
+const CLICK_TIMEOUT_MS = 5000;
+
+/** Escapes a string for literal use inside a RegExp, so a query string or path segment cannot be misread as a glob or regex pattern. */
+function escapeForRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Clicks the selector, swallowing a failure into a message instead of aborting the run, the deep run still reports whatever it observed. */
+async function tryClick(page: PageLike, selector: string): Promise<string | null> {
+  try {
+    await page.click(selector, { timeout: CLICK_TIMEOUT_MS });
+    return null;
+  } catch (e) {
+    return e instanceof Error ? e.message : String(e);
+  }
 }
 
 async function deepRun(report: DoctorReport, policies: Policy[], options: DoctorOptions): Promise<void> {
@@ -163,7 +183,13 @@ async function deepRun(report: DoctorReport, policies: Policy[], options: Doctor
     const page1 = await context1.newPage();
     await page1.addInitScript(OBSERVE_SCRIPT);
     await page1.goto(url, { waitUntil: 'load' });
-    if (options.click) await page1.click(options.click);
+    const loadedUrl = page1.url();
+    let clickAtMs: number | null = null;
+    let clickError: string | null = null;
+    if (options.click) {
+      clickAtMs = (await page1.evaluate(() => Math.round(performance.now()))) as number;
+      clickError = await tryClick(page1, options.click);
+    }
     await page1.waitForTimeout(settleMs);
     const observed = (await page1.evaluate(() => (window as unknown as { __chwDoctor: ObservedState }).__chwDoctor)) as ObservedState;
     const scripts = (await page1.evaluate(() =>
@@ -189,35 +215,82 @@ async function deepRun(report: DoctorReport, policies: Policy[], options: Doctor
     const page2 = await context2.newPage();
     await page2.addInitScript(OBSERVE_SCRIPT);
     await page2.addInitScript(injectScript(injectAfterMs));
+    let routed = false;
     if (target) {
-      await page2.route(target, async (route) => {
+      const pattern = new RegExp(`^${escapeForRegExp(target)}$`);
+      await page2.route(pattern, async (route) => {
+        routed = true;
         const response = await route.fetch();
         await route.fulfill({ response, body: (await response.text()) + ROUTE_PROBE });
       });
     }
     await page2.goto(url, { waitUntil: 'load' });
-    if (options.click) await page2.click(options.click);
-    await page2.waitForTimeout(Math.max(settleMs, injectAfterMs + 500));
+    if (options.click) {
+      const err = await tryClick(page2, options.click);
+      if (err) clickError = err;
+    }
+    const settleWindow = Math.max(settleMs, injectAfterMs + 500);
+    let expectVisible: boolean | null = null;
+    if (options.expect) {
+      expectVisible = await page2.waitForSelector(options.expect, { state: 'visible', timeout: settleWindow }).then(
+        () => true,
+        () => false,
+      );
+    } else {
+      await page2.waitForTimeout(settleWindow);
+    }
     const probed = (await page2.evaluate(() => (window as unknown as { __chwDoctor: ObservedState }).__chwDoctor)) as ObservedState;
     const providerVisible = (await page2.evaluate(() => {
       const c = (window as unknown as { cardano?: Record<string, unknown> }).cardano;
       return Boolean(c && c['chw']);
     })) as boolean;
-    const expectVisible = options.expect ? ((await page2.isVisible(options.expect)) as boolean) : null;
     await context2.close();
-    if (target) routeProbe = probed.routeProbeEval ?? 'skipped';
-    if (target && probed.routeProbeEval === null) routeProbeReason = 'the probe did not run, the script may not have executed';
 
-    const accessesAfterInjection = probed.count;
+    if (target) {
+      if (!routed) {
+        routeProbe = 'skipped';
+        routeProbeReason = 'our interception never matched the script url';
+      } else if (probed.routeProbeEval === null) {
+        routeProbe = 'skipped';
+        routeProbeReason = 'the script was intercepted but the probe did not execute';
+      } else if (probed.routeProbeEval === 'error') {
+        routeProbe = 'error';
+        routeProbeReason = probed.routeProbeError;
+      } else {
+        routeProbe = probed.routeProbeEval;
+      }
+    }
+
     report.deep = {
       browser: browserName,
+      loadedUrl,
+      clickSelector: options.click ?? null,
+      clickAtMs,
+      settleMs,
+      routed,
       access: { firstAccessMs: observed.firstAccessMs, count: observed.count, lastAccessMs: observed.lastAccessMs },
-      violations: observed.violations.filter((v) => v.startsWith('script-src')),
+      violations: observed.violations.filter((v) => v.startsWith('script-src') || v.startsWith('default-src')),
       routeProbe,
       routeProbeReason,
-      injection: { injectedAfterMs: injectAfterMs, providerVisible, accessesAfterInjection, expectSelector: options.expect ?? null, expectVisible },
+      injection: {
+        injectedAfterMs: injectAfterMs,
+        injectedAtMs: probed.injectedAtMs,
+        providerVisible,
+        accessesAfterInjection: probed.countAfterInjection,
+        expectSelector: options.expect ?? null,
+        expectVisible,
+        expectWaitMs: options.expect ? settleWindow : null,
+      },
     };
     deepFindings(report);
+    if (clickError && options.click) {
+      addFinding(report, {
+        id: 'click-failed',
+        severity: 'warning',
+        title: `the click on ${options.click} did not complete`,
+        detail: `page.click('${options.click}', { timeout: ${CLICK_TIMEOUT_MS} }) failed: ${clickError}. Continuing with the observation load's data.`,
+      });
+    }
   } finally {
     await browser.close();
   }
@@ -226,27 +299,43 @@ async function deepRun(report: DoctorReport, policies: Policy[], options: Doctor
 interface PageLike {
   addInitScript(script: string): Promise<void>;
   goto(url: string, options: { waitUntil: 'load' }): Promise<unknown>;
-  click(selector: string): Promise<void>;
+  url(): string;
+  click(selector: string, options: { timeout: number }): Promise<void>;
   waitForTimeout(ms: number): Promise<void>;
+  waitForSelector(selector: string, options: { state: 'visible'; timeout: number }): Promise<unknown>;
   evaluate(fn: () => unknown): Promise<unknown>;
-  isVisible(selector: string): Promise<boolean>;
-  route(url: string, handler: (route: { fetch(): Promise<{ text(): Promise<string> }>; fulfill(opts: { response: unknown; body: string }): Promise<void> }) => Promise<void>): Promise<void>;
+  route(
+    pattern: RegExp,
+    handler: (route: { fetch(): Promise<{ text(): Promise<string> }>; fulfill(opts: { response: unknown; body: string }): Promise<void> }) => Promise<void>,
+  ): Promise<void>;
 }
 
 function deepFindings(report: DoctorReport): void {
   const d = report.deep!;
+  if (d.loadedUrl && report.finalUrl && d.loadedUrl !== report.finalUrl) {
+    addFinding(report, {
+      id: 'deep-url-differs',
+      severity: 'info',
+      title: `the browser ended up on ${d.loadedUrl}, the measurements describe that page`,
+      detail: `the static fetch was for ${report.finalUrl}. A session-aware app, a redirect, or a client-side navigation can send the browser elsewhere after load.`,
+    });
+  }
   if (d.access.count === 0) {
     addFinding(report, {
       id: 'no-cip30-access',
       severity: 'info',
       title: 'no CIP-30 access observed during the executed scenario',
-      detail: 'The page did not read window.cardano while loading' + (d.injection.expectSelector ? ' and after the click' : '') + '. It may do so after a user action. Pass --click <selector> to run that action. The static findings above stand.',
+      detail:
+        `The page did not read window.cardano while loading${d.clickSelector ? ` and after clicking ${d.clickSelector}` : ''}. ` +
+        (d.clickSelector ? 'It may read it after a different user action.' : 'It may do so after a user action, pass --click <selector> to run one.') +
+        ' The static findings above stand.',
     });
   } else if (d.access.count === 1) {
+    const afterClick = d.clickSelector !== null && d.clickAtMs !== null && d.access.firstAccessMs !== null && d.access.firstAccessMs > d.clickAtMs;
     addFinding(report, {
       id: 'single-scan',
       severity: 'warning',
-      title: `window.cardano was read once, after ${d.access.firstAccessMs} ms`,
+      title: `window.cardano was read once, ${d.access.firstAccessMs} ms after load${afterClick ? `, after the click on ${d.clickSelector}` : ''}`,
       detail: 'One read and no retry within the observation window. A wallet that injects later than that read is not proven to be found. Use --inject-after <ms> together with --expect <selector> to test detection of a late wallet.',
     });
   }
@@ -256,6 +345,13 @@ function deepFindings(report: DoctorReport): void {
       severity: 'info',
       title: 'the in-page eval probe did not run',
       detail: `${d.routeProbeReason ?? 'no reason recorded'}. The eval verdict above rests on the policy text alone.`,
+    });
+  } else if (d.routeProbe === 'error') {
+    addFinding(report, {
+      id: 'eval-probe-error',
+      severity: 'info',
+      title: 'the in-page eval probe raised an unexpected error',
+      detail: `${d.routeProbeReason ?? 'no error recorded'}. The eval verdict above rests on the policy text alone.`,
     });
   } else if (report.evalAllowed !== null && (d.routeProbe === 'ok') !== report.evalAllowed) {
     addFinding(report, {
@@ -276,8 +372,8 @@ function deepFindings(report: DoctorReport): void {
     addFinding(report, {
       id: 'wallet-not-detected',
       severity: 'warning',
-      title: `the wallet was injected after ${d.injection.injectedAfterMs} ms but ${d.injection.expectSelector} never became visible`,
-      detail: `The page read window.cardano ${d.injection.accessesAfterInjection} time${d.injection.accessesAfterInjection === 1 ? '' : 's'} in the probe run. If that is 1 and it happened before the injection, the page scans once and gives up.`,
+      title: `the wallet was injected at ${d.injection.injectedAtMs} ms but ${d.injection.expectSelector} was not visible within ${d.injection.expectWaitMs} ms`,
+      detail: `The page read window.cardano ${d.injection.accessesAfterInjection} time${d.injection.accessesAfterInjection === 1 ? '' : 's'} after the injection. Zero means it never looked again, use --settle to widen the window if the dApp starts its scan late.`,
     });
   }
 }

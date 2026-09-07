@@ -15,17 +15,28 @@ export interface PolicySummary {
 
 export interface DeepFacts {
   browser: string;
+  /** The url the browser was actually on after load 1, which can differ from finalUrl (redirect, session, client-side navigation). */
+  loadedUrl: string | null;
+  clickSelector: string | null;
+  /** performance.now() in load 1 right before the click, null when no click was requested. */
+  clickAtMs: number | null;
+  settleMs: number;
+  /** Whether the route interception for the eval probe matched any request at all. */
+  routed: boolean;
   access: { firstAccessMs: number | null; count: number; lastAccessMs: number | null };
   /** violatedDirective:blockedURI:sourceFile:line, from the observation load only. */
   violations: string[];
-  routeProbe: 'ok' | 'blocked' | 'skipped';
+  routeProbe: 'ok' | 'blocked' | 'skipped' | 'error';
   routeProbeReason: string | null;
   injection: {
     injectedAfterMs: number;
+    /** performance.now() when the wallet install actually ran, from the probe load. */
+    injectedAtMs: number | null;
     providerVisible: boolean;
     accessesAfterInjection: number;
     expectSelector: string | null;
     expectVisible: boolean | null;
+    expectWaitMs: number | null;
   };
 }
 
@@ -84,16 +95,20 @@ export function formatHuman(report: DoctorReport): string {
   if (report.deep) {
     const d = report.deep;
     lines.push(`browser: ${d.browser}`);
+    if (d.loadedUrl && d.loadedUrl !== report.finalUrl) lines.push(`loaded url: ${d.loadedUrl}`);
+    if (d.clickSelector) lines.push(`click selector: ${d.clickSelector}`);
     lines.push(
       d.access.count === 0
         ? 'window.cardano: no access observed during the executed scenario'
         : `window.cardano: first access after ${d.access.firstAccessMs} ms, ${d.access.count} access${d.access.count === 1 ? '' : 'es'}, last after ${d.access.lastAccessMs} ms`,
     );
-    lines.push(`page violations (script-src): ${d.violations.length === 0 ? 'none' : d.violations.join(' | ')}`);
+    lines.push(`page violations (script-src, default-src): ${d.violations.length === 0 ? 'none' : d.violations.join(' | ')}`);
     lines.push(`eval probe in a first-party script: ${d.routeProbe}${d.routeProbeReason ? ` (${d.routeProbeReason})` : ''}`);
     lines.push(
-      `injected wallet after ${d.injection.injectedAfterMs} ms: ${d.injection.providerVisible ? 'present in window.cardano' : 'not present'}, ${d.injection.accessesAfterInjection} page access${d.injection.accessesAfterInjection === 1 ? '' : 'es'} after injection` +
-        (d.injection.expectSelector ? `, ${d.injection.expectSelector} ${d.injection.expectVisible ? 'visible' : 'not visible'}` : ''),
+      `injected wallet at ${d.injection.injectedAtMs} ms: ${d.injection.providerVisible ? 'present in window.cardano' : 'not present'}, ${d.injection.accessesAfterInjection} page read${d.injection.accessesAfterInjection === 1 ? '' : 's'} after that` +
+        (d.injection.expectSelector
+          ? `, ${d.injection.expectSelector} ${d.injection.expectVisible ? 'visible' : 'not visible'} within ${d.injection.expectWaitMs} ms`
+          : ''),
     );
   }
   lines.push('');

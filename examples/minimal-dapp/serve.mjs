@@ -17,14 +17,29 @@ const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; ch
 // Appending anything to those scripts breaks the page, which is what doctor must detect.
 const sha = (buf) => `sha256-${createHash('sha256').update(buf).digest('base64')}`;
 
+// The two script hashes never change while the server runs, computing them on every
+// request to /hashed/ is wasted work, so they are computed once, lazily, and cached.
+let hashedCache = null;
+async function hashedScripts() {
+  if (!hashedCache) {
+    const app = await readFile(join(root, 'app.js'));
+    const demoTx = await readFile(join(root, 'demo-tx.js'));
+    hashedCache = { appHash: sha(app), demoTxHash: sha(demoTx) };
+  }
+  return hashedCache;
+}
+
 // How each variant delivers its policy: as an enforced header, as a
-// report-only header, or as a meta tag inside the document.
+// report-only header, or as a meta tag inside the document. status-403
+// answers every request with the strict document and an error status, to
+// test doctor's handling of a bot wall or a broken deployment.
 const variants = {
   strict: { header: CSP.strict },
   permissive: { header: CSP.permissive },
   'meta-strict': { meta: CSP.strict },
   'report-only': { reportOnly: CSP.strict },
   hashed: { hashed: true },
+  'status-403': { header: CSP.strict, status: 403 },
 };
 export const VARIANTS = Object.keys(variants);
 
@@ -46,7 +61,8 @@ export function createDemoServer() {
       res.end();
       return;
     }
-    const file = rest.join('/') || 'index.html';
+    // status-403 always answers with the strict index.html, whatever path was requested.
+    const file = mode.status ? 'index.html' : rest.join('/') || 'index.html';
     try {
       let body = await readFile(join(root, file));
       const headers = { 'content-type': types[extname(file)] ?? 'application/octet-stream', 'cache-control': 'no-store' };
@@ -54,19 +70,18 @@ export function createDemoServer() {
       if (mode.reportOnly) headers['content-security-policy-report-only'] = mode.reportOnly;
       if (mode.meta && file === 'index.html') body = Buffer.from(withMeta(body.toString('utf8'), mode.meta));
       if (mode.hashed) {
-        const app = await readFile(join(root, 'app.js'));
-        const demoTx = await readFile(join(root, 'demo-tx.js'));
-        headers['content-security-policy'] = `default-src 'none'; script-src '${sha(app)}' '${sha(demoTx)}'; style-src 'self' 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'`;
+        const { appHash, demoTxHash } = await hashedScripts();
+        headers['content-security-policy'] = `default-src 'none'; script-src '${appHash}' '${demoTxHash}'; style-src 'self' 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'`;
         if (file === 'index.html') {
           body = Buffer.from(
             body
               .toString('utf8')
-              .replace('<script src="demo-tx.js">', `<script src="demo-tx.js" integrity="${sha(demoTx)}">`)
-              .replace('<script src="app.js">', `<script src="app.js" integrity="${sha(app)}">`),
+              .replace('<script src="demo-tx.js">', `<script src="demo-tx.js" integrity="${demoTxHash}">`)
+              .replace('<script src="app.js">', `<script src="app.js" integrity="${appHash}">`),
           );
         }
       }
-      res.writeHead(200, headers);
+      res.writeHead(mode.status ?? 200, headers);
       res.end(body);
     } catch {
       res.writeHead(404).end('not found');
