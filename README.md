@@ -4,7 +4,7 @@
 
 It injects a headless CIP-30 wallet into the page under test. The wallet holds real keys, returns real UTxO CBOR, signs real transaction CBOR with a real Ed25519 signature, and records every call in a journal your test can read. A catalogue of quirks reproduces the failures that only show up on a user's machine: a wallet on the wrong network, a wallet that injects late, a user who declines or never answers.
 
-**Status: pre-release.** Milestone 2a. The signing core and the Playwright fixture work end to end against the demo dApp in this repository. Not yet on npm. Not yet supported: `signData`, `getCollateral`, CIP-95, native assets.
+**Status: pre-release.** Milestone 2b. The signing core, the Playwright fixture and the `doctor` command work end to end against the demo dApp in this repository. Not yet on npm. Not yet supported: `signData`, `getCollateral`, CIP-95, native assets.
 
 ## What is in the box
 
@@ -80,7 +80,7 @@ A consumer SDK expecting real-wallet behaviour can still misbehave against a spe
 
 ```bash
 npx cardano-headless-wallet doctor https://your-dapp.example
-npx cardano-headless-wallet doctor https://your-dapp.example --deep --browser webkit --click '#connect' --expect '#wallet-found'
+npx cardano-headless-wallet doctor https://your-dapp.example --deep --browser webkit --click '#connect' --expect '#wallet-found' --settle 3000
 ```
 
 Static: secure context, every content security policy in headers and meta tags, and whether the effective script policy blocks `eval`, which is how mobile wallet in-app browsers inject. Deep: when the page reads `window.cardano` and whether it retries, whether the policy really blocks `eval` inside a first-party script, and whether an injected wallet, optionally a late one, is detected. Exit 0 clean, 1 findings, 2 run failed. Details in [docs/doctor.md](docs/doctor.md).
