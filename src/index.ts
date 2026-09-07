@@ -13,3 +13,6 @@ export { installWallet, syntheticOwnedUtxo, buildLedger } from './page/install.j
 export * from './host/config.js';
 export * from './host/bundle.js';
 export * from './host/assert.js';
+export * from './checks/csp.js';
+export * from './checks/report.js';
+export * from './host/doctor.js';
