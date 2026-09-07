@@ -1,6 +1,5 @@
 import { collectPolicies, evaluateEval, hasHashSources, inlineHashConflict, isSecureContextUrl, type EvalVerdict, type Policy } from '../checks/csp.js';
 import { addFinding, emptyReport, type DeepFacts, type DoctorReport } from '../checks/report.js';
-import { OBSERVE_SCRIPT, ROUTE_PROBE, injectScript } from './doctor-probes.js';
 
 export interface DoctorOptions {
   deep?: boolean;
@@ -168,6 +167,10 @@ async function deepRun(report: DoctorReport, policies: Policy[], options: Doctor
   const injectAfterMs = options.injectAfterMs ?? 0;
   const url = report.finalUrl ?? report.url;
   const origin = new URL(url).origin;
+
+  // Loaded only here, never at module scope, so a static run never pulls in the wallet
+  // bundle, key derivation or Evolution: none of that is needed unless --deep is used.
+  const { OBSERVE_SCRIPT, ROUTE_PROBE, injectScript } = await import('./doctor-probes.js');
 
   let launchers: { chromium: unknown; firefox: unknown; webkit: unknown };
   try {
