@@ -3,11 +3,13 @@ import { pathToFileURL } from 'node:url';
 import { exitCode, formatHuman, formatJson } from '../checks/report.js';
 import { runDoctor, type DoctorOptions } from '../host/doctor.js';
 
-export const USAGE = `usage: cardano-headless-wallet doctor <url> [--deep] [--browser chromium|firefox|webkit] [--click <selector>] [--expect <selector>] [--inject-after <ms>] [--json]
+export const USAGE = `usage: cardano-headless-wallet doctor <url> [--deep] [--browser chromium|firefox|webkit] [--click <selector>] [--expect <selector>] [--inject-after <ms>] [--timeout <ms>] [--settle <ms>] [--json]
 
 Checks a deployed dApp for the traps that keep Cardano wallets from injecting:
 secure context, content security policy versus eval, and with --deep, when the
 page touches window.cardano and whether an injected wallet is detected.
+--timeout bounds the static fetch (default 15000 ms), --settle bounds how long
+the deep run waits after load and click before reading the probes.
 Exit codes: 0 clean, 1 findings, 2 the run itself failed.`;
 
 type Parsed =
@@ -22,10 +24,14 @@ export function parseArgs(argv: string[]): Parsed {
   if (argv[0] !== 'doctor') return { command: 'error', message: `unknown command ${argv[0]}` };
   const [, url, ...rest] = argv;
   if (!url) return { command: 'error', message: 'missing url' };
+  let parsedUrl: URL;
   try {
-    new URL(url);
+    parsedUrl = new URL(url);
   } catch {
     return { command: 'error', message: `not a url: ${url}` };
+  }
+  if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+    return { command: 'error', message: `not a http or https url: ${url}` };
   }
   const options: DoctorOptions = {};
   let json = false;
@@ -49,6 +55,14 @@ export function parseArgs(argv: string[]): Parsed {
         const ms = Number(value());
         if (!Number.isInteger(ms) || ms < 0) return { command: 'error', message: '--inject-after needs a non-negative integer' };
         options.injectAfterMs = ms;
+      } else if (flag === '--timeout') {
+        const ms = Number(value());
+        if (!Number.isInteger(ms) || ms < 0) return { command: 'error', message: '--timeout needs a non-negative integer' };
+        options.timeoutMs = ms;
+      } else if (flag === '--settle') {
+        const ms = Number(value());
+        if (!Number.isInteger(ms) || ms < 0) return { command: 'error', message: '--settle needs a non-negative integer' };
+        options.settleMs = ms;
       } else return { command: 'error', message: `unknown flag ${flag}` };
     } catch (e) {
       return { command: 'error', message: e instanceof Error ? e.message : String(e) };

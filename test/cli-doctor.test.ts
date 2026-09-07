@@ -24,6 +24,20 @@ describe('parseArgs', () => {
     expect(parseArgs([])).toEqual({ command: 'help' });
     expect(parseArgs(['--help'])).toEqual({ command: 'help' });
   });
+
+  it('rejects a url that is not http or https', () => {
+    expect(parseArgs(['doctor', 'mailto:x'])).toMatchObject({ command: 'error', message: expect.stringMatching(/not a http or https url/) });
+  });
+
+  it('parses --timeout and --settle into the options', () => {
+    const r = parseArgs(['doctor', 'https://x.example/', '--timeout', '5000', '--settle', '2500']);
+    expect(r).toEqual({ command: 'doctor', url: 'https://x.example/', json: false, options: { timeoutMs: 5000, settleMs: 2500 } });
+  });
+
+  it('rejects negative or non-integer --timeout and --settle values', () => {
+    expect(parseArgs(['doctor', 'https://x.example/', '--timeout', '-1'])).toMatchObject({ command: 'error' });
+    expect(parseArgs(['doctor', 'https://x.example/', '--settle', 'nope'])).toMatchObject({ command: 'error' });
+  });
 });
 
 describe('main', () => {

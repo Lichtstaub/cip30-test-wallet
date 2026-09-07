@@ -13,9 +13,14 @@ export interface DoctorOptions {
   injectAfterMs?: number;
   /** How long to wait after load and click before reading the probes. */
   settleMs?: number;
+  /** Timeout for the static fetch, in milliseconds. */
+  timeoutMs?: number;
   /** Test seam. */
   fetchImpl?: typeof fetch;
 }
+
+const DEFAULT_TIMEOUT_MS = 15000;
+const DOCTOR_USER_AGENT = 'Mozilla/5.0 (compatible; cardano-headless-wallet doctor)';
 
 const EVAL_DETAIL =
   "The effective script policy has no 'unsafe-eval'. Mobile wallet in-app browsers inject their CIP-30 provider through eval, " +
@@ -72,15 +77,26 @@ export function staticFindings(report: DoctorReport, policies: Policy[], verdict
 export async function runDoctor(url: string, options: DoctorOptions = {}): Promise<DoctorReport> {
   const report = emptyReport(url);
   const fetchImpl = options.fetchImpl ?? fetch;
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   let response: Response;
   try {
-    response = await fetchImpl(url, { redirect: 'follow', headers: { accept: 'text/html' } });
+    response = await fetchImpl(url, {
+      redirect: 'follow',
+      headers: { accept: 'text/html', 'user-agent': DOCTOR_USER_AGENT },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
   } catch (e) {
-    report.errors.push(`could not fetch ${url}: ${e instanceof Error ? e.message : String(e)}`);
+    if (e instanceof Error && e.name === 'TimeoutError') {
+      report.errors.push(`fetch of ${url} timed out after ${timeoutMs} ms`);
+    } else {
+      report.errors.push(`could not fetch ${url}: ${e instanceof Error ? e.message : String(e)}`);
+    }
     return report;
   }
   const finalUrl = response.url && response.url.length > 0 ? response.url : url;
   report.finalUrl = finalUrl;
+  report.status = response.status;
+  report.contentType = response.headers.get('content-type');
   report.secureContext = isSecureContextUrl(new URL(finalUrl));
   const html = await response.text();
   const headers: Array<[string, string]> = [];
@@ -90,6 +106,23 @@ export async function runDoctor(url: string, options: DoctorOptions = {}): Promi
   const verdict = evaluateEval(policies);
   report.evalAllowed = verdict.allowed;
   staticFindings(report, policies, verdict);
+  if (report.status !== null && (report.status < 200 || report.status > 299)) {
+    addFinding(report, {
+      id: 'http-status',
+      severity: 'error',
+      title: `the server answered ${report.status}`,
+      detail:
+        'The analysis below describes whatever the server returned (a challenge page, an error page, a redirect target), not necessarily the dApp. Node fetch sends no browser user agent, bot walls often answer it with a challenge.',
+    });
+  }
+  if (report.contentType !== null && !report.contentType.includes('text/html')) {
+    addFinding(report, {
+      id: 'not-html',
+      severity: 'warning',
+      title: `the response content type is ${report.contentType}, not text/html`,
+      detail: 'The policies above were read from a non-HTML response. Meta tags could not exist there, so only header policies are complete.',
+    });
+  }
 
   if (options.deep) {
     try {

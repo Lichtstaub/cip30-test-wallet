@@ -32,6 +32,8 @@ export interface DeepFacts {
 export interface DoctorReport {
   url: string;
   finalUrl: string | null;
+  status: number | null;
+  contentType: string | null;
   secureContext: boolean | null;
   policies: PolicySummary[];
   evalAllowed: boolean | null;
@@ -42,7 +44,18 @@ export interface DoctorReport {
 }
 
 export function emptyReport(url: string): DoctorReport {
-  return { url, finalUrl: null, secureContext: null, policies: [], evalAllowed: null, findings: [], deep: null, errors: [] };
+  return {
+    url,
+    finalUrl: null,
+    status: null,
+    contentType: null,
+    secureContext: null,
+    policies: [],
+    evalAllowed: null,
+    findings: [],
+    deep: null,
+    errors: [],
+  };
 }
 
 export function addFinding(report: DoctorReport, finding: Finding): void {
@@ -63,6 +76,7 @@ export function formatHuman(report: DoctorReport): string {
   lines.push(`cardano-headless-wallet doctor`);
   lines.push(`url: ${report.url}`);
   if (report.finalUrl && report.finalUrl !== report.url) lines.push(`final url: ${report.finalUrl}`);
+  if (report.status !== null) lines.push(`status: ${report.status}`);
   if (report.secureContext !== null) lines.push(`secure context: ${report.secureContext ? 'yes' : 'no'}`);
   if (report.policies.length === 0) lines.push('csp: none');
   for (const p of report.policies) lines.push(`csp (${p.source}${p.enforced ? '' : ', report-only'}): ${p.raw}`);

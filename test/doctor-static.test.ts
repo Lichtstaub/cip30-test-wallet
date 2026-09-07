@@ -69,6 +69,37 @@ describe('runDoctor, static', () => {
     expect(r.errors.length).toBeGreaterThan(0);
     expect(exitCode(r)).toBe(2);
   });
+
+  it('reports a non-2xx status as an error finding and exits 1', async () => {
+    const r = await runDoctor('http://example.invalid/', {
+      fetchImpl: async () => new Response('<html></html>', { status: 403, headers: { 'content-type': 'text/html' } }),
+    });
+    expect(r.status).toBe(403);
+    expect(ids(r)).toContain('http-status');
+    expect(r.findings.find((f) => f.id === 'http-status')!.severity).toBe('error');
+    expect(exitCode(r)).toBe(1);
+  });
+
+  it('reports a non-html content type as a warning finding', async () => {
+    const r = await runDoctor('http://example.invalid/', {
+      fetchImpl: async () => new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }),
+    });
+    expect(r.contentType).toBe('application/json');
+    expect(ids(r)).toContain('not-html');
+    expect(r.findings.find((f) => f.id === 'not-html')!.severity).toBe('warning');
+  });
+
+  it('passes an aborting signal built from the configured timeout to fetchImpl', async () => {
+    let capturedSignal: unknown;
+    await runDoctor(`${base}/strict/`, {
+      timeoutMs: 50,
+      fetchImpl: async (input, init) => {
+        capturedSignal = init?.signal;
+        return fetch(input, init);
+      },
+    });
+    expect(capturedSignal).toBeInstanceOf(AbortSignal);
+  });
 });
 
 describe('formatters', () => {
