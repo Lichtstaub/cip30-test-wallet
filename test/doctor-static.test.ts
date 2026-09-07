@@ -3,6 +3,7 @@ import type { AddressInfo } from 'node:net';
 import { createDemoServer } from '../examples/minimal-dapp/serve.mjs';
 import { exitCode, formatHuman, formatJson } from '../src/checks/report.js';
 import { runDoctor } from '../src/host/doctor.js';
+import { findingIds as ids } from './helpers/doctor.js';
 
 let base = '';
 const server = createDemoServer();
@@ -12,8 +13,6 @@ beforeAll(async () => {
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
 afterAll(() => new Promise<void>((resolve) => server.close(() => resolve())));
-
-const ids = (r: Awaited<ReturnType<typeof runDoctor>>) => r.findings.map((f) => f.id);
 
 describe('runDoctor, static', () => {
   it('flags blocked eval on the strict variant and exits 1', async () => {

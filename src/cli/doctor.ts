@@ -19,6 +19,13 @@ type Parsed =
 
 const BROWSERS = new Set(['chromium', 'firefox', 'webkit']);
 
+/** The value following rest[i], or undefined when the flag is the last argument. next is the index that value was read from. */
+function takeValue(rest: string[], i: number): { value: string; next: number } | undefined {
+  const value = rest[i + 1];
+  if (value === undefined) return undefined;
+  return { value, next: i + 1 };
+}
+
 export function parseArgs(argv: string[]): Parsed {
   if (argv.length === 0 || argv[0] === '--help' || argv[0] === '-h') return { command: 'help' };
   if (argv[0] !== 'doctor') return { command: 'error', message: `unknown command ${argv[0]}` };
@@ -37,36 +44,46 @@ export function parseArgs(argv: string[]): Parsed {
   let json = false;
   for (let i = 0; i < rest.length; i++) {
     const flag = rest[i]!;
-    const value = () => {
-      const v = rest[++i];
-      if (v === undefined) throw new Error(`${flag} needs a value`);
-      return v;
-    };
-    try {
-      if (flag === '--deep') options.deep = true;
-      else if (flag === '--json') json = true;
-      else if (flag === '--browser') {
-        const b = value();
-        if (!BROWSERS.has(b)) return { command: 'error', message: `unknown browser ${b}` };
-        options.browser = b as NonNullable<DoctorOptions['browser']>;
-      } else if (flag === '--click') options.click = value();
-      else if (flag === '--expect') options.expect = value();
-      else if (flag === '--inject-after') {
-        const ms = Number(value());
-        if (!Number.isInteger(ms) || ms < 0) return { command: 'error', message: '--inject-after needs a non-negative integer' };
-        options.injectAfterMs = ms;
-      } else if (flag === '--timeout') {
-        const ms = Number(value());
-        if (!Number.isInteger(ms) || ms < 0) return { command: 'error', message: '--timeout needs a non-negative integer' };
-        options.timeoutMs = ms;
-      } else if (flag === '--settle') {
-        const ms = Number(value());
-        if (!Number.isInteger(ms) || ms < 0) return { command: 'error', message: '--settle needs a non-negative integer' };
-        options.settleMs = ms;
-      } else return { command: 'error', message: `unknown flag ${flag}` };
-    } catch (e) {
-      return { command: 'error', message: e instanceof Error ? e.message : String(e) };
-    }
+    if (flag === '--deep') options.deep = true;
+    else if (flag === '--json') json = true;
+    else if (flag === '--browser') {
+      const v = takeValue(rest, i);
+      if (!v) return { command: 'error', message: `${flag} needs a value` };
+      i = v.next;
+      if (!BROWSERS.has(v.value)) return { command: 'error', message: `unknown browser ${v.value}` };
+      options.browser = v.value as NonNullable<DoctorOptions['browser']>;
+    } else if (flag === '--click') {
+      const v = takeValue(rest, i);
+      if (!v) return { command: 'error', message: `${flag} needs a value` };
+      i = v.next;
+      options.click = v.value;
+    } else if (flag === '--expect') {
+      const v = takeValue(rest, i);
+      if (!v) return { command: 'error', message: `${flag} needs a value` };
+      i = v.next;
+      options.expect = v.value;
+    } else if (flag === '--inject-after') {
+      const v = takeValue(rest, i);
+      if (!v) return { command: 'error', message: `${flag} needs a value` };
+      i = v.next;
+      const ms = Number(v.value);
+      if (!Number.isInteger(ms) || ms < 0) return { command: 'error', message: '--inject-after needs a non-negative integer' };
+      options.injectAfterMs = ms;
+    } else if (flag === '--timeout') {
+      const v = takeValue(rest, i);
+      if (!v) return { command: 'error', message: `${flag} needs a value` };
+      i = v.next;
+      const ms = Number(v.value);
+      if (!Number.isInteger(ms) || ms < 0) return { command: 'error', message: '--timeout needs a non-negative integer' };
+      options.timeoutMs = ms;
+    } else if (flag === '--settle') {
+      const v = takeValue(rest, i);
+      if (!v) return { command: 'error', message: `${flag} needs a value` };
+      i = v.next;
+      const ms = Number(v.value);
+      if (!Number.isInteger(ms) || ms < 0) return { command: 'error', message: '--settle needs a non-negative integer' };
+      options.settleMs = ms;
+    } else return { command: 'error', message: `unknown flag ${flag}` };
   }
   return { command: 'doctor', url, json, options };
 }

@@ -1,5 +1,7 @@
+import type { Browser, BrowserContext, BrowserType, Page } from '@playwright/test';
 import { collectPolicies, evaluateEval, hasHashSources, inlineHashConflict, isSecureContextUrl, type EvalVerdict, type Policy } from '../checks/csp.js';
 import { addFinding, emptyReport, type DeepFacts, type DoctorReport } from '../checks/report.js';
+import type { ObservedState } from './doctor-probes.js';
 
 export interface DoctorOptions {
   deep?: boolean;
@@ -16,6 +18,8 @@ export interface DoctorOptions {
   timeoutMs?: number;
   /** Test seam. */
   fetchImpl?: typeof fetch;
+  /** A Browser to reuse instead of launching one. The caller owns its lifetime, doctor closes only what it created. */
+  browserImpl?: Browser;
 }
 
 const DEFAULT_TIMEOUT_MS = 15000;
@@ -133,17 +137,6 @@ export async function runDoctor(url: string, options: DoctorOptions = {}): Promi
   return report;
 }
 
-interface ObservedState {
-  firstAccessMs: number | null;
-  count: number;
-  lastAccessMs: number | null;
-  violations: string[];
-  routeProbeEval: 'ok' | 'blocked' | 'error' | null;
-  routeProbeError: string | null;
-  injectedAtMs: number | null;
-  countAfterInjection: number;
-}
-
 const CLICK_TIMEOUT_MS = 5000;
 
 /** Escapes a string for literal use inside a RegExp, so a query string or path segment cannot be misread as a glob or regex pattern. */
@@ -152,13 +145,36 @@ function escapeForRegExp(s: string): string {
 }
 
 /** Clicks the selector, swallowing a failure into a message instead of aborting the run, the deep run still reports whatever it observed. */
-async function tryClick(page: PageLike, selector: string): Promise<string | null> {
+async function tryClick(page: Page, selector: string): Promise<string | null> {
   try {
     await page.click(selector, { timeout: CLICK_TIMEOUT_MS });
     return null;
   } catch (e) {
     return e instanceof Error ? e.message : String(e);
   }
+}
+
+/** Which first-party script the eval probe can be appended to, and why not when none qualifies. Same decision either load would make, kept pure for unit testing. */
+export function pickProbeTarget(
+  policies: Policy[],
+  scripts: Array<{ src: string; integrity: string | null }>,
+  origin: string,
+): { target: string | null; reason: string | null } {
+  if (hasHashSources(policies)) return { target: null, reason: 'script-src pins scripts by hash, appending a probe would break the page' };
+  const firstParty = scripts.filter((s) => new URL(s.src).origin === origin);
+  if (firstParty.length === 0) return { target: null, reason: 'no external first-party script to append the probe to' };
+  const candidate = firstParty.find((s) => !s.integrity);
+  if (!candidate) return { target: null, reason: 'every first-party script carries an integrity attribute' };
+  return { target: candidate.src, reason: null };
+}
+
+/** The route probe outcome once the probe load has run, given no target was ever picked or the interception did not behave as expected. */
+export function resolveRouteProbe(target: string | null, routed: boolean, state: ObservedState): { routeProbe: DeepFacts['routeProbe']; routeProbeReason: string | null } {
+  if (!target) return { routeProbe: 'skipped', routeProbeReason: null };
+  if (!routed) return { routeProbe: 'skipped', routeProbeReason: 'our interception never matched the script url' };
+  if (state.routeProbeEval === null) return { routeProbe: 'skipped', routeProbeReason: 'the script was intercepted but the probe did not execute' };
+  if (state.routeProbeEval === 'error') return { routeProbe: 'error', routeProbeReason: state.routeProbeError };
+  return { routeProbe: state.routeProbeEval, routeProbeReason: null };
 }
 
 async function deepRun(report: DoctorReport, policies: Policy[], options: DoctorOptions): Promise<void> {
@@ -172,145 +188,147 @@ async function deepRun(report: DoctorReport, policies: Policy[], options: Doctor
   // bundle, key derivation or Evolution: none of that is needed unless --deep is used.
   const { OBSERVE_SCRIPT, ROUTE_PROBE, injectScript } = await import('./doctor-probes.js');
 
-  let launchers: { chromium: unknown; firefox: unknown; webkit: unknown };
-  try {
-    launchers = (await import('@playwright/test')) as never;
-  } catch {
-    throw new Error('--deep needs @playwright/test installed (npm i -D @playwright/test && npx playwright install)');
+  /** Opens a page on the shared context and registers the observation script plus any extra init scripts. */
+  async function openObservedPage(context: BrowserContext, ...initScripts: string[]): Promise<Page> {
+    const page = await context.newPage();
+    await page.addInitScript(OBSERVE_SCRIPT);
+    for (const script of initScripts) await page.addInitScript(script);
+    return page;
   }
-  const launcher = launchers[browserName] as { launch(): Promise<{ newContext(): Promise<unknown>; close(): Promise<void> }> };
-  const browser = await launcher.launch();
-  try {
-    // Load 1: observe. No probe, no wallet, so violations and accesses are the page's own.
-    const context1 = (await browser.newContext()) as { newPage(): Promise<PageLike>; close(): Promise<void> };
-    const page1 = await context1.newPage();
-    await page1.addInitScript(OBSERVE_SCRIPT);
-    await page1.goto(url, { waitUntil: 'load' });
-    const loadedUrl = page1.url();
+
+  /** Load 1: observe. No probe, no wallet, so violations and accesses are the page's own. */
+  async function observationLoad(
+    context: BrowserContext,
+    loadUrl: string,
+    loadOptions: DoctorOptions,
+  ): Promise<{ state: ObservedState; scripts: Array<{ src: string; integrity: string | null }>; loadedUrl: string; clickAtMs: number | null; clickError: string | null }> {
+    const page = await openObservedPage(context);
+    await page.goto(loadUrl, { waitUntil: 'load' });
+    const loadedUrl = page.url();
     let clickAtMs: number | null = null;
     let clickError: string | null = null;
-    if (options.click) {
-      clickAtMs = (await page1.evaluate(() => Math.round(performance.now()))) as number;
-      clickError = await tryClick(page1, options.click);
+    if (loadOptions.click) {
+      clickAtMs = (await page.evaluate(() => Math.round(performance.now()))) as number;
+      clickError = await tryClick(page, loadOptions.click);
     }
-    await page1.waitForTimeout(settleMs);
-    const observed = (await page1.evaluate(() => (window as unknown as { __chwDoctor: ObservedState }).__chwDoctor)) as ObservedState;
-    const scripts = (await page1.evaluate(() =>
-      Array.from(document.querySelectorAll('script[src]')).map((s) => ({ src: (s as HTMLScriptElement).src, integrity: s.getAttribute('integrity') })),
-    )) as Array<{ src: string; integrity: string | null }>;
-    await context1.close();
+    await page.waitForTimeout(loadOptions.settleMs ?? 1500);
+    const { state, scripts } = (await page.evaluate(() => ({
+      state: window.__chwDoctor!,
+      scripts: Array.from(document.querySelectorAll('script[src]')).map((s) => ({ src: (s as HTMLScriptElement).src, integrity: s.getAttribute('integrity') })),
+    }))) as { state: ObservedState; scripts: Array<{ src: string; integrity: string | null }> };
+    await page.close();
+    return { state, scripts, loadedUrl, clickAtMs, clickError };
+  }
 
-    // Decide whether the eval probe can be appended to a first-party script.
-    let routeProbe: DeepFacts['routeProbe'] = 'skipped';
-    let routeProbeReason: string | null = null;
-    let target: string | null = null;
-    const firstParty = scripts.filter((s) => new URL(s.src).origin === origin);
-    if (hasHashSources(policies)) routeProbeReason = 'script-src pins scripts by hash, appending a probe would break the page';
-    else if (firstParty.length === 0) routeProbeReason = 'no external first-party script to append the probe to';
-    else {
-      const candidate = firstParty.find((s) => !s.integrity);
-      if (!candidate) routeProbeReason = 'every first-party script carries an integrity attribute';
-      else target = candidate.src;
-    }
-
-    // Load 2: probe. Route-appended eval probe, injected wallet, click, expect.
-    const context2 = (await browser.newContext()) as { newPage(): Promise<PageLike>; close(): Promise<void> };
-    const page2 = await context2.newPage();
-    await page2.addInitScript(OBSERVE_SCRIPT);
-    await page2.addInitScript(injectScript(injectAfterMs));
+  /** Load 2: probe. Route-appended eval probe, injected wallet, click, expect. */
+  async function probeLoad(
+    context: BrowserContext,
+    loadUrl: string,
+    loadOptions: DoctorOptions,
+    target: string | null,
+  ): Promise<{ state: ObservedState; providerVisible: boolean; expectVisible: boolean | null; expectWaitMs: number; routed: boolean; clickError: string | null }> {
+    const loadSettleMs = loadOptions.settleMs ?? 1500;
+    const loadInjectAfterMs = loadOptions.injectAfterMs ?? 0;
+    const page = await openObservedPage(context, injectScript(loadInjectAfterMs));
     let routed = false;
     if (target) {
       const pattern = new RegExp(`^${escapeForRegExp(target)}$`);
-      await page2.route(pattern, async (route) => {
+      await page.route(pattern, async (route) => {
         routed = true;
         const response = await route.fetch();
         await route.fulfill({ response, body: (await response.text()) + ROUTE_PROBE });
       });
     }
-    await page2.goto(url, { waitUntil: 'load' });
-    if (options.click) {
-      const err = await tryClick(page2, options.click);
-      if (err) clickError = err;
-    }
-    const settleWindow = Math.max(settleMs, injectAfterMs + 500);
+    await page.goto(loadUrl, { waitUntil: 'load' });
+    let clickError: string | null = null;
+    if (loadOptions.click) clickError = await tryClick(page, loadOptions.click);
+    const settleWindow = Math.max(loadSettleMs, loadInjectAfterMs + 500);
     let expectVisible: boolean | null = null;
-    if (options.expect) {
-      expectVisible = await page2.waitForSelector(options.expect, { state: 'visible', timeout: settleWindow }).then(
+    if (loadOptions.expect) {
+      expectVisible = await page.waitForSelector(loadOptions.expect, { state: 'visible', timeout: settleWindow }).then(
         () => true,
         () => false,
       );
     } else {
-      await page2.waitForTimeout(settleWindow);
+      await page.waitForTimeout(settleWindow);
     }
-    const probed = (await page2.evaluate(() => (window as unknown as { __chwDoctor: ObservedState }).__chwDoctor)) as ObservedState;
-    const providerVisible = (await page2.evaluate(() => {
-      const c = (window as unknown as { cardano?: Record<string, unknown> }).cardano;
-      return Boolean(c && c['chw']);
-    })) as boolean;
-    await context2.close();
+    const { state, providerVisible } = (await page.evaluate(() => {
+      // Snapshot the state before touching window.cardano below, that read is our own probe
+      // and must not count toward the access numbers it is about to be compared against.
+      const state = { ...window.__chwDoctor! };
+      const c = (window as unknown as Record<string, unknown>)['cardano'] as Record<string, unknown> | undefined;
+      return { state, providerVisible: Boolean(c && c['chw']) };
+    })) as { state: ObservedState; providerVisible: boolean };
+    await page.close();
+    return { state, providerVisible, expectVisible, expectWaitMs: settleWindow, routed, clickError };
+  }
 
-    if (target) {
-      if (!routed) {
-        routeProbe = 'skipped';
-        routeProbeReason = 'our interception never matched the script url';
-      } else if (probed.routeProbeEval === null) {
-        routeProbe = 'skipped';
-        routeProbeReason = 'the script was intercepted but the probe did not execute';
-      } else if (probed.routeProbeEval === 'error') {
-        routeProbe = 'error';
-        routeProbeReason = probed.routeProbeError;
-      } else {
-        routeProbe = probed.routeProbeEval;
+  let browser: Browser;
+  let ownsBrowser = false;
+  if (options.browserImpl) {
+    browser = options.browserImpl;
+  } else {
+    let pw: Record<'chromium' | 'firefox' | 'webkit', BrowserType>;
+    try {
+      pw = (await import('@playwright/test')) as unknown as Record<'chromium' | 'firefox' | 'webkit', BrowserType>;
+    } catch {
+      throw new Error('--deep needs @playwright/test installed (npm i -D @playwright/test && npx playwright install)');
+    }
+    browser = await pw[browserName].launch();
+    ownsBrowser = true;
+  }
+  try {
+    const context = await browser.newContext();
+    try {
+      const observation = await observationLoad(context, url, options);
+
+      // Decide whether the eval probe can be appended to a first-party script.
+      const { target, reason: skipReason } = pickProbeTarget(policies, observation.scripts, origin);
+
+      const probe = await probeLoad(context, url, options, target);
+
+      const { routeProbe, routeProbeReason: resolvedReason } = resolveRouteProbe(target, probe.routed, probe.state);
+      const routeProbeReason = resolvedReason ?? skipReason;
+
+      // The probe load's failure wins because that is the run the report's injection facts come from.
+      const clickError = probe.clickError ?? observation.clickError;
+
+      report.deep = {
+        browser: browserName,
+        loadedUrl: observation.loadedUrl,
+        clickSelector: options.click ?? null,
+        clickAtMs: observation.clickAtMs,
+        settleMs,
+        routed: probe.routed,
+        access: { firstAccessMs: observation.state.firstAccessMs, count: observation.state.count, lastAccessMs: observation.state.lastAccessMs },
+        violations: observation.state.violations.filter((v) => v.startsWith('script-src') || v.startsWith('default-src')),
+        routeProbe,
+        routeProbeReason,
+        injection: {
+          injectedAfterMs: injectAfterMs,
+          injectedAtMs: probe.state.injectedAtMs,
+          providerVisible: probe.providerVisible,
+          accessesAfterInjection: probe.state.countAfterInjection,
+          expectSelector: options.expect ?? null,
+          expectVisible: probe.expectVisible,
+          expectWaitMs: options.expect ? probe.expectWaitMs : null,
+        },
+      };
+      deepFindings(report);
+      if (clickError && options.click) {
+        addFinding(report, {
+          id: 'click-failed',
+          severity: 'warning',
+          title: `the click on ${options.click} did not complete`,
+          detail: `page.click('${options.click}', { timeout: ${CLICK_TIMEOUT_MS} }) failed: ${clickError}. Continuing with the observation load's data.`,
+        });
       }
-    }
-
-    report.deep = {
-      browser: browserName,
-      loadedUrl,
-      clickSelector: options.click ?? null,
-      clickAtMs,
-      settleMs,
-      routed,
-      access: { firstAccessMs: observed.firstAccessMs, count: observed.count, lastAccessMs: observed.lastAccessMs },
-      violations: observed.violations.filter((v) => v.startsWith('script-src') || v.startsWith('default-src')),
-      routeProbe,
-      routeProbeReason,
-      injection: {
-        injectedAfterMs: injectAfterMs,
-        injectedAtMs: probed.injectedAtMs,
-        providerVisible,
-        accessesAfterInjection: probed.countAfterInjection,
-        expectSelector: options.expect ?? null,
-        expectVisible,
-        expectWaitMs: options.expect ? settleWindow : null,
-      },
-    };
-    deepFindings(report);
-    if (clickError && options.click) {
-      addFinding(report, {
-        id: 'click-failed',
-        severity: 'warning',
-        title: `the click on ${options.click} did not complete`,
-        detail: `page.click('${options.click}', { timeout: ${CLICK_TIMEOUT_MS} }) failed: ${clickError}. Continuing with the observation load's data.`,
-      });
+    } finally {
+      await context.close();
     }
   } finally {
-    await browser.close();
+    if (ownsBrowser) await browser.close();
   }
-}
-
-interface PageLike {
-  addInitScript(script: string): Promise<void>;
-  goto(url: string, options: { waitUntil: 'load' }): Promise<unknown>;
-  url(): string;
-  click(selector: string, options: { timeout: number }): Promise<void>;
-  waitForTimeout(ms: number): Promise<void>;
-  waitForSelector(selector: string, options: { state: 'visible'; timeout: number }): Promise<unknown>;
-  evaluate(fn: () => unknown): Promise<unknown>;
-  route(
-    pattern: RegExp,
-    handler: (route: { fetch(): Promise<{ text(): Promise<string> }>; fulfill(opts: { response: unknown; body: string }): Promise<void> }) => Promise<void>,
-  ): Promise<void>;
 }
 
 function deepFindings(report: DoctorReport): void {

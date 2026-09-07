@@ -1,5 +1,22 @@
-import { pageBundle } from './bundle.js';
+import { bundleWith } from './bundle.js';
 import { prepareWallet } from './config.js';
+
+export interface ObservedState {
+  firstAccessMs: number | null;
+  count: number;
+  lastAccessMs: number | null;
+  violations: string[];
+  routeProbeEval: 'ok' | 'blocked' | 'error' | null;
+  routeProbeError: string | null;
+  injectedAtMs: number | null;
+  countAfterInjection: number;
+}
+
+declare global {
+  interface Window {
+    __chwDoctor?: ObservedState;
+  }
+}
 
 // Init scripts for the deep run. They are strings because Playwright serialises
 // them into the page. The observation script defines an accessor pair on
@@ -66,5 +83,5 @@ export const ROUTE_PROBE = `
 export function injectScript(injectAfterMs: number): string {
   const config = JSON.stringify(prepareWallet().config);
   const install = `(() => { const d = globalThis.__chwDoctor; if (d) d.suspended = true; try { globalThis.__chwInit(${config}); } finally { if (d) d.suspended = false; } if (d) d.markInjected(); })()`;
-  return injectAfterMs > 0 ? `${pageBundle()}\n;setTimeout(() => ${install}, ${injectAfterMs});` : `${pageBundle()}\n;${install};`;
+  return injectAfterMs > 0 ? bundleWith(`setTimeout(() => ${install}, ${injectAfterMs});`) : bundleWith(`${install};`);
 }

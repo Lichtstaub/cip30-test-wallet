@@ -67,11 +67,13 @@ export function installWallet(config: PageConfig, target: InstallTarget): Contro
     // pair such as the doctor's access probe (assign through the setter so the probe keeps
     // observing), or a getter without setter (defineProperty replaces it). Never replace an
     // accessor pair, never clobber an existing value.
-    const desc = Object.getOwnPropertyDescriptor(target, 'cardano');
-    if (desc?.set) {
-      if (!target.cardano) target.cardano = {};
-    } else if (!target.cardano) {
-      Object.defineProperty(target, 'cardano', { value: {}, configurable: true, writable: true, enumerable: true });
+    if (!target.cardano) {
+      const desc = Object.getOwnPropertyDescriptor(target, 'cardano');
+      if (desc?.get && !desc.set) {
+        Object.defineProperty(target, 'cardano', { value: {}, configurable: true, writable: true, enumerable: true });
+      } else {
+        target.cardano = {};
+      }
     }
     (target.cardano as Record<string, unknown>)[config.name] = provider;
   };

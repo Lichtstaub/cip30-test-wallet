@@ -21,7 +21,12 @@ export function pageBundle(): string {
   throw new Error('could not locate the package root from ' + import.meta.url);
 }
 
+/** The page bundle followed by an arbitrary snippet, separated so a leading `(` in the snippet cannot be read as a call on the bundle. */
+export function bundleWith(code: string): string {
+  return `${pageBundle()}\n;${code}`;
+}
+
 /** The complete init script: bundle plus the call that installs this config. */
 export function initScript(config: PageConfig): string {
-  return `${pageBundle()}\n;globalThis.__chwInit(${JSON.stringify(config)});`;
+  return bundleWith(`globalThis.__chwInit(${JSON.stringify(config)});`);
 }
