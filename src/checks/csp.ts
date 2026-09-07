@@ -16,9 +16,17 @@ export function parsePolicy(raw: string, source: 'header' | 'meta', enforced: bo
     const tokens = part.trim().split(/\s+/).filter((t) => t.length > 0);
     if (tokens.length === 0) continue;
     const [name, ...sources] = tokens;
-    directives.set(name!.toLowerCase(), sources);
+    const lower = name!.toLowerCase();
+    // CSP3: a directive name that repeats in the same policy is ignored, the first occurrence wins.
+    if (directives.has(lower)) continue;
+    directives.set(lower, sources);
   }
   return { source, enforced, raw: raw.trim(), directives };
+}
+
+/** Case-insensitive match for a CSP keyword source, hashes and nonces stay case-sensitive so are never compared this way. */
+function hasKeyword(sources: string[], keyword: string): boolean {
+  return sources.some((s) => s.toLowerCase() === keyword);
 }
 
 function decodeEntities(s: string): string {
@@ -50,7 +58,9 @@ export function collectPolicies(input: { headers: Array<[string, string]>; html:
     const lower = name.toLowerCase();
     const enforced = lower === 'content-security-policy';
     if (!enforced && lower !== 'content-security-policy-report-only') continue;
-    for (const single of value.split(',')) {
+    // Split only on a comma that separates two policies (comma, optional whitespace, a directive-name
+    // token), never a comma inside a directive value such as a report-uri query string.
+    for (const single of value.split(/,\s*(?=[a-zA-Z][a-zA-Z-]*(\s|$))/)) {
       if (single.trim().length > 0) policies.push(parsePolicy(single, 'header', enforced));
     }
   }
@@ -83,7 +93,7 @@ export function evaluateEval(policies: Policy[]): EvalVerdict {
     const g = governing(policy);
     if (!g) continue;
     governed = true;
-    if (!g.sources.includes("'unsafe-eval'")) blockedBy.push({ policy, directive: g.directive });
+    if (!hasKeyword(g.sources, "'unsafe-eval'")) blockedBy.push({ policy, directive: g.directive });
   }
   return { allowed: blockedBy.length === 0, unrestricted: !governed, blockedBy };
 }
@@ -96,7 +106,7 @@ export function inlineHashConflict(policies: Policy[]): Array<{ policy: Policy; 
     if (!policy.enforced) continue;
     const g = governing(policy);
     if (!g) continue;
-    if (g.sources.includes("'unsafe-inline'") && g.sources.some((s) => HASH_OR_NONCE.test(s))) {
+    if (hasKeyword(g.sources, "'unsafe-inline'") && g.sources.some((s) => HASH_OR_NONCE.test(s))) {
       out.push({ policy, directive: g.directive });
     }
   }
@@ -114,6 +124,7 @@ export function hasHashSources(policies: Policy[]): boolean {
 
 export function isSecureContextUrl(url: URL): boolean {
   if (url.protocol === 'https:') return true;
-  const host = url.hostname.replace(/^\[|\]$/g, '');
-  return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host.endsWith('.localhost');
+  // A trailing dot names the same host (a fully qualified domain name) and is stripped before comparison.
+  const host = url.hostname.replace(/^\[|\]$/g, '').replace(/\.$/, '');
+  return host === 'localhost' || host.startsWith('127.') || host === '::1' || host.endsWith('.localhost');
 }

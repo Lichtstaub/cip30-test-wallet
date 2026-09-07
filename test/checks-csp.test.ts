@@ -23,6 +23,18 @@ describe('parsePolicy', () => {
   it('keeps an empty directive as an empty list', () => {
     expect(parsePolicy('sandbox; script-src', 'meta', true).directives.get('sandbox')).toEqual([]);
   });
+
+  it('keeps the first occurrence of a repeated directive (CSP3)', () => {
+    const p = parsePolicy("script-src 'self'; script-src 'self' 'unsafe-eval'", 'header', true);
+    expect(p.directives.get('script-src')).toEqual(["'self'"]);
+    expect(evaluateEval([p]).allowed).toBe(false);
+  });
+
+  it('matches unsafe-eval and unsafe-inline case-insensitively, sources stay as written', () => {
+    const p = parsePolicy("script-src 'self' 'UNSAFE-EVAL'", 'header', true);
+    expect(evaluateEval([p]).allowed).toBe(true);
+    expect(p.directives.get('script-src')).toEqual(["'self'", "'UNSAFE-EVAL'"]);
+  });
 });
 
 describe('collectPolicies', () => {
@@ -51,6 +63,18 @@ describe('collectPolicies', () => {
   it('decodes html entities in a meta content attribute', () => {
     const policies = collectPolicies({ headers: [], html: `<meta http-equiv="content-security-policy" content="script-src &#39;self&#39; &quot;x&quot;">` });
     expect(policies[0]!.directives.get('script-src')).toEqual(["'self'", '"x"']);
+  });
+
+  it('does not split on a comma inside a directive value, only between policies', () => {
+    const oneHeader = collectPolicies({
+      headers: [['content-security-policy', "default-src 'self'; script-src 'self' 'unsafe-eval'; report-uri https://x.example/r?a=1,b=2"]],
+      html: '',
+    });
+    expect(oneHeader).toHaveLength(1);
+    expect(oneHeader[0]!.directives.size).toBe(3);
+
+    const twoPolicies = collectPolicies({ headers: [['content-security-policy', `${strict}, ${permissive}`]], html: '' });
+    expect(twoPolicies).toHaveLength(2);
   });
 });
 
@@ -102,5 +126,10 @@ describe('isSecureContextUrl', () => {
     expect(isSecureContextUrl(new URL('http://127.0.0.1/'))).toBe(true);
     expect(isSecureContextUrl(new URL('http://app.localhost/'))).toBe(true);
     expect(isSecureContextUrl(new URL('http://example.com/'))).toBe(false);
+  });
+
+  it('accepts the whole loopback block and a trailing-dot hostname', () => {
+    expect(isSecureContextUrl(new URL('http://127.0.0.2:8080/'))).toBe(true);
+    expect(isSecureContextUrl(new URL('http://localhost./'))).toBe(true);
   });
 });
