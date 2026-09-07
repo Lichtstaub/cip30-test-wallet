@@ -69,10 +69,6 @@ describe('runDoctor, static', () => {
     expect(r.errors.length).toBeGreaterThan(0);
     expect(exitCode(r)).toBe(2);
   });
-
-  it('refuses deep mode until task 4', async () => {
-    await expect(runDoctor(`${base}/strict/`, { deep: true })).rejects.toThrow(/task 4/);
-  });
 });
 
 describe('formatters', () => {

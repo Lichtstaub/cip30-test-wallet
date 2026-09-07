@@ -2,6 +2,7 @@
 // segment, the rest maps to files in this directory. Port is fixed for the
 // Playwright config, tests create their own server on a free port.
 import { createServer } from 'node:http';
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { dirname, extname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -12,6 +13,10 @@ const port = 4173;
 
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8' };
 
+// The hashed variant pins both scripts by hash, in the policy and as SRI on the tags.
+// Appending anything to those scripts breaks the page, which is what doctor must detect.
+const sha = (buf) => `sha256-${createHash('sha256').update(buf).digest('base64')}`;
+
 // How each variant delivers its policy: as an enforced header, as a
 // report-only header, or as a meta tag inside the document.
 const variants = {
@@ -19,6 +24,7 @@ const variants = {
   permissive: { header: CSP.permissive },
   'meta-strict': { meta: CSP.strict },
   'report-only': { reportOnly: CSP.strict },
+  hashed: { hashed: true },
 };
 export const VARIANTS = Object.keys(variants);
 
@@ -47,6 +53,19 @@ export function createDemoServer() {
       if (mode.header) headers['content-security-policy'] = mode.header;
       if (mode.reportOnly) headers['content-security-policy-report-only'] = mode.reportOnly;
       if (mode.meta && file === 'index.html') body = Buffer.from(withMeta(body.toString('utf8'), mode.meta));
+      if (mode.hashed) {
+        const app = await readFile(join(root, 'app.js'));
+        const demoTx = await readFile(join(root, 'demo-tx.js'));
+        headers['content-security-policy'] = `default-src 'none'; script-src '${sha(app)}' '${sha(demoTx)}'; style-src 'self' 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'`;
+        if (file === 'index.html') {
+          body = Buffer.from(
+            body
+              .toString('utf8')
+              .replace('<script src="demo-tx.js">', `<script src="demo-tx.js" integrity="${sha(demoTx)}">`)
+              .replace('<script src="app.js">', `<script src="app.js" integrity="${sha(app)}">`),
+          );
+        }
+      }
       res.writeHead(200, headers);
       res.end(body);
     } catch {

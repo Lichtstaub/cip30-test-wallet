@@ -63,10 +63,14 @@ export function installWallet(config: PageConfig, target: InstallTarget): Contro
   const provider = buildProvider(ctx);
 
   const define = () => {
-    // A plain target.cardano = {} throws when a page defines window.cardano as a getter
-    // without a setter. defineProperty always succeeds and leaves a fresh, writable property
-    // so the init script survives either way.
-    if (!target.cardano) {
+    // Three shapes of window.cardano: absent (define a fresh writable property), an accessor
+    // pair such as the doctor's access probe (assign through the setter so the probe keeps
+    // observing), or a getter without setter (defineProperty replaces it). Never replace an
+    // accessor pair, never clobber an existing value.
+    const desc = Object.getOwnPropertyDescriptor(target, 'cardano');
+    if (desc?.set) {
+      if (!target.cardano) target.cardano = {};
+    } else if (!target.cardano) {
       Object.defineProperty(target, 'cardano', { value: {}, configurable: true, writable: true, enumerable: true });
     }
     (target.cardano as Record<string, unknown>)[config.name] = provider;

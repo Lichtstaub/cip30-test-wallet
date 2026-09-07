@@ -1,5 +1,6 @@
-import { collectPolicies, evaluateEval, inlineHashConflict, isSecureContextUrl, type EvalVerdict, type Policy } from '../checks/csp.js';
-import { addFinding, emptyReport, type DoctorReport } from '../checks/report.js';
+import { collectPolicies, evaluateEval, hasHashSources, inlineHashConflict, isSecureContextUrl, type EvalVerdict, type Policy } from '../checks/csp.js';
+import { addFinding, emptyReport, type DeepFacts, type DoctorReport } from '../checks/report.js';
+import { OBSERVE_SCRIPT, ROUTE_PROBE, injectScript } from './doctor-probes.js';
 
 export interface DoctorOptions {
   deep?: boolean;
@@ -90,6 +91,160 @@ export async function runDoctor(url: string, options: DoctorOptions = {}): Promi
   report.evalAllowed = verdict.allowed;
   staticFindings(report, policies, verdict);
 
-  if (options.deep) throw new Error('deep mode arrives with task 4');
+  if (options.deep) {
+    try {
+      await deepRun(report, policies, options);
+    } catch (e) {
+      report.errors.push(`deep run failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
   return report;
+}
+
+interface ObservedState {
+  firstAccessMs: number | null;
+  count: number;
+  lastAccessMs: number | null;
+  violations: string[];
+  routeProbeEval: 'ok' | 'blocked' | null;
+}
+
+async function deepRun(report: DoctorReport, policies: Policy[], options: DoctorOptions): Promise<void> {
+  const browserName = options.browser ?? 'chromium';
+  const settleMs = options.settleMs ?? 1500;
+  const injectAfterMs = options.injectAfterMs ?? 0;
+  const url = report.finalUrl ?? report.url;
+  const origin = new URL(url).origin;
+
+  let launchers: { chromium: unknown; firefox: unknown; webkit: unknown };
+  try {
+    launchers = (await import('@playwright/test')) as never;
+  } catch {
+    throw new Error('--deep needs @playwright/test installed (npm i -D @playwright/test && npx playwright install)');
+  }
+  const launcher = launchers[browserName] as { launch(): Promise<{ newContext(): Promise<unknown>; close(): Promise<void> }> };
+  const browser = await launcher.launch();
+  try {
+    // Load 1: observe. No probe, no wallet, so violations and accesses are the page's own.
+    const context1 = (await browser.newContext()) as { newPage(): Promise<PageLike>; close(): Promise<void> };
+    const page1 = await context1.newPage();
+    await page1.addInitScript(OBSERVE_SCRIPT);
+    await page1.goto(url, { waitUntil: 'load' });
+    if (options.click) await page1.click(options.click);
+    await page1.waitForTimeout(settleMs);
+    const observed = (await page1.evaluate(() => (window as unknown as { __chwDoctor: ObservedState }).__chwDoctor)) as ObservedState;
+    const scripts = (await page1.evaluate(() =>
+      Array.from(document.querySelectorAll('script[src]')).map((s) => ({ src: (s as HTMLScriptElement).src, integrity: s.getAttribute('integrity') })),
+    )) as Array<{ src: string; integrity: string | null }>;
+    await context1.close();
+
+    // Decide whether the eval probe can be appended to a first-party script.
+    let routeProbe: DeepFacts['routeProbe'] = 'skipped';
+    let routeProbeReason: string | null = null;
+    let target: string | null = null;
+    const firstParty = scripts.filter((s) => new URL(s.src).origin === origin);
+    if (hasHashSources(policies)) routeProbeReason = 'script-src pins scripts by hash, appending a probe would break the page';
+    else if (firstParty.length === 0) routeProbeReason = 'no external first-party script to append the probe to';
+    else {
+      const candidate = firstParty.find((s) => !s.integrity);
+      if (!candidate) routeProbeReason = 'every first-party script carries an integrity attribute';
+      else target = candidate.src;
+    }
+
+    // Load 2: probe. Route-appended eval probe, injected wallet, click, expect.
+    const context2 = (await browser.newContext()) as { newPage(): Promise<PageLike>; close(): Promise<void> };
+    const page2 = await context2.newPage();
+    await page2.addInitScript(OBSERVE_SCRIPT);
+    await page2.addInitScript(injectScript(injectAfterMs));
+    if (target) {
+      await page2.route(target, async (route) => {
+        const response = await route.fetch();
+        await route.fulfill({ response, body: (await response.text()) + ROUTE_PROBE });
+      });
+    }
+    await page2.goto(url, { waitUntil: 'load' });
+    if (options.click) await page2.click(options.click);
+    await page2.waitForTimeout(Math.max(settleMs, injectAfterMs + 500));
+    const probed = (await page2.evaluate(() => (window as unknown as { __chwDoctor: ObservedState }).__chwDoctor)) as ObservedState;
+    const providerVisible = (await page2.evaluate(() => {
+      const c = (window as unknown as { cardano?: Record<string, unknown> }).cardano;
+      return Boolean(c && c['chw']);
+    })) as boolean;
+    const expectVisible = options.expect ? ((await page2.isVisible(options.expect)) as boolean) : null;
+    await context2.close();
+    if (target) routeProbe = probed.routeProbeEval ?? 'skipped';
+    if (target && probed.routeProbeEval === null) routeProbeReason = 'the probe did not run, the script may not have executed';
+
+    const accessesAfterInjection = probed.count;
+    report.deep = {
+      browser: browserName,
+      access: { firstAccessMs: observed.firstAccessMs, count: observed.count, lastAccessMs: observed.lastAccessMs },
+      violations: observed.violations.filter((v) => v.startsWith('script-src')),
+      routeProbe,
+      routeProbeReason,
+      injection: { injectedAfterMs: injectAfterMs, providerVisible, accessesAfterInjection, expectSelector: options.expect ?? null, expectVisible },
+    };
+    deepFindings(report);
+  } finally {
+    await browser.close();
+  }
+}
+
+interface PageLike {
+  addInitScript(script: string): Promise<void>;
+  goto(url: string, options: { waitUntil: 'load' }): Promise<unknown>;
+  click(selector: string): Promise<void>;
+  waitForTimeout(ms: number): Promise<void>;
+  evaluate(fn: () => unknown): Promise<unknown>;
+  isVisible(selector: string): Promise<boolean>;
+  route(url: string, handler: (route: { fetch(): Promise<{ text(): Promise<string> }>; fulfill(opts: { response: unknown; body: string }): Promise<void> }) => Promise<void>): Promise<void>;
+}
+
+function deepFindings(report: DoctorReport): void {
+  const d = report.deep!;
+  if (d.access.count === 0) {
+    addFinding(report, {
+      id: 'no-cip30-access',
+      severity: 'info',
+      title: 'no CIP-30 access observed during the executed scenario',
+      detail: 'The page did not read window.cardano while loading' + (d.injection.expectSelector ? ' and after the click' : '') + '. It may do so after a user action. Pass --click <selector> to run that action. The static findings above stand.',
+    });
+  } else if (d.access.count === 1) {
+    addFinding(report, {
+      id: 'single-scan',
+      severity: 'warning',
+      title: `window.cardano was read once, after ${d.access.firstAccessMs} ms`,
+      detail: 'One read and no retry within the observation window. A wallet that injects later than that read is not proven to be found. Use --inject-after <ms> together with --expect <selector> to test detection of a late wallet.',
+    });
+  }
+  if (d.routeProbe === 'skipped') {
+    addFinding(report, {
+      id: 'eval-probe-skipped',
+      severity: 'info',
+      title: 'the in-page eval probe did not run',
+      detail: `${d.routeProbeReason ?? 'no reason recorded'}. The eval verdict above rests on the policy text alone.`,
+    });
+  } else if (report.evalAllowed !== null && (d.routeProbe === 'ok') !== report.evalAllowed) {
+    addFinding(report, {
+      id: 'eval-verdict-mismatch',
+      severity: 'warning',
+      title: `the policy says eval is ${report.evalAllowed ? 'allowed' : 'blocked'} but a first-party script observed ${d.routeProbe}`,
+      detail: 'The browser and the policy text disagree. A header that differs between the fetch and the browser load (caching, edge rules, a service worker) is the usual cause.',
+    });
+  }
+  if (!d.injection.providerVisible) {
+    addFinding(report, {
+      id: 'injection-failed',
+      severity: 'error',
+      title: 'the injected wallet never appeared in window.cardano',
+      detail: 'Something on the page replaced or froze window.cardano after our init script ran. Real extensions would be affected the same way.',
+    });
+  } else if (d.injection.expectSelector && d.injection.expectVisible === false) {
+    addFinding(report, {
+      id: 'wallet-not-detected',
+      severity: 'warning',
+      title: `the wallet was injected after ${d.injection.injectedAfterMs} ms but ${d.injection.expectSelector} never became visible`,
+      detail: `The page read window.cardano ${d.injection.accessesAfterInjection} time${d.injection.accessesAfterInjection === 1 ? '' : 's'} in the probe run. If that is 1 and it happened before the injection, the page scans once and gives up.`,
+    });
+  }
 }

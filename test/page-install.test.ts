@@ -86,6 +86,27 @@ describe('installWallet', () => {
     expect(chwProvider(target).apiVersion).toBe('1');
   });
 
+  it('installs through an existing accessor pair without replacing it', () => {
+    const target: InstallTarget = {};
+    let stored: unknown;
+    let reads = 0;
+    Object.defineProperty(target, 'cardano', {
+      configurable: true,
+      enumerable: true,
+      get: () => {
+        reads += 1;
+        return stored;
+      },
+      set: (v) => {
+        stored = v;
+      },
+    });
+    installWallet(testConfig(), target);
+    expect((stored as Record<string, unknown>)['chw']).toBeDefined();
+    expect(Object.getOwnPropertyDescriptor(target, 'cardano')?.set).toBeDefined();
+    expect(reads).toBeGreaterThan(0);
+  });
+
   it('rejects a config whose key hex has the wrong length with InvalidRequest', () => {
     const bad = testConfig();
     bad.keys.payment.hex = 'abcd';

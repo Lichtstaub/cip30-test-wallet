@@ -30,6 +30,7 @@
     }
     var keys = walletKeys(cardano);
     walletsEl.textContent = keys.length ? keys.join(',') : 'none';
+    document.getElementById('wallet-found').hidden = keys.length === 0;
     return keys.length > 0;
   }
 
