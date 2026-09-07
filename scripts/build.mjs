@@ -3,7 +3,7 @@
 // stand alone, the check in bundle-check.mjs enforces that. tsc and esbuild
 // run concurrently, tsc output is only printed if it fails.
 import { execFile } from 'node:child_process';
-import { rmSync } from 'node:fs';
+import { chmodSync, rmSync } from 'node:fs';
 import { promisify } from 'node:util';
 import { build } from 'esbuild';
 import { PAGE_BUNDLE_OPTIONS } from './page-bundle.mjs';
@@ -19,3 +19,6 @@ const tsc = execFileAsync('npx', ['tsc', '-p', 'tsconfig.build.json']).catch((er
 });
 
 await Promise.all([tsc, build({ ...PAGE_BUNDLE_OPTIONS, outfile: 'dist/page.js', logLevel: 'info' })]);
+
+// tsc keeps the shebang line, make the CLI entry executable for npx.
+chmodSync('dist/node/cli/doctor.js', 0o755);

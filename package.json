@@ -7,6 +7,7 @@
   "private": true,
   "main": "./dist/node/index.js",
   "types": "./dist/node/index.d.ts",
+  "bin": { "cardano-headless-wallet": "./dist/node/cli/doctor.js" },
   "exports": {
     ".": { "types": "./dist/node/index.d.ts", "default": "./dist/node/index.js" },
     "./playwright": { "types": "./dist/node/playwright/index.d.ts", "default": "./dist/node/playwright/index.js" }
