@@ -42,3 +42,5 @@ Throws unless `txHex` carries a vkey witness whose key is the wallet's payment k
 ## Errors
 
 CIP-30 errors are plain objects: `APIError` `{ code: -1 | -2 | -3 | -4, info }`, `TxSignError` `{ code: 1 | 2, info }`, `PaginateError` `{ maxSize }`. Harness diagnoses are `ChwError` instances with `code` `CHW_UNRESOLVED_INPUT` or `CHW_UNSUPPORTED_TX_FORM`. Decoding failures become `APIError` InvalidRequest.
+
+The deployed-site check lives in [doctor.md](doctor.md).

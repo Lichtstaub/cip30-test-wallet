@@ -12,6 +12,7 @@ It injects a headless CIP-30 wallet into the page under test. The wallet holds r
 - A Playwright fixture: `test.use({ walletOptions })` configures the wallet, `wallet` in the test reads the journal and flips quirks at runtime.
 - `expectSignedBy(txHex, wallet)`: proves the transaction your dApp submitted really carries the wallet's signature over its body hash. Recording `submitTx` alone proves nothing.
 - Five quirks with provenance notes in [`quirks/`](quirks/README.md).
+- `doctor`: a command line check of a deployed dApp for the secure-context and content-security-policy traps, with a browser mode that measures wallet detection.
 
 ## Not in the box yet
 
@@ -74,6 +75,15 @@ A consumer SDK expecting real-wallet behaviour can still misbehave against a spe
 ## The demo dApp
 
 `examples/minimal-dapp` is a framework-free page served under a strict and a permissive Content Security Policy. It scans `window.cardano`, connects, checks the network, signs and submits a fixed transaction. `npm run serve:demo` starts it on port 4173, `npm run test:browser` runs the browser suite against it in Chromium, Firefox and WebKit.
+
+## doctor
+
+```bash
+npx cardano-headless-wallet doctor https://your-dapp.example
+npx cardano-headless-wallet doctor https://your-dapp.example --deep --browser webkit --click '#connect' --expect '#wallet-found'
+```
+
+Static: secure context, every content security policy in headers and meta tags, and whether the effective script policy blocks `eval`, which is how mobile wallet in-app browsers inject. Deep: when the page reads `window.cardano` and whether it retries, whether the policy really blocks `eval` inside a first-party script, and whether an injected wallet, optionally a late one, is detected. Exit 0 clean, 1 findings, 2 run failed. Details in [docs/doctor.md](docs/doctor.md).
 
 ## Development
 
