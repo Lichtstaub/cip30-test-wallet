@@ -5,12 +5,12 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/katomm/cardano-headless-wallet.git"
+    "url": "git+https://github.com/Lichtstaub/cardano-headless-wallet.git"
   },
   "bugs": {
-    "url": "https://github.com/katomm/cardano-headless-wallet/issues"
+    "url": "https://github.com/Lichtstaub/cardano-headless-wallet/issues"
   },
-  "homepage": "https://github.com/katomm/cardano-headless-wallet#readme",
+  "homepage": "https://github.com/Lichtstaub/cardano-headless-wallet#readme",
   "keywords": [
     "cardano",
     "cip30",
