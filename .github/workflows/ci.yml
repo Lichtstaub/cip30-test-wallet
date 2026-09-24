@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: unit, node ${{ matrix.node }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      # npm ci runs the prepare script, so dist/ is built from here on.
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run bundle:check
+      - run: npm run pack:check
+
+  package:
+    name: packed CLI without Playwright
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Pack
+        run: echo "TARBALL=$GITHUB_WORKSPACE/$(npm pack --silent | tail -n 1)" >> "$GITHUB_ENV"
+      - name: Install the tarball into an empty project
+        working-directory: ${{ runner.temp }}
+        run: |
+          mkdir consumer && cd consumer
+          npm init -y > /dev/null
+          npm install "$TARBALL"
+          # The static doctor must work without the optional Playwright peer.
+          test ! -e node_modules/@playwright/test
+      - name: Static doctor finds the blocked eval on the strict demo
+        run: |
+          node examples/minimal-dapp/serve.mjs &
+          for i in $(seq 1 20); do curl -sf -o /dev/null http://localhost:4173/strict/ && break; sleep 0.5; done
+          cd "$RUNNER_TEMP/consumer"
+          set +e
+          npx --no-install cardano-headless-wallet doctor http://localhost:4173/strict/ --json > doctor.json
+          code=$?
+          set -e
+          cat doctor.json
+          test "$code" = 1
+          node -e "const r = require('./doctor.json'); if (!r.findings.some((f) => f.id === 'eval-blocked')) process.exit(1)"
+
+  browser:
+    name: browser, ${{ matrix.browser }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps ${{ matrix.browser }}
+      - run: npx playwright test --project=${{ matrix.browser }}
+      # Traces hold the wallet keys. They are the public CSL test vector, and the
+      # artifact stays short-lived all the same.
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.browser }}
+          path: test-results/
+          retention-days: 7
