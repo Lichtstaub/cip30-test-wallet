@@ -5,7 +5,7 @@
 | Option | Default | Meaning |
 |---|---|---|
 | `name` | `'chw'` | Key under `window.cardano` |
-| `displayName` | `'Headless Wallet'` | CIP-30 `name` |
+| `displayName` | `'Test Wallet'` | CIP-30 `name` |
 | `icon` | `''` | CIP-30 `icon` |
 | `networkId` | `0` | `0` testnets, `1` mainnet. Addresses follow it |
 | `mnemonic` | public CSL test vector | CIP-1852 account source. Never use a funded mnemonic, the keys end up in the page and in Playwright traces |

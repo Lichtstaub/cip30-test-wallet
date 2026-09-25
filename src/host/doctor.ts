@@ -23,7 +23,7 @@ export interface DoctorOptions {
 }
 
 const DEFAULT_TIMEOUT_MS = 15000;
-const DOCTOR_USER_AGENT = 'Mozilla/5.0 (compatible; cardano-headless-wallet doctor)';
+const DOCTOR_USER_AGENT = 'Mozilla/5.0 (compatible; cip30-test-wallet doctor)';
 
 const EVAL_DETAIL =
   "The effective script policy has no 'unsafe-eval'. Mobile wallet in-app browsers inject their CIP-30 provider through eval, " +

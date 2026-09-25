@@ -26,7 +26,7 @@ export interface WalletHandle {
   reject(method: 'signTx'): Promise<number>;
 }
 
-const NOT_INSTALLED_ON_PAGE = 'the headless wallet is not installed on this page: navigate first, or window.cardano is not writable';
+const NOT_INSTALLED_ON_PAGE = 'the test wallet is not installed on this page: navigate first, or window.cardano is not writable';
 const NOT_INSTALLED_FOR_TEST = 'the wallet was not installed for this test (walletOptions.install is false)';
 
 type ChwWindow = { __chw?: Control };
