@@ -18,7 +18,17 @@ export interface ForeignUtxoConfig {
   lovelace: string;
 }
 
-export const QUIRK_NAMES = ['lateInjection', 'enableRejected', 'signRejected', 'signHangs', 'signDataRejected', 'noCip95', 'cip95NamespaceMissing'] as const;
+export const QUIRK_NAMES = [
+  'lateInjection',
+  'enableRejected',
+  'signRejected',
+  'signHangs',
+  'signDataRejected',
+  'noCip95',
+  'cip95NamespaceMissing',
+  'cip95SignData',
+  'coseAddress',
+] as const;
 
 export type QuirkName = (typeof QUIRK_NAMES)[number];
 
@@ -40,6 +50,10 @@ export interface QuirkConfig {
   noCip95?: boolean;
   /** supportedExtensions and getExtensions claim CIP-95, but the enabled api has no cip95 namespace. */
   cip95NamespaceMissing?: boolean;
+  /** Which CIP-95 DRep form cip95.signData accepts. bareOnly rejects the type 6 address with UserDeclined, type6Only rejects the bare DRep ID with ProofGeneration. */
+  cip95SignData?: 'bareOnly' | 'type6Only';
+  /** bareKeyHash: DRep signatures carry the bare 28 byte key hash in the COSE address header, whatever form was requested. */
+  coseAddress?: 'bareKeyHash';
 }
 
 export type HangableMethod = 'signTx';

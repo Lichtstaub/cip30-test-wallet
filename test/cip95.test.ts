@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import { enterpriseAddressBytes } from '../src/core/addresses.js';
 import { bytesToHex } from '../src/core/bytes.js';
+import { keyHash } from '../src/core/hash.js';
 import { publicKey } from '../src/core/keys.js';
 import { deriveAccount } from '../src/derive/index.js';
+import { expectSignedData } from '../src/host/assert.js';
 import { installWallet, type InstallTarget } from '../src/page/install.js';
 import type { PageConfig } from '../src/page/config.js';
 import { MNEMONIC } from './fixtures/vectors.js';
@@ -98,5 +101,57 @@ describe('CIP-95 key endpoints', () => {
     const api = await provider.enable(CIP95);
     await api.cip95!.getPubDRepKey();
     expect(control.journal.map((e) => e.method)).toContain('cip95.getPubDRepKey');
+  });
+});
+
+describe('cip95.signData', () => {
+  const drepPub = publicKey(account.drep);
+  const bare = bytesToHex(keyHash(drepPub));
+  const type6 = bytesToHex(enterpriseAddressBytes(0, keyHash(drepPub)));
+  const payload = bytesToHex(new TextEncoder().encode('drep login'));
+
+  it('signs with the DRep key for the bare DRep ID and for the type 6 address, echoing the form in the header', async () => {
+    const api = await install().provider.enable(CIP95);
+    for (const addr of [bare, type6]) {
+      const r = await api.cip95!.signData(addr, payload);
+      const info = expectSignedData(r, { payload, address: addr, publicKeyHex: bytesToHex(drepPub) });
+      expect(bytesToHex(info.address)).toBe(addr);
+    }
+  });
+
+  it('still signs payment and reward addresses like CIP-30', async () => {
+    const api = await install().provider.enable(CIP95);
+    const [reward] = await api.getRewardAddresses();
+    const r = await api.cip95!.signData(reward!, payload);
+    expectSignedData(r, { payload, address: reward!, publicKeyHex: bytesToHex(publicKey(account.stake)) });
+  });
+
+  it('never signs a DRep argument through the CIP-30 signData', async () => {
+    const api = await install().provider.enable(CIP95);
+    await expect(api.signData(bare, payload)).rejects.toMatchObject({ code: -1 });
+    await expect(api.signData(type6, payload)).rejects.toMatchObject({ code: 1 });
+  });
+
+  it('bareOnly rejects the type 6 form with UserDeclined and signs the bare form', async () => {
+    const api = await install({ quirks: { cip95SignData: 'bareOnly' } }).provider.enable(CIP95);
+    await expect(api.cip95!.signData(type6, payload)).rejects.toMatchObject({ code: 3 });
+    await expect(api.cip95!.signData(bare, payload)).resolves.toBeDefined();
+  });
+
+  it('type6Only rejects the bare form with ProofGeneration and signs the type 6 form', async () => {
+    const api = await install({ quirks: { cip95SignData: 'type6Only' } }).provider.enable(CIP95);
+    await expect(api.cip95!.signData(bare, payload)).rejects.toMatchObject({ code: 1 });
+    await expect(api.cip95!.signData(type6, payload)).resolves.toBeDefined();
+  });
+
+  it('coseAddress bareKeyHash puts the bare hash into the header for a type 6 request', async () => {
+    const api = await install({ quirks: { coseAddress: 'bareKeyHash' } }).provider.enable(CIP95);
+    const r = await api.cip95!.signData(type6, payload);
+    expect(bytesToHex(expectSignedData(r, { payload }).address)).toBe(bare);
+  });
+
+  it('signDataRejected also applies to cip95.signData', async () => {
+    const api = await install({ quirks: { signDataRejected: true } }).provider.enable(CIP95);
+    await expect(api.cip95!.signData(bare, payload)).rejects.toMatchObject({ code: 3 });
   });
 });

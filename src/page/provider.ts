@@ -4,6 +4,7 @@ import { encode } from '../core/cbor/encode.js';
 import { assertTransactionShape, parseBody } from '../core/cbor/tx.js';
 import { signCose } from '../core/cose.js';
 import { APIErrorCode, apiError, DataSignErrorCode, dataSignError, TxSignErrorCode, txSignError } from '../core/errors.js';
+import { keyHash } from '../core/hash.js';
 import { publicKey, type SigningKey } from '../core/keys.js';
 import { encodeUtxo, type MemoryLedger } from '../core/ledger.js';
 import { parseAddressArg, parseHexArg, resolveDataSigner } from '../core/sign-data.js';
@@ -197,8 +198,16 @@ export async function signDataWith(ctx: WalletContext, addr: unknown, payload: u
   const addressBytes = parseAddressArg(addr);
   const payloadBytes = parseHexArg(payload, 'payload');
   const signer = resolveDataSigner(addressBytes, { networkId: ctx.config.networkId, payment: ctx.payment, stake: ctx.stake, drep: ctx.drep }, mode);
+  let headerAddress = signer.headerAddress;
+  if (signer.role === 'drep') {
+    const form = ctx.control.quirks.cip95SignData;
+    // Reported for VESPR: the type 6 form fails as if the user had declined.
+    if (form === 'bareOnly' && signer.drepForm === 'type6') throw dataSignError(DataSignErrorCode.UserDeclined, 'user declined to sign the data');
+    if (form === 'type6Only' && signer.drepForm === 'bare') throw dataSignError(DataSignErrorCode.ProofGeneration, 'the wallet cannot sign for a bare DRep ID');
+    if (ctx.control.quirks.coseAddress === 'bareKeyHash') headerAddress = keyHash(publicKey(signer.key));
+  }
   if (ctx.control.quirks.signDataRejected) throw dataSignError(DataSignErrorCode.UserDeclined, 'user declined to sign the data');
-  const { signature, key } = signCose(signer.key, signer.headerAddress, payloadBytes);
+  const { signature, key } = signCose(signer.key, headerAddress, payloadBytes);
   return { signature: bytesToHex(signature), key: bytesToHex(key) };
 }
 

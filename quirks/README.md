@@ -14,5 +14,7 @@ No switch without a note. A quirk nobody can trace is the stale wallet profile t
 | `signDataRejected` | confirmed | [sign-data-rejected.md](sign-data-rejected.md) |
 | `noCip95` | confirmed | [no-cip95.md](no-cip95.md) |
 | `cip95NamespaceMissing` | reported | [cip95-namespace-missing.md](cip95-namespace-missing.md) |
+| `cip95SignData` | reported | [cip95-sign-data.md](cip95-sign-data.md) |
+| `coseAddress` | reported | [cose-address.md](cose-address.md) |
 
 Found one we do not have? Open an issue with wallet name, version and platform, the CIP-30 method, what the spec expects, what the wallet does, and a minimal reproduction. Never include keys, mnemonics or funded addresses.
