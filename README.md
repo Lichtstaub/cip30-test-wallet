@@ -85,6 +85,18 @@ npx cardano-headless-wallet doctor https://your-dapp.example --deep --browser we
 
 Static: secure context, every content security policy in headers and meta tags, and whether the effective script policy blocks `eval`, which is how mobile wallet in-app browsers inject. Deep: when the page reads `window.cardano` and whether it retries, whether the policy really blocks `eval` inside a first-party script, and whether an injected wallet, optionally a late one, is detected. Exit 0 clean, 1 findings, 2 run failed. Details in [docs/doctor.md](docs/doctor.md).
 
+## Dependencies
+
+Installed with the package:
+
+- `@noble/curves`, `@noble/hashes` and `@scure/base`: Ed25519, Blake2b and bech32, pure TypeScript without WASM. Together with the package's own CBOR and signing code they are the whole page bundle. It contains no WASM and no `eval`, because both can fail under the same content security policy `doctor` diagnoses.
+- `@evolution-sdk/evolution` and `@scure/bip39`: turn the mnemonic into CIP-1852 keys, in Node only. Neither reaches the page.
+- `@playwright/test`: optional peer, needed for the fixture and `doctor --deep`, not for the static `doctor`.
+
+Used by the test suite only:
+
+- Evolution SDK and `@emurgo/cardano-serialization-lib-nodejs` (CSL) are the reference implementations. Derived keys, addresses and signatures must match CSL byte for byte, and CSL must parse the UTxOs and witness sets the wallet returns. Body hashes and transaction ids must match Evolution, and Evolution must merge the witness sets without losing foreign witnesses. CSL is Rust compiled to WASM, an independent codebase, so agreement with it is not agreement with ourselves. It is a dev dependency and is never installed by users.
+
 ## Development
 
 ```bash
