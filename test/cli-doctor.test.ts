@@ -1,3 +1,7 @@
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { main, parseArgs } from '../src/cli/doctor.js';
 
@@ -53,5 +57,21 @@ describe('main', () => {
     const code = await main(['doctor', 'http://127.0.0.1:1/', '--json'], { out: (s) => out.push(s), err: () => undefined });
     expect(code).toBe(2);
     expect(JSON.parse(out.join(''))).toMatchObject({ url: 'http://127.0.0.1:1/' });
+  });
+});
+
+describe('the built CLI', () => {
+  // npm installs the bin as a symlink in node_modules/.bin. A packed install once
+  // exited 0 with no output because the entry check compared the link path.
+  it.skipIf(!existsSync('dist/node/cli/doctor.js'))('runs when started through a symlink, as npm installs it', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'chw-bin-'));
+    try {
+      const link = join(dir, 'cardano-headless-wallet');
+      symlinkSync(resolve('dist/node/cli/doctor.js'), link);
+      const out = execFileSync(process.execPath, [link, '--help'], { encoding: 'utf8' });
+      expect(out).toContain('usage: cardano-headless-wallet doctor');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

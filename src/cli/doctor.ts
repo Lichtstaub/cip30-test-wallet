@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { pathToFileURL } from 'node:url';
+import { realpathSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { exitCode, formatHuman, formatJson } from '../checks/report.js';
 import { runDoctor, type DoctorOptions } from '../host/doctor.js';
 
@@ -103,8 +104,19 @@ export async function main(argv: string[], io: { out: (s: string) => void; err: 
   return exitCode(report);
 }
 
-const isEntry = typeof process !== 'undefined' && process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
-if (isEntry) {
+// npm starts the CLI through a symlink in node_modules/.bin, so argv[1] is the link
+// while import.meta.url is the resolved file. Only resolved paths compare equal.
+function isEntryModule(): boolean {
+  const script = process.argv[1];
+  if (script === undefined) return false;
+  try {
+    return realpathSync(script) === fileURLToPath(import.meta.url);
+  } catch {
+    return false;
+  }
+}
+
+if (isEntryModule()) {
   main(process.argv.slice(2), { out: (s) => process.stdout.write(s + '\n'), err: (s) => process.stderr.write(s + '\n') }).then(
     (code) => process.exit(code),
     (e) => {
