@@ -8,6 +8,7 @@ No switch without a note. A quirk nobody can trace is the stale wallet profile t
 |---|---|---|
 | walletOptions.networkId (an option, not a quirks entry) | confirmed | [network-id.md](network-id.md) |
 | `lateInjection: ms` | confirmed | [late-injection.md](late-injection.md) |
+| `answersEveryKey` | confirmed | [answers-every-key.md](answers-every-key.md) |
 | `enableRejected` | confirmed | [enable-rejected.md](enable-rejected.md) |
 | `signRejected` | confirmed | [sign-rejected.md](sign-rejected.md) |
 | `signHangs` | confirmed | [sign-hangs.md](sign-hangs.md) |
