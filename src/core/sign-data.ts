@@ -6,10 +6,10 @@
 // apart, length does it here: 28 bytes is a DRep ID, anything longer is an
 // address.
 import { bech32 } from '@scure/base';
+import { isByronAddress, networkTag, paymentHash } from './addresses.js';
 import { bytesEqual, hexToBytes } from './bytes.js';
 import { APIErrorCode, apiError, DataSignErrorCode, dataSignError } from './errors.js';
-import { keyHash } from './hash.js';
-import { publicKey, type SigningKey } from './keys.js';
+import type { SigningKey } from './keys.js';
 
 export type SignerRole = 'payment' | 'stake' | 'drep';
 
@@ -18,11 +18,18 @@ export interface DataSignerKeys {
   payment: SigningKey;
   stake: SigningKey;
   drep: SigningKey;
+  paymentPub: Uint8Array;
+  stakePub: Uint8Array;
+  drepPub: Uint8Array;
+  paymentHash: Uint8Array;
+  stakeHash: Uint8Array;
+  drepHash: Uint8Array;
 }
 
 export interface ResolvedSigner {
   role: SignerRole;
   key: SigningKey;
+  publicKey: Uint8Array;
   headerAddress: Uint8Array;
   /** Only for the DRep key: which of the two CIP-95 forms the caller used. */
   drepForm?: 'bare' | 'type6';
@@ -74,35 +81,48 @@ function isCompletePointer(address: Uint8Array): boolean {
 export function readShelleyAddress(address: Uint8Array): { type: number; networkTag: number; credential: Uint8Array } {
   const header = address[0];
   if (header === undefined || address.length < 29) throw apiError(APIErrorCode.InvalidRequest, 'addr is not an address');
-  if ((header === 0x22 || header === 0x23) && address.length === 29) {
-    throw apiError(APIErrorCode.InvalidRequest, 'addr is a CIP-129 governance id, not an address, pass the bare DRep ID or a type 6 address instead');
-  }
   const type = header >> 4;
   if (type > 7 && type !== 14 && type !== 15) throw apiError(APIErrorCode.InvalidRequest, 'addr has an unknown address type');
   const expected = LENGTH[type];
   const lengthOk = type === 4 || type === 5 ? isCompletePointer(address) : address.length === expected;
   if (!lengthOk) throw apiError(APIErrorCode.InvalidRequest, 'addr has the wrong length or an incomplete pointer for its type');
-  return { type, networkTag: header & 0x0f, credential: address.subarray(1, 29) };
+  return { type, networkTag: networkTag(address), credential: paymentHash(address) };
+}
+
+/**
+ * The 28-byte key credential an address carries: the hash itself for a bare
+ * 28-byte input, the payment, stake or DRep credential for a key address
+ * (Shelley type 0, 2, 4, 6 or 14, after readShelleyAddress validation), or
+ * nothing for a script address. Throws the way readShelleyAddress does for a
+ * malformed or too-short address.
+ */
+export function keyCredentialOf(address: Uint8Array): Uint8Array | undefined {
+  if (address.length === 28) return address;
+  const { type, credential } = readShelleyAddress(address);
+  return [0, 2, 4, 6, 14].includes(type) ? credential : undefined;
 }
 
 export function resolveDataSigner(address: Uint8Array, keys: DataSignerKeys, mode: 'cip30' | 'cip95'): ResolvedSigner {
-  const drepHash = keyHash(publicKey(keys.drep));
   if (address.length === 28) {
     if (mode !== 'cip95') throw apiError(APIErrorCode.InvalidRequest, 'addr is a bare key hash, not an address');
-    if (!bytesEqual(address, drepHash)) throw dataSignError(DataSignErrorCode.ProofGeneration, 'the wallet does not hold the key for this DRep ID');
-    return { role: 'drep', key: keys.drep, headerAddress: address, drepForm: 'bare' };
+    if (!bytesEqual(address, keys.drepHash)) throw dataSignError(DataSignErrorCode.ProofGeneration, 'the wallet does not hold the key for this DRep ID');
+    return { role: 'drep', key: keys.drep, publicKey: keys.drepPub, headerAddress: address, drepForm: 'bare' };
   }
-  if (address[0] !== undefined && address[0] >> 4 === 8) throw dataSignError(DataSignErrorCode.ProofGeneration, 'the wallet holds no Byron keys');
-  const { type, networkTag, credential } = readShelleyAddress(address);
-  if (type % 2 === 1) throw dataSignError(DataSignErrorCode.AddressNotPK, 'the address has a script credential');
-  if (networkTag !== keys.networkId) throw dataSignError(DataSignErrorCode.ProofGeneration, 'the address is on another network');
+  if (isByronAddress(address)) throw dataSignError(DataSignErrorCode.ProofGeneration, 'the wallet holds no Byron keys');
+  if (address.length === 29 && (address[0] === 0x22 || address[0] === 0x23)) {
+    throw apiError(APIErrorCode.InvalidRequest, 'addr is a CIP-129 governance id, not an address, pass the bare DRep ID or a type 6 address instead');
+  }
+  const credential = keyCredentialOf(address);
+  if (credential === undefined) throw dataSignError(DataSignErrorCode.AddressNotPK, 'the address has a script credential');
+  const type = address[0]! >> 4;
+  if (networkTag(address) !== keys.networkId) throw dataSignError(DataSignErrorCode.ProofGeneration, 'the address is on another network');
   if (type === 14) {
-    if (bytesEqual(credential, keyHash(publicKey(keys.stake)))) return { role: 'stake', key: keys.stake, headerAddress: address };
+    if (bytesEqual(credential, keys.stakeHash)) return { role: 'stake', key: keys.stake, publicKey: keys.stakePub, headerAddress: address };
     throw dataSignError(DataSignErrorCode.ProofGeneration, 'the wallet does not hold the stake key for this address');
   }
-  if (bytesEqual(credential, keyHash(publicKey(keys.payment)))) return { role: 'payment', key: keys.payment, headerAddress: address };
-  if (mode === 'cip95' && type === 6 && bytesEqual(credential, drepHash)) {
-    return { role: 'drep', key: keys.drep, headerAddress: address, drepForm: 'type6' };
+  if (bytesEqual(credential, keys.paymentHash)) return { role: 'payment', key: keys.payment, publicKey: keys.paymentPub, headerAddress: address };
+  if (mode === 'cip95' && type === 6 && bytesEqual(credential, keys.drepHash)) {
+    return { role: 'drep', key: keys.drep, publicKey: keys.drepPub, headerAddress: address, drepForm: 'type6' };
   }
   throw dataSignError(DataSignErrorCode.ProofGeneration, 'the wallet does not hold the payment key for this address');
 }

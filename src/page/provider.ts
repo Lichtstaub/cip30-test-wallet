@@ -4,13 +4,22 @@ import { encode } from '../core/cbor/encode.js';
 import { assertTransactionShape, parseBody } from '../core/cbor/tx.js';
 import { signCose } from '../core/cose.js';
 import { APIErrorCode, apiError, DataSignErrorCode, dataSignError, TxSignErrorCode, txSignError } from '../core/errors.js';
-import { keyHash } from '../core/hash.js';
-import { publicKey, type SigningKey } from '../core/keys.js';
+import type { SigningKey } from '../core/keys.js';
 import { encodeUtxo, type MemoryLedger } from '../core/ledger.js';
 import { parseAddressArg, parseHexArg, resolveDataSigner } from '../core/sign-data.js';
 import { resolveInputs, signTx as coreSignTx, unsupportedForms } from '../core/sign-tx.js';
 import type { Control } from './control.js';
 import type { PageConfig } from './config.js';
+
+/** The payment, stake and DRep public keys and their key hashes, derived once at install time. */
+export interface WalletKeys {
+  paymentPub: Uint8Array;
+  stakePub: Uint8Array;
+  drepPub: Uint8Array;
+  paymentHash: Uint8Array;
+  stakeHash: Uint8Array;
+  drepHash: Uint8Array;
+}
 
 export interface WalletContext {
   config: PageConfig;
@@ -21,6 +30,7 @@ export interface WalletContext {
   drep: SigningKey;
   baseAddress: Uint8Array;
   rewardAddress: Uint8Array;
+  keys: WalletKeys;
 }
 
 export interface DataSignature {
@@ -61,7 +71,7 @@ export interface Cip30Provider {
 
 const CIP95 = 95;
 
-function supportedExtensions(control: Control): { cip: number }[] {
+function availableExtensions(control: Control): { cip: number }[] {
   return control.quirks.noCip95 ? [] : [{ cip: CIP95 }];
 }
 
@@ -76,7 +86,7 @@ export function buildProvider(ctx: WalletContext): Cip30Provider {
     icon: config.icon,
     // A getter, so a quirk set at runtime changes what a dApp reads next.
     get supportedExtensions() {
-      return supportedExtensions(control);
+      return availableExtensions(control);
     },
     isEnabled: () => control.record('isEnabled', [], async () => enabled),
     enable: (options) =>
@@ -84,7 +94,7 @@ export function buildProvider(ctx: WalletContext): Cip30Provider {
         if (control.quirks.enableRejected) throw apiError(APIErrorCode.Refused, 'user declined to connect the wallet');
         enabled = true;
         const requested = Array.isArray(options?.extensions) ? options.extensions : [];
-        const granted = supportedExtensions(control).filter((s) => requested.some((r) => r?.cip === s.cip));
+        const granted = availableExtensions(control).filter((s) => requested.some((r) => r?.cip === s.cip));
         return buildApi(ctx, granted);
       }),
   };
@@ -176,7 +186,7 @@ export function buildApi(ctx: WalletContext, extensions: { cip: number }[] = [])
 
 function buildCip95Api(ctx: WalletContext): Cip95Api {
   const { control, config } = ctx;
-  const stakeHex = bytesToHex(publicKey(ctx.stake));
+  const stakeHex = bytesToHex(ctx.keys.stakePub);
   // CIP-95: these endpoints take no parameters, passing one is InvalidRequest.
   const noArgs =
     <T>(method: string, run: () => Promise<T>) =>
@@ -186,7 +196,7 @@ function buildCip95Api(ctx: WalletContext): Cip95Api {
         return run();
       });
   return {
-    getPubDRepKey: noArgs('getPubDRepKey', async () => bytesToHex(publicKey(ctx.drep))),
+    getPubDRepKey: noArgs('getPubDRepKey', async () => bytesToHex(ctx.keys.drepPub)),
     getRegisteredPubStakeKeys: noArgs('getRegisteredPubStakeKeys', async () => (config.stakeRegistered ? [stakeHex] : [])),
     getUnregisteredPubStakeKeys: noArgs('getUnregisteredPubStakeKeys', async () => (config.stakeRegistered ? [] : [stakeHex])),
     signData: (addr, payload) => control.record('cip95.signData', [addr, payload], () => signDataWith(ctx, addr, payload, 'cip95')),
@@ -197,17 +207,17 @@ function buildCip95Api(ctx: WalletContext): Cip95Api {
 export async function signDataWith(ctx: WalletContext, addr: unknown, payload: unknown, mode: 'cip30' | 'cip95'): Promise<DataSignature> {
   const addressBytes = parseAddressArg(addr);
   const payloadBytes = parseHexArg(payload, 'payload');
-  const signer = resolveDataSigner(addressBytes, { networkId: ctx.config.networkId, payment: ctx.payment, stake: ctx.stake, drep: ctx.drep }, mode);
+  const signer = resolveDataSigner(addressBytes, { networkId: ctx.config.networkId, payment: ctx.payment, stake: ctx.stake, drep: ctx.drep, ...ctx.keys }, mode);
   let headerAddress = signer.headerAddress;
   if (signer.role === 'drep') {
     const form = ctx.control.quirks.cip95SignData;
     // Reported for VESPR: the type 6 form fails as if the user had declined.
     if (form === 'bareOnly' && signer.drepForm === 'type6') throw dataSignError(DataSignErrorCode.UserDeclined, 'user declined to sign the data');
     if (form === 'type6Only' && signer.drepForm === 'bare') throw dataSignError(DataSignErrorCode.ProofGeneration, 'the wallet cannot sign for a bare DRep ID');
-    if (ctx.control.quirks.coseAddress === 'bareKeyHash') headerAddress = keyHash(publicKey(signer.key));
+    if (ctx.control.quirks.coseAddress === 'bareKeyHash') headerAddress = ctx.keys.drepHash;
   }
   if (ctx.control.quirks.signDataRejected) throw dataSignError(DataSignErrorCode.UserDeclined, 'user declined to sign the data');
-  const { signature, key } = signCose(signer.key, headerAddress, payloadBytes);
+  const { signature, key } = signCose(signer.key, headerAddress, payloadBytes, signer.publicKey);
   return { signature: bytesToHex(signature), key: bytesToHex(key) };
 }
 

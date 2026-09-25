@@ -30,11 +30,11 @@ export function sigStructure(protectedBytes: Uint8Array, payload: Uint8Array): U
   return encode(['Signature1', protectedBytes, new Uint8Array(0), payload]);
 }
 
-export function signCose(key: SigningKey, address: Uint8Array, payload: Uint8Array): { signature: Uint8Array; key: Uint8Array } {
+export function signCose(key: SigningKey, address: Uint8Array, payload: Uint8Array, pub: Uint8Array = publicKey(key)): { signature: Uint8Array; key: Uint8Array } {
   const protectedBytes = encode(new Map<CborValue, CborValue>([[1n, EDDSA], ['address', address]]));
   const signature = sign(key, sigStructure(protectedBytes, payload));
   const sign1 = encode([protectedBytes, new Map<CborValue, CborValue>([['hashed', false]]), payload, signature]);
-  const coseKey = encode(new Map<CborValue, CborValue>([[1n, 1n], [3n, EDDSA], [-1n, 6n], [-2n, publicKey(key)]]));
+  const coseKey = encode(new Map<CborValue, CborValue>([[1n, 1n], [3n, EDDSA], [-1n, 6n], [-2n, pub]]));
   return { signature: sign1, key: coseKey };
 }
 

@@ -34,15 +34,15 @@ export function walletAddresses(networkId: 0 | 1, paymentPub: Uint8Array, stakeP
 }
 
 /** CIP-19 type 6, a key payment credential without delegation part. dApps build one from the DRep key hash for CIP-95 signData. */
-export function enterpriseAddressBytes(networkId: 0 | 1, keyHash: Uint8Array): Uint8Array {
-  assertHash(keyHash, 'payment');
-  return concat(Uint8Array.of(0x60 | networkId), keyHash);
+export function enterpriseAddressBytes(networkId: 0 | 1, credential: Uint8Array): Uint8Array {
+  assertHash(credential, 'payment');
+  return concat(Uint8Array.of(0x60 | networkId), credential);
 }
 
 /** CIP-129 DRep id: header 0x22 (DRep, key hash) plus the hash, bech32 with prefix drep. */
-export function cip129DRepId(keyHash: Uint8Array): string {
-  assertHash(keyHash, 'DRep key');
-  return bech32.encode('drep', bech32.toWords(concat(Uint8Array.of(0x22), keyHash)), false);
+export function cip129DRepId(drepKeyHash: Uint8Array): string {
+  assertHash(drepKeyHash, 'DRep key');
+  return bech32.encode('drep', bech32.toWords(concat(Uint8Array.of(0x22), drepKeyHash)), false);
 }
 
 function header(address: Uint8Array): number {

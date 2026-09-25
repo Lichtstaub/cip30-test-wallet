@@ -197,9 +197,7 @@ describe('signTx and submitTx', () => {
 
 describe('signData', () => {
   it('returns a COSE signature from the stake key for the reward address that verifies with the reference library', async () => {
-    const target: InstallTarget = {};
-    installWallet(testConfig(), target);
-    const api = await enableChw(target);
+    const { api } = await setup();
     const [reward] = await api.getRewardAddresses();
     const payloadHex = bytesToHex(new TextEncoder().encode('hello'));
     const result = await api.signData(reward!, payloadHex);
@@ -211,18 +209,14 @@ describe('signData', () => {
   });
 
   it('records the call and honours signDataRejected with UserDeclined', async () => {
-    const target: InstallTarget = {};
-    const control = installWallet(testConfig({ quirks: { signDataRejected: true } }), target);
-    const api = await enableChw(target);
+    const { api, control } = await setup({ quirks: { signDataRejected: true } });
     const [reward] = await api.getRewardAddresses();
     await expect(api.signData(reward!, '')).rejects.toEqual({ code: 3, info: 'user declined to sign the data' });
     expect(control.journal.filter((e) => e.method === 'signData')).toHaveLength(1);
   });
 
   it('signs an empty and a 64 KB payload without hashing', async () => {
-    const target: InstallTarget = {};
-    installWallet(testConfig(), target);
-    const api = await enableChw(target);
+    const { api } = await setup();
     const change = await api.getChangeAddress();
     for (const payload of ['', '07'.repeat(65536)]) {
       const r = await api.signData(change, payload);

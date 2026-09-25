@@ -3,7 +3,7 @@ import { bytesEqual, bytesToHex, hexToBytes } from '../core/bytes.js';
 import { existingVKeyWitnesses, txHash } from '../core/cbor/tx.js';
 import { decodeCoseKey, decodeCoseSign1, sigStructure } from '../core/cose.js';
 import { keyHash } from '../core/hash.js';
-import { parseAddressArg, readShelleyAddress } from '../core/sign-data.js';
+import { keyCredentialOf, parseAddressArg } from '../core/sign-data.js';
 
 /**
  * Proves the submitted transaction really carries this wallet's signature
@@ -36,23 +36,24 @@ export interface SignedDataExpectation {
  * as the key hash itself, as CIP-95 DRep signatures may carry it.
  */
 export function expectSignedData(result: { signature: string; key: string }, expected: SignedDataExpectation): { address: Uint8Array; publicKey: Uint8Array } {
-  const fail = (why: string): never => {
+  function fail(why: string): never {
     throw new Error(`expectSignedData: ${why}`);
-  };
-  // decodeCoseKey, decodeCoseSign1 and parseAddressArg already throw for
-  // malformed input, one a real Error and the other a plain CIP-30 error
-  // object. Neither should escape unprefixed, a failing test must name this
-  // helper and never see a bare CIP-30 error shape.
-  const prefixed = <T>(run: () => T): T => {
+  }
+  // decodeCoseKey, decodeCoseSign1, parseAddressArg and keyCredentialOf
+  // already throw for malformed input, one a real Error and the others a
+  // plain CIP-30 error object. Neither should escape unprefixed, a failing
+  // test must name this helper and never see a bare CIP-30 error shape. With
+  // a fixed message, that message replaces the underlying error instead.
+  const attempt = <T>(run: () => T, message?: string): T => {
     try {
       return run();
     } catch (err) {
-      return fail(err instanceof Error ? err.message : String(err));
+      return fail(message ?? (err instanceof Error ? err.message : String(err)));
     }
   };
-  const key = prefixed(() => decodeCoseKey(hexToBytes(result.key)));
+  const key = attempt(() => decodeCoseKey(hexToBytes(result.key)));
   if (key.kty !== 1n || key.alg !== -8n || key.crv !== 6n) fail('COSE_Key is not an OKP Ed25519 EdDSA key');
-  const sign1 = prefixed(() => decodeCoseSign1(hexToBytes(result.signature)));
+  const sign1 = attempt(() => decodeCoseSign1(hexToBytes(result.signature)));
   if (sign1.alg !== -8n) fail('protected header alg is not EdDSA');
   if (sign1.address === undefined) fail('protected header has no address');
   if (sign1.hashed) fail('payload is hashed, CIP-30 signData signs it unhashed');
@@ -60,27 +61,14 @@ export function expectSignedData(result: { signature: string; key: string }, exp
   if (!ed25519.verify(sign1.signature, sigStructure(sign1.protectedBytes, sign1.payload), key.x)) fail('signature does not verify over the Sig_structure');
   if (expected.publicKeyHex !== undefined && bytesToHex(key.x) !== expected.publicKeyHex.toLowerCase()) fail('public key differs from the expected key');
   const address = sign1.address!;
-  if (expected.address !== undefined) {
-    let expectedAddress: Uint8Array | undefined;
-    try {
-      expectedAddress = parseAddressArg(expected.address);
-    } catch {
-      fail(`expected address ${expected.address} is not a valid hex or bech32 address`);
-    }
-    if (!bytesEqual(address, expectedAddress!)) fail(`address header ${bytesToHex(address)} differs from the expected address`);
+  const wantedAddress = expected.address;
+  if (wantedAddress !== undefined) {
+    const expectedAddress = attempt(() => parseAddressArg(wantedAddress), `expected address ${wantedAddress} is not a valid hex or bech32 address`);
+    if (!bytesEqual(address, expectedAddress)) fail(`address header ${bytesToHex(address)} differs from the expected address`);
   }
   // The key must control the header address, whether or not the test names one.
-  let credential: Uint8Array = address;
-  if (address.length !== 28) {
-    let read: { type: number; credential: Uint8Array } | undefined;
-    try {
-      read = readShelleyAddress(address);
-    } catch {
-      fail(`address header ${bytesToHex(address)} is not a valid address`);
-    }
-    if (![0, 2, 4, 6, 14].includes(read!.type)) fail(`address header ${bytesToHex(address)} has no key credential`);
-    credential = read!.credential;
-  }
+  const credential = attempt(() => keyCredentialOf(address), `address header ${bytesToHex(address)} is not a valid address`);
+  if (credential === undefined) fail(`address header ${bytesToHex(address)} has no key credential`);
   if (!bytesEqual(keyHash(key.x), credential)) fail('public key does not match the address credential');
   return { address, publicKey: key.x };
 }

@@ -4,15 +4,26 @@ import { baseAddressBytes, enterpriseAddressBytes, rewardAddressBytes } from '..
 import { bytesToHex, hexToBytes } from '../src/core/bytes.js';
 import { keyHash } from '../src/core/hash.js';
 import { publicKey } from '../src/core/keys.js';
-import { parseAddressArg, parseHexArg, resolveDataSigner } from '../src/core/sign-data.js';
+import { parseAddressArg, parseHexArg, readShelleyAddress, resolveDataSigner } from '../src/core/sign-data.js';
 import { deriveAccount } from '../src/derive/index.js';
 import { MNEMONIC } from './fixtures/vectors.js';
 
 const a = deriveAccount(MNEMONIC);
-const keys = { networkId: 0 as const, payment: a.payment, stake: a.stake, drep: a.drep };
 const pay = keyHash(publicKey(a.payment));
 const stk = keyHash(publicKey(a.stake));
 const drp = keyHash(publicKey(a.drep));
+const keys = {
+  networkId: 0 as const,
+  payment: a.payment,
+  stake: a.stake,
+  drep: a.drep,
+  paymentPub: publicKey(a.payment),
+  stakePub: publicKey(a.stake),
+  drepPub: publicKey(a.drep),
+  paymentHash: pay,
+  stakeHash: stk,
+  drepHash: drp,
+};
 const other = new Uint8Array(28).fill(9);
 const code = (fn: () => unknown) => {
   try {
@@ -77,7 +88,7 @@ describe('resolveDataSigner, CIP-30', () => {
     expect(code(() => resolveDataSigner(hexToBytes('22' + bytesToHex(drp)), keys, 'cip30'))).toBe(-1);
   });
 
-  it('gives a 29 byte CIP-129 governance id its own message instead of a generic wrong length', () => {
+  it('gives a 29 byte CIP-129 governance id its own message instead of a generic wrong length, readShelleyAddress itself stays generic', () => {
     for (const header of ['22', '23']) {
       let caught: unknown;
       try {
@@ -86,6 +97,7 @@ describe('resolveDataSigner, CIP-30', () => {
         caught = e;
       }
       expect(caught).toEqual({ code: -1, info: 'addr is a CIP-129 governance id, not an address, pass the bare DRep ID or a type 6 address instead' });
+      expect(code(() => readShelleyAddress(hexToBytes(header + bytesToHex(drp))))).toBe(-1);
     }
   });
 
