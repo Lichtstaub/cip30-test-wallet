@@ -4,7 +4,7 @@
 
 It injects a headless CIP-30 wallet into the page under test. The wallet holds real keys, returns real UTxO CBOR, signs real transaction CBOR with a real Ed25519 signature, and records every call in a journal your test can read. A catalogue of quirks reproduces the failures that only show up on a user's machine: a wallet on the wrong network, a wallet that injects late, a user who declines or never answers.
 
-**Status: pre-release.** Milestone 2b. The signing core, the Playwright fixture and the `doctor` command work end to end against the demo dApp in this repository. Not yet on npm. Not yet supported: `signData`, `getCollateral`, CIP-95, native assets.
+**Status: pre-release.** Milestone 2b. The signing core, the Playwright fixture and the `doctor` command work end to end against the demo dApp in this repository. Not yet on npm. Not yet supported: `getCollateral`, native assets.
 
 ## What is in the box
 
@@ -16,7 +16,9 @@ It injects a headless CIP-30 wallet into the page under test. The wallet holds r
 
 ## Not in the box yet
 
-This release is a CIP-30 subset for transaction tests. Missing on purpose, tracked for later milestones: `signData` (CIP-8 and COSE), `getCollateral`, CIP-95, native assets in balances and UTxOs, script inputs, certificates, and every transaction form outside the supported set below. `submitTx` is simulated: it records the transaction and returns its id, it never talks to a node. Fees, validity and script execution are not checked.
+This release is a CIP-30 subset for transaction tests. Missing on purpose, tracked for later milestones: `getCollateral`, native assets in balances and UTxOs, script inputs, certificates, and every transaction form outside the supported set below. `submitTx` is simulated: it records the transaction and returns its id, it never talks to a node. Fees, validity and script execution are not checked.
+
+`signData` follows CIP-30 and CIP-8 byte for byte with Emurgo's message-signing library: payment key for base and enterprise addresses, stake key for reward addresses. CIP-95 is announced by default: `getPubDRepKey`, the registered and unregistered stake keys, and `cip95.signData` with the bare DRep ID or a type 6 address. Governance transactions (certificates, votes, proposals) are not signed yet.
 
 ## Quick start
 

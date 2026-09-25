@@ -1,6 +1,6 @@
 {
   "name": "cardano-headless-wallet",
-  "version": "0.1.0-alpha.0",
+  "version": "0.2.0-alpha.0",
   "description": "Headless CIP-30 wallet for automated Cardano dApp transaction tests, with a catalogue of real wallet quirks.",
   "license": "Apache-2.0",
   "repository": {
