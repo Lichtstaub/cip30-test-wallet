@@ -131,6 +131,9 @@
     wallet.enable({ extensions: [{ cip: 95 }] }).then(function (api) {
       if (!api.cip95) throw { code: 'no-cip95' };
       return api.cip95.getPubDRepKey().then(function (pub) {
+        // window.__demoDrepCandidates is only defined by the test hook, run by hand this
+        // button has nothing to try, so fail cleanly instead of calling undefined.
+        if (typeof window.__demoDrepCandidates !== 'function') throw { code: 'no-candidates' };
         return window.__demoDrepCandidates(pub);
       }).then(function (candidates) {
         var i = 0;

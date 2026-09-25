@@ -17,7 +17,7 @@ export interface WalletHandle {
   readonly drepPublicKeyHex: string;
   readonly drepKeyHashHex: string;
   readonly drepId: string;
-  /** Journal entries, optionally filtered by CIP-30 method name. */
+  /** Journal entries, optionally filtered by CIP-30 method name. cip95.* names work too. */
   calls(method?: string): Promise<JournalEntry[]>;
   /** Hex CBOR of the last transaction handed to submitTx, never broadcast. */
   lastSubmittedTx(): Promise<string | undefined>;

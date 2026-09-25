@@ -68,11 +68,15 @@ function isCompletePointer(address: Uint8Array): boolean {
 /**
  * Header type, network tag and the 28 byte credential of a Shelley address,
  * after checking its length for the type and, for pointers, the pointer
- * itself. Byron (type 8) is the caller's decision. Throws InvalidRequest.
+ * itself. Byron (type 8) already throws InvalidRequest here, callers that
+ * want to handle it differently must check the header before calling.
  */
 export function readShelleyAddress(address: Uint8Array): { type: number; networkTag: number; credential: Uint8Array } {
   const header = address[0];
   if (header === undefined || address.length < 29) throw apiError(APIErrorCode.InvalidRequest, 'addr is not an address');
+  if ((header === 0x22 || header === 0x23) && address.length === 29) {
+    throw apiError(APIErrorCode.InvalidRequest, 'addr is a CIP-129 governance id, not an address, pass the bare DRep ID or a type 6 address instead');
+  }
   const type = header >> 4;
   if (type > 7 && type !== 14 && type !== 15) throw apiError(APIErrorCode.InvalidRequest, 'addr has an unknown address type');
   const expected = LENGTH[type];
