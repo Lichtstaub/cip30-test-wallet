@@ -13,6 +13,9 @@ export interface WalletHandle {
   readonly addresses: { payment: string; reward: string };
   readonly paymentPublicKeyHex: string;
   readonly stakePublicKeyHex: string;
+  readonly drepPublicKeyHex: string;
+  readonly drepKeyHashHex: string;
+  readonly drepId: string;
   /** Journal entries, optionally filtered by CIP-30 method name. */
   calls(method?: string): Promise<JournalEntry[]>;
   /** Hex CBOR of the last transaction handed to submitTx, never broadcast. */
@@ -38,6 +41,9 @@ function makeHandle(page: Page, prepared: ReturnType<typeof prepareWallet>, inst
     addresses: prepared.addresses,
     paymentPublicKeyHex: prepared.paymentPublicKeyHex,
     stakePublicKeyHex: prepared.stakePublicKeyHex,
+    drepPublicKeyHex: prepared.drepPublicKeyHex,
+    drepKeyHashHex: prepared.drepKeyHashHex,
+    drepId: prepared.drepId,
     calls: (method) =>
       guardInstalled(installed, () =>
         page.evaluate(

@@ -54,12 +54,13 @@ export function buildLedger(config: PageConfig, address: Uint8Array): MemoryLedg
 export function installWallet(config: PageConfig, target: InstallTarget): Control {
   const payment = toSigningKey(config.keys.payment, 'payment');
   const stake = toSigningKey(config.keys.stake, 'stake');
+  const drep = toSigningKey(config.keys.drep, 'drep');
   const { base: baseAddress, reward: rewardAddress } = walletAddresses(config.networkId, publicKey(payment), publicKey(stake));
   assertNetwork(baseAddress, config.networkId);
   assertNetwork(rewardAddress, config.networkId);
 
   const control = new Control(config.quirks);
-  const ctx: WalletContext = { config, control, ledger: buildLedger(config, baseAddress), payment, stake, baseAddress, rewardAddress };
+  const ctx: WalletContext = { config, control, ledger: buildLedger(config, baseAddress), payment, stake, drep, baseAddress, rewardAddress };
   const provider = buildProvider(ctx);
 
   const define = () => {

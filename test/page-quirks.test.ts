@@ -128,10 +128,13 @@ describe('journal redaction', () => {
     const secrets = [
       config.keys.payment.hex,
       config.keys.stake.hex,
+      config.keys.drep.hex,
       config.keys.payment.hex.slice(0, 64),
       config.keys.payment.hex.slice(64),
       config.keys.stake.hex.slice(0, 64),
       config.keys.stake.hex.slice(64),
+      config.keys.drep.hex.slice(0, 64),
+      config.keys.drep.hex.slice(64),
     ];
     for (const s of secrets) expect(text).not.toContain(s);
     expect(text).not.toContain('test walk nut');

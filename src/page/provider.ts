@@ -15,6 +15,7 @@ export interface WalletContext {
   ledger: MemoryLedger;
   payment: SigningKey;
   stake: SigningKey;
+  drep: SigningKey;
   baseAddress: Uint8Array;
   rewardAddress: Uint8Array;
 }

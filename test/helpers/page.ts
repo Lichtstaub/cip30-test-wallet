@@ -15,10 +15,12 @@ export function testConfig(overrides: Partial<PageConfig> = {}): PageConfig {
     keys: {
       payment: { kind: account.payment.kind, hex: bytesToHex(account.payment.bytes) },
       stake: { kind: account.stake.kind, hex: bytesToHex(account.stake.bytes) },
+      drep: { kind: account.drep.kind, hex: bytesToHex(account.drep.bytes) },
     },
     utxos: [{ lovelace: '10000000' }, { lovelace: '4500000' }],
     foreignUtxos: [],
     quirks: {},
+    stakeRegistered: false,
     ...overrides,
   };
 }

@@ -45,10 +45,12 @@ export interface PageConfig {
   displayName: string;
   icon: string;
   networkId: 0 | 1;
-  keys: { payment: KeyConfig; stake: KeyConfig };
+  keys: { payment: KeyConfig; stake: KeyConfig; drep: KeyConfig };
   utxos: OwnedUtxoConfig[];
   foreignUtxos: ForeignUtxoConfig[];
   quirks: QuirkConfig;
+  /** CIP-95: whether the stake key counts as registered on chain. */
+  stakeRegistered: boolean;
 }
 
 export interface JournalEntry {

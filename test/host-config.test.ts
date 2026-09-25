@@ -50,4 +50,14 @@ describe('prepareWallet', () => {
     const b = prepareWallet({ accountIndex: 1 });
     expect(a.config).toEqual(b.config);
   });
+
+  it('exposes the DRep key, its hash and the CIP-129 id', () => {
+    const w = prepareWallet();
+    expect(w.config.keys.drep.kind).toBe('extended');
+    expect(w.drepPublicKeyHex).toBe('f74d7ac30513ac1825715fd0196769761fca6e7f69de33d04ef09a0c417a752b');
+    expect(w.drepKeyHashHex).toBe('a5b45515a3ff8cb7c02ce351834da324eb6dfc41b5779cb5e6b832aa');
+    expect(w.drepId).toBe('drep1y2jmg4g450lced7q9n34rq6d5vjwkm0ugx6h0894u6ur92s9txn3a');
+    expect(w.config.stakeRegistered).toBe(false);
+    expect(prepareWallet({ stakeRegistered: true }).config.stakeRegistered).toBe(true);
+  });
 });
