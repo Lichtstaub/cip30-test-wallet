@@ -77,6 +77,18 @@ describe('resolveDataSigner, CIP-30', () => {
     expect(code(() => resolveDataSigner(hexToBytes('22' + bytesToHex(drp)), keys, 'cip30'))).toBe(-1);
   });
 
+  it('gives a 29 byte CIP-129 governance id its own message instead of a generic wrong length', () => {
+    for (const header of ['22', '23']) {
+      let caught: unknown;
+      try {
+        resolveDataSigner(hexToBytes(header + bytesToHex(drp)), keys, 'cip30');
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught).toEqual({ code: -1, info: 'addr is a CIP-129 governance id, not an address, pass the bare DRep ID or a type 6 address instead' });
+    }
+  });
+
   it('parses pointer addresses completely', () => {
     const own = bytesToHex(pay);
     expect(resolveDataSigner(hexToBytes('40' + own + '010203'), keys, 'cip30').role).toBe('payment');
