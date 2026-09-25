@@ -1,12 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
+import { ed25519 } from '@noble/curves/ed25519.js';
 import { Transaction, TransactionWitnessSet } from '@evolution-sdk/evolution';
 import { bytesToHex, hexToBytes } from '../src/core/bytes.js';
 import { decode } from '../src/core/cbor/decode.js';
 import { encode } from '../src/core/cbor/encode.js';
 import { txHash } from '../src/core/cbor/tx.js';
+import { decodeCoseKey, decodeCoseSign1 } from '../src/core/cose.js';
 import { APIErrorCode, ChwError } from '../src/core/errors.js';
+import { keyHash } from '../src/core/hash.js';
 import { installWallet, syntheticOwnedUtxo, type InstallTarget } from '../src/page/install.js';
 import { buildTx, standardUnsignedTx, TEST_ADDRESS } from './helpers/build-tx.js';
+import { oracleSignedData } from './helpers/cose-oracle.js';
 import { chwProvider, enableChw, testConfig } from './helpers/page.js';
 
 const setup = async (overrides = {}) => {
@@ -188,5 +192,42 @@ describe('signTx and submitTx', () => {
     for (const bad of ['8400a0f5f6', '84a000f5f6', '84a0a000f6', '84a0a0f500']) {
       await expect(api.submitTx(bad)).rejects.toEqual(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
     }
+  });
+});
+
+describe('signData', () => {
+  it('returns a COSE signature from the stake key for the reward address that verifies with the reference library', async () => {
+    const { api } = await setup();
+    const [reward] = await api.getRewardAddresses();
+    const payloadHex = bytesToHex(new TextEncoder().encode('hello'));
+    const result = await api.signData(reward!, payloadHex);
+    const decoded = decodeCoseSign1(hexToBytes(result.signature));
+    const key = decodeCoseKey(hexToBytes(result.key));
+    expect(bytesToHex(decoded.address!)).toBe(reward);
+    expect(ed25519.verify(decoded.signature, oracleSignedData(hexToBytes(result.signature)), key.x)).toBe(true);
+    expect(bytesToHex(keyHash(key.x))).toBe(reward!.slice(2));
+  });
+
+  it('records the call and honours signDataRejected with UserDeclined', async () => {
+    const { api, control } = await setup({ quirks: { signDataRejected: true } });
+    const [reward] = await api.getRewardAddresses();
+    await expect(api.signData(reward!, '')).rejects.toEqual({ code: 3, info: 'user declined to sign the data' });
+    expect(control.journal.filter((e) => e.method === 'signData')).toHaveLength(1);
+  });
+
+  it('signs an empty and a 64 KB payload without hashing', async () => {
+    const { api } = await setup();
+    const change = await api.getChangeAddress();
+    for (const payload of ['', '07'.repeat(65536)]) {
+      const r = await api.signData(change, payload);
+      const d = decodeCoseSign1(hexToBytes(r.signature));
+      expect(d.hashed).toBe(false);
+      expect(bytesToHex(d.payload)).toBe(payload);
+    }
+  });
+
+  it('rejects a bech32 address that decodes to zero bytes with InvalidRequest', async () => {
+    const { api } = await setup();
+    await expect(api.signData('addr1mykd6t', '')).rejects.toEqual(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
   });
 });

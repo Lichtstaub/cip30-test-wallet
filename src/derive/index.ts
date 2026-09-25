@@ -8,6 +8,7 @@ import type { SigningKey } from '../core/keys.js';
 export interface DerivedAccount {
   payment: SigningKey;
   stake: SigningKey;
+  drep: SigningKey;
 }
 
 function extended(root: Bip32PrivateKey.Bip32PrivateKey, path: string): SigningKey {
@@ -23,5 +24,6 @@ export function deriveAccount(mnemonic: string, accountIndex = 0): DerivedAccoun
   return {
     payment: extended(root, `m/1852'/1815'/${accountIndex}'/0/0`),
     stake: extended(root, `m/1852'/1815'/${accountIndex}'/2/0`),
+    drep: extended(root, `m/1852'/1815'/${accountIndex}'/3/0`),
   };
 }

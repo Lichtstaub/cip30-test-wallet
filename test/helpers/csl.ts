@@ -12,6 +12,7 @@ export function cslDerive(mnemonic: string, networkId = 0) {
   const account = root.derive(harden(1852)).derive(harden(1815)).derive(harden(0));
   const payment = account.derive(0).derive(0).to_raw_key();
   const stake = account.derive(2).derive(0).to_raw_key();
+  const drep = account.derive(3).derive(0).to_raw_key();
   const paymentCred = CSL.Credential.from_keyhash(payment.to_public().hash());
   const stakeCred = CSL.Credential.from_keyhash(stake.to_public().hash());
   return {
@@ -19,6 +20,7 @@ export function cslDerive(mnemonic: string, networkId = 0) {
     stakeExtended: stake.as_bytes(),
     paymentPub: payment.to_public().as_bytes(),
     stakePub: stake.to_public().as_bytes(),
+    drepPub: drep.to_public().as_bytes(),
     paymentAddress: CSL.BaseAddress.new(networkId, paymentCred, stakeCred).to_address().to_bech32(),
     rewardAddress: CSL.RewardAddress.new(networkId, stakeCred).to_address().to_bech32(),
     signHello: payment.sign(new TextEncoder().encode('hello')).to_bytes(),

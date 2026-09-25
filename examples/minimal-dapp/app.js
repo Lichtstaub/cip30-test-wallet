@@ -95,4 +95,61 @@
       out.textContent = e && e.code === 2 ? 'declined' : 'error ' + (e && e.code);
     });
   });
+
+  function firstWallet() {
+    var keys = walletKeys(window.cardano || {});
+    return keys.length ? window.cardano[keys[0]] : null;
+  }
+
+  function hexOf(text) {
+    return Array.prototype.map.call(new TextEncoder().encode(text), function (b) {
+      return ('0' + b.toString(16)).slice(-2);
+    }).join('');
+  }
+
+  // Signs a message with the reward address, the way forum logins do.
+  document.getElementById('sign-message').addEventListener('click', function () {
+    var out = document.getElementById('sign-message-result');
+    var wallet = firstWallet();
+    if (!wallet) return (out.textContent = 'no wallet');
+    wallet.enable().then(function (api) {
+      return api.getRewardAddresses().then(function (addrs) {
+        return api.signData(addrs[0], hexOf('demo message'));
+      });
+    }).then(function (sig) {
+      out.textContent = 'signed ' + sig.signature.length;
+    }, function (e) {
+      out.textContent = 'error ' + (e && e.code);
+    });
+  });
+
+  // Tries the bare DRep ID first and the type 6 address second, stopping on a real decline.
+  document.getElementById('drep-login').addEventListener('click', function () {
+    var out = document.getElementById('drep-login-result');
+    var wallet = firstWallet();
+    if (!wallet) return (out.textContent = 'no wallet');
+    wallet.enable({ extensions: [{ cip: 95 }] }).then(function (api) {
+      if (!api.cip95) throw { code: 'no-cip95' };
+      return api.cip95.getPubDRepKey().then(function (pub) {
+        // window.__demoDrepCandidates is only defined by the test hook, run by hand this
+        // button has nothing to try, so fail cleanly instead of calling undefined.
+        if (typeof window.__demoDrepCandidates !== 'function') throw { code: 'no-candidates' };
+        return window.__demoDrepCandidates(pub);
+      }).then(function (candidates) {
+        var i = 0;
+        function next() {
+          return api.cip95.signData(candidates[i], hexOf('drep login')).catch(function (e) {
+            i += 1;
+            if ((e && e.code === 3) || i >= candidates.length) throw e;
+            return next();
+          });
+        }
+        return next();
+      });
+    }).then(function () {
+      out.textContent = 'signed';
+    }, function (e) {
+      out.textContent = 'error ' + (e && e.code);
+    });
+  });
 })();

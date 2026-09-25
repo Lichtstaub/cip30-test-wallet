@@ -1,8 +1,9 @@
 // Node side. Turns the friendly WalletOptions into the JSON PageConfig,
 // deriving keys through Evolution here so the page never needs bip39 or
 // BIP32 code.
-import { toBech32, walletAddresses } from '../core/addresses.js';
+import { cip129DRepId, toBech32, walletAddresses } from '../core/addresses.js';
 import { bytesToHex } from '../core/bytes.js';
+import { keyHash } from '../core/hash.js';
 import { publicKey } from '../core/keys.js';
 import { deriveAccount, type DerivedAccount } from '../derive/index.js';
 import type { PageConfig, QuirkConfig } from '../page/config.js';
@@ -25,6 +26,8 @@ export interface WalletOptions {
   utxos?: { lovelace: number | bigint | string }[];
   foreignUtxos?: { txId: string; index: number; addressHex: string; lovelace: number | bigint | string }[];
   quirks?: QuirkConfig;
+  /** CIP-95: report the stake key as registered. Defaults to false, a fresh wallet. */
+  stakeRegistered?: boolean;
 }
 
 export interface PreparedWallet {
@@ -32,6 +35,9 @@ export interface PreparedWallet {
   addresses: { payment: string; reward: string };
   paymentPublicKeyHex: string;
   stakePublicKeyHex: string;
+  drepPublicKeyHex: string;
+  drepKeyHashHex: string;
+  drepId: string;
 }
 
 function lovelaceString(v: number | bigint | string): string {
@@ -73,6 +79,8 @@ export function prepareWallet(options: WalletOptions = {}): PreparedWallet {
   const account = cachedDeriveAccount(options.mnemonic ?? DEFAULT_MNEMONIC, accountIndex);
   const paymentPub = publicKey(account.payment);
   const stakePub = publicKey(account.stake);
+  const drepPub = publicKey(account.drep);
+  const drepHash = keyHash(drepPub);
   const { base, reward } = walletAddresses(networkId, paymentPub, stakePub);
 
   const config: PageConfig = {
@@ -83,10 +91,12 @@ export function prepareWallet(options: WalletOptions = {}): PreparedWallet {
     keys: {
       payment: { kind: account.payment.kind, hex: bytesToHex(account.payment.bytes) },
       stake: { kind: account.stake.kind, hex: bytesToHex(account.stake.bytes) },
+      drep: { kind: account.drep.kind, hex: bytesToHex(account.drep.bytes) },
     },
     utxos: (options.utxos ?? [{ lovelace: 10_000_000 }]).map((u) => ({ lovelace: lovelaceString(u.lovelace) })),
     foreignUtxos: (options.foreignUtxos ?? []).map((f) => ({ txId: f.txId, index: f.index, addressHex: f.addressHex, lovelace: lovelaceString(f.lovelace) })),
     quirks: { ...(options.quirks ?? {}) },
+    stakeRegistered: options.stakeRegistered ?? false,
   };
 
   return {
@@ -94,5 +104,8 @@ export function prepareWallet(options: WalletOptions = {}): PreparedWallet {
     addresses: { payment: toBech32(base), reward: toBech32(reward) },
     paymentPublicKeyHex: bytesToHex(paymentPub),
     stakePublicKeyHex: bytesToHex(stakePub),
+    drepPublicKeyHex: bytesToHex(drepPub),
+    drepKeyHashHex: bytesToHex(drepHash),
+    drepId: cip129DRepId(drepHash),
   };
 }

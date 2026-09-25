@@ -4,7 +4,8 @@ import { prepareWallet, type WalletOptions } from '../host/config.js';
 import type { JournalEntry, QuirkConfig, QuirkName } from '../page/config.js';
 import type { Control } from '../page/control.js';
 
-export { expectSignedBy } from '../host/assert.js';
+export { expectSignedBy, expectSignedData } from '../host/assert.js';
+export type { SignedDataExpectation } from '../host/assert.js';
 export type { WalletOptions } from '../host/config.js';
 export { expect };
 
@@ -13,7 +14,10 @@ export interface WalletHandle {
   readonly addresses: { payment: string; reward: string };
   readonly paymentPublicKeyHex: string;
   readonly stakePublicKeyHex: string;
-  /** Journal entries, optionally filtered by CIP-30 method name. */
+  readonly drepPublicKeyHex: string;
+  readonly drepKeyHashHex: string;
+  readonly drepId: string;
+  /** Journal entries, optionally filtered by CIP-30 method name. cip95.* names work too. */
   calls(method?: string): Promise<JournalEntry[]>;
   /** Hex CBOR of the last transaction handed to submitTx, never broadcast. */
   lastSubmittedTx(): Promise<string | undefined>;
@@ -38,6 +42,9 @@ function makeHandle(page: Page, prepared: ReturnType<typeof prepareWallet>, inst
     addresses: prepared.addresses,
     paymentPublicKeyHex: prepared.paymentPublicKeyHex,
     stakePublicKeyHex: prepared.stakePublicKeyHex,
+    drepPublicKeyHex: prepared.drepPublicKeyHex,
+    drepKeyHashHex: prepared.drepKeyHashHex,
+    drepId: prepared.drepId,
     calls: (method) =>
       guardInstalled(installed, () =>
         page.evaluate(

@@ -4,19 +4,23 @@
 
 It injects a headless CIP-30 wallet into the page under test. The wallet holds real keys, returns real UTxO CBOR, signs real transaction CBOR with a real Ed25519 signature, and records every call in a journal your test can read. A catalogue of quirks reproduces the failures that only show up on a user's machine: a wallet on the wrong network, a wallet that injects late, a user who declines or never answers.
 
-**Status: pre-release.** Milestone 2b. The signing core, the Playwright fixture and the `doctor` command work end to end against the demo dApp in this repository. Not yet on npm. Not yet supported: `signData`, `getCollateral`, CIP-95, native assets.
+**Status: pre-release.** Milestone 3. The signing core, the Playwright fixture and the `doctor` command work end to end against the demo dApp in this repository. Not yet on npm. Not yet supported: `getCollateral`, native assets.
 
 ## What is in the box
 
-- A CIP-30 provider for the page: `apiVersion`, `name`, `icon`, `supportedExtensions`, `enable`, `isEnabled`, and the api methods `getNetworkId`, `getUtxos` (with `amount` and `paginate`), `getBalance`, `getUsedAddresses`, `getUnusedAddresses`, `getChangeAddress`, `getRewardAddresses`, `getExtensions`, `signTx`, `submitTx`.
+- A CIP-30 provider for the page: `apiVersion`, `name`, `icon`, `supportedExtensions`, `enable`, `isEnabled`, and the api methods `getNetworkId`, `getUtxos` (with `amount` and `paginate`), `getBalance`, `getUsedAddresses`, `getUnusedAddresses`, `getChangeAddress`, `getRewardAddresses`, `getExtensions`, `signTx`, `submitTx`, `signData`.
+- The `cip95` namespace: `getPubDRepKey`, `getRegisteredPubStakeKeys`, `getUnregisteredPubStakeKeys`, `signData`.
 - A Playwright fixture: `test.use({ walletOptions })` configures the wallet, `wallet` in the test reads the journal and flips quirks at runtime.
 - `expectSignedBy(txHex, wallet)`: proves the transaction your dApp submitted really carries the wallet's signature over its body hash. Recording `submitTx` alone proves nothing.
-- Five quirks with provenance notes in [`quirks/`](quirks/README.md).
+- `expectSignedData(result, expected)`: proves a `signData` or `cip95.signData` result the way a careful verifier does, checking the COSE signature, key and address.
+- The quirk catalogue in [`quirks/`](quirks/README.md), a provenance note for every switch.
 - `doctor`: a command line check of a deployed dApp for the secure-context and content-security-policy traps, with a browser mode that measures wallet detection.
+
+`signData` follows CIP-30 and CIP-8 byte for byte with Emurgo's message-signing library: payment key for base, pointer and enterprise addresses, stake key for reward addresses. CIP-95 is announced by default: `getPubDRepKey`, the registered and unregistered stake keys, and `cip95.signData` with the bare DRep ID or a type 6 address. Governance transactions (certificates, votes, proposals) are not signed yet.
 
 ## Not in the box yet
 
-This release is a CIP-30 subset for transaction tests. Missing on purpose, tracked for later milestones: `signData` (CIP-8 and COSE), `getCollateral`, CIP-95, native assets in balances and UTxOs, script inputs, certificates, and every transaction form outside the supported set below. `submitTx` is simulated: it records the transaction and returns its id, it never talks to a node. Fees, validity and script execution are not checked.
+This release is a CIP-30 subset for transaction tests plus the first half of CIP-95. Missing on purpose, tracked for later milestones: `getCollateral`, native assets in balances and UTxOs, script inputs, certificates, and every transaction form outside the supported set below. `submitTx` is simulated: it records the transaction and returns its id, it never talks to a node. Fees, validity and script execution are not checked.
 
 ## Quick start
 
@@ -74,7 +78,7 @@ A consumer SDK expecting real-wallet behaviour can still misbehave against a spe
 
 ## The demo dApp
 
-`examples/minimal-dapp` is a framework-free page served under a strict and a permissive Content Security Policy. It scans `window.cardano`, connects, checks the network, signs and submits a fixed transaction. `npm run serve:demo` starts it on port 4173, `npm run test:browser` runs the browser suite against it in Chromium, Firefox and WebKit.
+`examples/minimal-dapp` is a framework-free page served under a strict and a permissive Content Security Policy. It scans `window.cardano`, connects, checks the network, signs and submits a fixed transaction, signs a message with the stake key, and runs a DRep login that tries the bare DRep ID and the type 6 address in turn. `npm run serve:demo` starts it on port 4173, `npm run test:browser` runs the browser suite against it in Chromium, Firefox and WebKit.
 
 ## doctor
 

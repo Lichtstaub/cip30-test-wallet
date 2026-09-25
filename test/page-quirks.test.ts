@@ -1,8 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { bytesToHex } from '../src/core/bytes.js';
 import { APIErrorCode, TxSignErrorCode } from '../src/core/errors.js';
+import { keyHash } from '../src/core/hash.js';
+import { publicKey } from '../src/core/keys.js';
+import { deriveAccount } from '../src/derive/index.js';
 import { installWallet, type InstallTarget } from '../src/page/install.js';
 import { standardUnsignedTx } from './helpers/build-tx.js';
+import { MNEMONIC } from './fixtures/vectors.js';
 import { chwProvider, enableChw, testConfig } from './helpers/page.js';
 
 const unsigned = () => standardUnsignedTx('chw');
@@ -115,26 +119,56 @@ describe('release and reject return the settled count', () => {
 });
 
 describe('journal redaction', () => {
-  it('never contains key material, not even after errors', async () => {
+  it('never contains key material, not even after errors, including signData and cip95', async () => {
     const config = testConfig({ quirks: { signRejected: true } });
     const target: InstallTarget = {};
     const control = installWallet(config, target);
-    const api = await enableChw(target);
+    const provider = chwProvider(target);
+    await provider.isEnabled();
+    const api = await provider.enable({ extensions: [{ cip: 95 }] });
     await api.getUtxos();
     await api.getBalance();
     await api.signTx(unsigned(), false).catch(() => undefined);
     await api.submitTx('zz').catch(() => undefined);
+    const [reward] = await api.getRewardAddresses();
+    await api.signData(reward!, 'deadbeef');
+    // A bare 28 byte hash is only valid addr shape through the cip95 namespace, so this
+    // fails the CIP-30 signData call and exercises the error path of the journal too.
+    await api.signData('ab'.repeat(28), 'deadbeef').catch(() => undefined);
+    const account = deriveAccount(MNEMONIC);
+    const drepBareId = bytesToHex(keyHash(publicKey(account.drep)));
+    await api.cip95!.getPubDRepKey();
+    await api.cip95!.getRegisteredPubStakeKeys();
+    await api.cip95!.getUnregisteredPubStakeKeys();
+    await api.cip95!.signData(drepBareId, 'deadbeef');
     const text = JSON.stringify(control.journal);
     const secrets = [
       config.keys.payment.hex,
       config.keys.stake.hex,
+      config.keys.drep.hex,
       config.keys.payment.hex.slice(0, 64),
       config.keys.payment.hex.slice(64),
       config.keys.stake.hex.slice(0, 64),
       config.keys.stake.hex.slice(64),
+      config.keys.drep.hex.slice(0, 64),
+      config.keys.drep.hex.slice(64),
     ];
     for (const s of secrets) expect(text).not.toContain(s);
     expect(text).not.toContain('test walk nut');
-    expect(control.journal.map((e) => e.method)).toEqual(['isEnabled', 'enable', 'getUtxos', 'getBalance', 'signTx', 'submitTx']);
+    expect(control.journal.map((e) => e.method)).toEqual([
+      'isEnabled',
+      'enable',
+      'getUtxos',
+      'getBalance',
+      'signTx',
+      'submitTx',
+      'getRewardAddresses',
+      'signData',
+      'signData',
+      'cip95.getPubDRepKey',
+      'cip95.getRegisteredPubStakeKeys',
+      'cip95.getUnregisteredPubStakeKeys',
+      'cip95.signData',
+    ]);
   });
 });

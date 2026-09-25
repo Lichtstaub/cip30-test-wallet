@@ -2,6 +2,7 @@ import { blake2b } from '@noble/hashes/blake2.js';
 import { assertNetwork, walletAddresses } from '../core/addresses.js';
 import { hexToBytes } from '../core/bytes.js';
 import { APIErrorCode, apiError } from '../core/errors.js';
+import { keyHash } from '../core/hash.js';
 import { publicKey, type SigningKey } from '../core/keys.js';
 import { MemoryLedger, type Utxo } from '../core/ledger.js';
 import type { KeyConfig, PageConfig } from './config.js';
@@ -54,12 +55,17 @@ export function buildLedger(config: PageConfig, address: Uint8Array): MemoryLedg
 export function installWallet(config: PageConfig, target: InstallTarget): Control {
   const payment = toSigningKey(config.keys.payment, 'payment');
   const stake = toSigningKey(config.keys.stake, 'stake');
-  const { base: baseAddress, reward: rewardAddress } = walletAddresses(config.networkId, publicKey(payment), publicKey(stake));
+  const drep = toSigningKey(config.keys.drep, 'drep');
+  const paymentPub = publicKey(payment);
+  const stakePub = publicKey(stake);
+  const drepPub = publicKey(drep);
+  const { base: baseAddress, reward: rewardAddress } = walletAddresses(config.networkId, paymentPub, stakePub);
   assertNetwork(baseAddress, config.networkId);
   assertNetwork(rewardAddress, config.networkId);
 
   const control = new Control(config.quirks);
-  const ctx: WalletContext = { config, control, ledger: buildLedger(config, baseAddress), payment, stake, baseAddress, rewardAddress };
+  const keys = { paymentPub, stakePub, drepPub, paymentHash: keyHash(paymentPub), stakeHash: keyHash(stakePub), drepHash: keyHash(drepPub) };
+  const ctx: WalletContext = { config, control, ledger: buildLedger(config, baseAddress), payment, stake, drep, baseAddress, rewardAddress, keys };
   const provider = buildProvider(ctx);
 
   const define = () => {
