@@ -57,7 +57,7 @@ It checks, in order: `COSE_Key` and `COSE_Sign1` decode, `alg` is EdDSA on both,
 ```ts
 const [call] = await wallet.calls('signData');
 expectSignedData(call!.result as { signature: string; key: string }, {
-  payload: payloadHex('demo message'),
+  payload: Buffer.from('demo message').toString('hex'),
   address: call!.args[0] as string,
   publicKeyHex: wallet.stakePublicKeyHex,
 });
