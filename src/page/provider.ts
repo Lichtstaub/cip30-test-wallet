@@ -156,7 +156,7 @@ export function buildApi(ctx: WalletContext, extensions: { cip: number }[] = [])
             const body = parseBody(bytes);
             const skipped = unsupportedForms(body, await resolveInputs(body, ledger));
             if (skipped.length > 0) {
-              console.warn('[cardano-headless-wallet] partialSign: true skipped unsupported transaction forms: ' + skipped.join(', '));
+              console.warn('[cip30-test-wallet] partialSign: true skipped unsupported transaction forms: ' + skipped.join(', '));
             }
           } catch {
             // Malformed input is reported as InvalidRequest by coreSignTx below, not warned about here.

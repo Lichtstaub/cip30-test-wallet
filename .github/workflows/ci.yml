@@ -59,7 +59,7 @@ jobs:
           for i in $(seq 1 20); do curl -sf -o /dev/null http://localhost:4173/strict/ && break; sleep 0.5; done
           cd "$RUNNER_TEMP/consumer"
           set +e
-          npx --no-install cardano-headless-wallet doctor http://localhost:4173/strict/ --json > doctor.json
+          npx --no-install cip30-test-wallet doctor http://localhost:4173/strict/ --json > doctor.json
           code=$?
           set -e
           cat doctor.json

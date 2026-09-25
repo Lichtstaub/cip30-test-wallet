@@ -1,16 +1,16 @@
 {
-  "name": "cardano-headless-wallet",
+  "name": "cip30-test-wallet",
   "version": "0.2.0-alpha.0",
-  "description": "Headless CIP-30 wallet for automated Cardano dApp transaction tests, with a catalogue of real wallet quirks.",
+  "description": "CIP-30 test wallet for automated Cardano dApp transaction tests, with a catalogue of real wallet quirks.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Lichtstaub/cardano-headless-wallet.git"
+    "url": "git+https://github.com/Lichtstaub/cip30-test-wallet.git"
   },
   "bugs": {
-    "url": "https://github.com/Lichtstaub/cardano-headless-wallet/issues"
+    "url": "https://github.com/Lichtstaub/cip30-test-wallet/issues"
   },
-  "homepage": "https://github.com/Lichtstaub/cardano-headless-wallet#readme",
+  "homepage": "https://github.com/Lichtstaub/cip30-test-wallet#readme",
   "keywords": [
     "cardano",
     "cip30",
@@ -18,18 +18,16 @@
     "wallet",
     "playwright",
     "testing",
-    "headless",
     "dapp"
   ],
   "type": "module",
-  "private": true,
   "engines": {
     "node": ">=20.19"
   },
   "main": "./dist/node/index.js",
   "types": "./dist/node/index.d.ts",
   "bin": {
-    "cardano-headless-wallet": "./dist/node/cli/doctor.js"
+    "cip30-test-wallet": "./dist/node/cli/doctor.js"
   },
   "exports": {
     ".": {

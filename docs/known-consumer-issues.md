@@ -11,7 +11,7 @@ Bugs in a consumer SDK that surface against this wallet because it is spec-confo
 **How to reproduce with this wallet.**
 
 ```ts
-import { test } from 'cardano-headless-wallet/playwright';
+import { test } from 'cip30-test-wallet/playwright';
 // inside a page under test, with the CIP-30 provider installed by the fixture:
 // api.getRewardAddresses() returns hex, cip30Wallet(api).rewardAddress() throws
 ```

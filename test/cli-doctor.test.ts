@@ -66,10 +66,10 @@ describe('the built CLI', () => {
   it.skipIf(!existsSync('dist/node/cli/doctor.js'))('runs when started through a symlink, as npm installs it', () => {
     const dir = mkdtempSync(join(tmpdir(), 'chw-bin-'));
     try {
-      const link = join(dir, 'cardano-headless-wallet');
+      const link = join(dir, 'cip30-test-wallet');
       symlinkSync(resolve('dist/node/cli/doctor.js'), link);
       const out = execFileSync(process.execPath, [link, '--help'], { encoding: 'utf8' });
-      expect(out).toContain('usage: cardano-headless-wallet doctor');
+      expect(out).toContain('usage: cip30-test-wallet doctor');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

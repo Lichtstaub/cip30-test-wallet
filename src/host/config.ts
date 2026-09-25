@@ -85,7 +85,7 @@ export function prepareWallet(options: WalletOptions = {}): PreparedWallet {
 
   const config: PageConfig = {
     name: options.name ?? 'chw',
-    displayName: options.displayName ?? 'Headless Wallet',
+    displayName: options.displayName ?? 'Test Wallet',
     icon: options.icon ?? DEFAULT_ICON,
     networkId,
     keys: {

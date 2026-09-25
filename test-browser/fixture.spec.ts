@@ -1,7 +1,7 @@
 import { expect, test } from '../src/playwright/index.js';
 
 test.describe('fixture basics', () => {
-  test('the demo lists the headless wallet and connects to it', async ({ page, wallet }) => {
+  test('the demo lists the test wallet and connects to it', async ({ page, wallet }) => {
     await page.goto('/strict/');
     await expect(page.locator('#wallets')).toHaveText('chw');
     await page.locator('#connect').click();

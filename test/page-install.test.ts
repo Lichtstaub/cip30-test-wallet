@@ -13,7 +13,7 @@ describe('installWallet', () => {
     expect((target.cardano as Record<string, unknown>)['other']).toEqual({ marker: true });
     const chw = chwProvider(target);
     expect(chw.apiVersion).toBe('1');
-    expect(chw.name).toBe('Headless Wallet');
+    expect(chw.name).toBe('Test Wallet');
     expect(chw.icon).toBe('');
     expect(chw.supportedExtensions).toEqual([{ cip: 95 }]);
   });

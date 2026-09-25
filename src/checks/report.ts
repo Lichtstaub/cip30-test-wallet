@@ -84,7 +84,7 @@ export function formatJson(report: DoctorReport): string {
 
 export function formatHuman(report: DoctorReport): string {
   const lines: string[] = [];
-  lines.push(`cardano-headless-wallet doctor`);
+  lines.push(`cip30-test-wallet doctor`);
   lines.push(`url: ${report.url}`);
   if (report.finalUrl && report.finalUrl !== report.url) lines.push(`final url: ${report.finalUrl}`);
   if (report.status !== null) lines.push(`status: ${report.status}`);

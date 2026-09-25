@@ -9,7 +9,7 @@ export function testConfig(overrides: Partial<PageConfig> = {}): PageConfig {
   const account = deriveAccount(MNEMONIC);
   return {
     name: 'chw',
-    displayName: 'Headless Wallet',
+    displayName: 'Test Wallet',
     icon: '',
     networkId: 0,
     keys: {

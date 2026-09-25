@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { exitCode, formatHuman, formatJson } from '../checks/report.js';
 import { runDoctor, type DoctorOptions } from '../host/doctor.js';
 
-export const USAGE = `usage: cardano-headless-wallet doctor <url> [--deep] [--browser chromium|firefox|webkit] [--click <selector>] [--expect <selector>] [--inject-after <ms>] [--timeout <ms>] [--settle <ms>] [--json]
+export const USAGE = `usage: cip30-test-wallet doctor <url> [--deep] [--browser chromium|firefox|webkit] [--click <selector>] [--expect <selector>] [--inject-after <ms>] [--timeout <ms>] [--settle <ms>] [--json]
 
 Checks a deployed dApp for the traps that keep Cardano wallets from injecting:
 secure context, content security policy versus eval, and with --deep, when the

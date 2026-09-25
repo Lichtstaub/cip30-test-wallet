@@ -1,6 +1,6 @@
 # doctor
 
-`npx cardano-headless-wallet doctor <url>` checks a deployed dApp for the traps that keep Cardano wallets from injecting.
+`npx cip30-test-wallet doctor <url>` checks a deployed dApp for the traps that keep Cardano wallets from injecting.
 
 ## Static run
 
@@ -29,7 +29,7 @@ Every `Content-Security-Policy` header, every comma-separated policy inside one 
 
 The first load observes. An accessor on `window.cardano` records when the page first reads it and how often, and a listener records the page's own `securitypolicyviolation` events. Nothing is injected. If the page ends up on a different URL than the static fetch judged (a redirect the static fetch's cookie-less request did not take, a client-side navigation), `deep-url-differs` names it, the measurements describe the page the browser actually loaded.
 
-The second load probes. The eval probe is appended to the response of the first first-party script without an `integrity` attribute, so it runs under the page's real policy. It is skipped, with a reason, when the policy pins scripts by hash, when every first-party script carries an `integrity` attribute, when there is no external first-party script, or when the route interception never matched a request. A probe that runs but raises something other than a CSP violation is reported as `eval-probe-error` instead of folded into the blocked or allowed verdict. The headless wallet is injected (`--inject-after <ms>` delays it, the report names the millisecond it actually ran at), `--click <selector>` runs a user action in both loads (a failed click is reported as `click-failed` and does not abort the run, whatever was already observed still stands), and `--expect <selector>` names the element that appears once the dApp detected a wallet.
+The second load probes. The eval probe is appended to the response of the first first-party script without an `integrity` attribute, so it runs under the page's real policy. It is skipped, with a reason, when the policy pins scripts by hash, when every first-party script carries an `integrity` attribute, when there is no external first-party script, or when the route interception never matched a request. A probe that runs but raises something other than a CSP violation is reported as `eval-probe-error` instead of folded into the blocked or allowed verdict. The test wallet is injected (`--inject-after <ms>` delays it, the report names the millisecond it actually ran at), `--click <selector>` runs a user action in both loads (a failed click is reported as `click-failed` and does not abort the run, whatever was already observed still stands), and `--expect <selector>` names the element that appears once the dApp detected a wallet.
 
 | Observation | Finding | Severity |
 |---|---|---|
@@ -55,4 +55,4 @@ A policy that JavaScript inserts as a `<meta>` tag after the parser already ran 
 
 ## Limits
 
-The injected wallet is the default headless wallet, it never signs anything during a doctor run. The deep run cannot reproduce a mobile in-app browser, it measures the page under a desktop engine. WebKit is the engine behind the Eternl iOS in-app browser, which is why `--browser webkit` is worth running for a page destined for that browser, but the eval probe itself is engine-independent, it reports what actually happened under whichever engine ran it, not a WebKit-specific measurement.
+The injected wallet is the default test wallet, it never signs anything during a doctor run. The deep run cannot reproduce a mobile in-app browser, it measures the page under a desktop engine. WebKit is the engine behind the Eternl iOS in-app browser, which is why `--browser webkit` is worth running for a page destined for that browser, but the eval probe itself is engine-independent, it reports what actually happened under whichever engine ran it, not a WebKit-specific measurement.
