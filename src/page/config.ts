@@ -18,7 +18,7 @@ export interface ForeignUtxoConfig {
   lovelace: string;
 }
 
-export const QUIRK_NAMES = ['lateInjection', 'enableRejected', 'signRejected', 'signHangs'] as const;
+export const QUIRK_NAMES = ['lateInjection', 'enableRejected', 'signRejected', 'signHangs', 'signDataRejected'] as const;
 
 export type QuirkName = (typeof QUIRK_NAMES)[number];
 
@@ -34,6 +34,8 @@ export interface QuirkConfig {
   signRejected?: boolean;
   /** signTx() waits until the test calls release or reject. */
   signHangs?: boolean;
+  /** signData() and cip95.signData() throw DataSignError UserDeclined, like a user cancelling the message prompt. */
+  signDataRejected?: boolean;
 }
 
 export type HangableMethod = 'signTx';

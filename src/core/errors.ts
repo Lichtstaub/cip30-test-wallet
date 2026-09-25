@@ -15,6 +15,12 @@ export const TxSignErrorCode = {
   UserDeclined: 2,
 } as const;
 
+export const DataSignErrorCode = {
+  ProofGeneration: 1,
+  AddressNotPK: 2,
+  UserDeclined: 3,
+} as const;
+
 export interface Cip30Error {
   code: number;
   info: string;
@@ -25,6 +31,10 @@ export function apiError(code: (typeof APIErrorCode)[keyof typeof APIErrorCode],
 }
 
 export function txSignError(code: (typeof TxSignErrorCode)[keyof typeof TxSignErrorCode], info: string): Cip30Error {
+  return { code, info };
+}
+
+export function dataSignError(code: (typeof DataSignErrorCode)[keyof typeof DataSignErrorCode], info: string): Cip30Error {
   return { code, info };
 }
 

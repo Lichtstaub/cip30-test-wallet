@@ -11,5 +11,6 @@ No switch without a note. A quirk nobody can trace is the stale wallet profile t
 | `enableRejected` | confirmed | [enable-rejected.md](enable-rejected.md) |
 | `signRejected` | confirmed | [sign-rejected.md](sign-rejected.md) |
 | `signHangs` | confirmed | [sign-hangs.md](sign-hangs.md) |
+| `signDataRejected` | confirmed | [sign-data-rejected.md](sign-data-rejected.md) |
 
 Found one we do not have? Open an issue with wallet name, version and platform, the CIP-30 method, what the spec expects, what the wallet does, and a minimal reproduction. Never include keys, mnemonics or funded addresses.

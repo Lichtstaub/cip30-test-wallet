@@ -2,9 +2,11 @@ import { bytesToHex, hexToBytes } from '../core/bytes.js';
 import { decode } from '../core/cbor/decode.js';
 import { encode } from '../core/cbor/encode.js';
 import { assertTransactionShape, parseBody } from '../core/cbor/tx.js';
-import { APIErrorCode, apiError, TxSignErrorCode, txSignError } from '../core/errors.js';
+import { signCose } from '../core/cose.js';
+import { APIErrorCode, apiError, DataSignErrorCode, dataSignError, TxSignErrorCode, txSignError } from '../core/errors.js';
 import type { SigningKey } from '../core/keys.js';
 import { encodeUtxo, type MemoryLedger } from '../core/ledger.js';
+import { parseAddressArg, parseHexArg, resolveDataSigner } from '../core/sign-data.js';
 import { resolveInputs, signTx as coreSignTx, unsupportedForms } from '../core/sign-tx.js';
 import type { Control } from './control.js';
 import type { PageConfig } from './config.js';
@@ -20,6 +22,11 @@ export interface WalletContext {
   rewardAddress: Uint8Array;
 }
 
+export interface DataSignature {
+  signature: string;
+  key: string;
+}
+
 export interface Cip30Api {
   getNetworkId(): Promise<number>;
   getUtxos(amount?: string, paginate?: { page: number; limit: number }): Promise<string[] | null>;
@@ -31,6 +38,7 @@ export interface Cip30Api {
   getExtensions(): Promise<{ cip: number }[]>;
   signTx(tx: string, partialSign?: boolean): Promise<string>;
   submitTx(tx: string): Promise<string>;
+  signData(addr: string, payload: string): Promise<DataSignature>;
 }
 
 export interface Cip30Provider {
@@ -141,7 +149,18 @@ export function buildApi(ctx: WalletContext): Cip30Api {
         }
         return bytesToHex(await ledger.submit(bytes));
       }),
+    signData: (addr, payload) => control.record('signData', [addr, payload], () => signDataWith(ctx, addr, payload, 'cip30')),
   };
+}
+
+/** Shared by signData and cip95.signData. Validation first, like a real wallet, then the prompt quirks, then the signature. */
+export async function signDataWith(ctx: WalletContext, addr: unknown, payload: unknown, mode: 'cip30' | 'cip95'): Promise<DataSignature> {
+  const addressBytes = parseAddressArg(addr);
+  const payloadBytes = parseHexArg(payload, 'payload');
+  const signer = resolveDataSigner(addressBytes, { networkId: ctx.config.networkId, payment: ctx.payment, stake: ctx.stake, drep: ctx.drep }, mode);
+  if (ctx.control.quirks.signDataRejected) throw dataSignError(DataSignErrorCode.UserDeclined, 'user declined to sign the data');
+  const { signature, key } = signCose(signer.key, signer.headerAddress, payloadBytes);
+  return { signature: bytesToHex(signature), key: bytesToHex(key) };
 }
 
 /**
