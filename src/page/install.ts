@@ -50,7 +50,8 @@ export function buildLedger(config: PageConfig, address: Uint8Array): MemoryLedg
  * Installs the provider into the target (window in the page, any object in
  * tests). Existing entries in target.cardano stay untouched. With the
  * lateInjection quirk the provider appears after the delay, the control
- * object is available immediately so a test can observe the wait.
+ * object is available immediately so a test can observe the wait. With
+ * answersEveryKey the namespace is replaced by a proxy over the same object.
  */
 export function installWallet(config: PageConfig, target: InstallTarget): Control {
   const payment = toSigningKey(config.keys.payment, 'payment');
@@ -98,7 +99,7 @@ export function installWallet(config: PageConfig, target: InstallTarget): Contro
  * members and symbols answer as before, so Object.keys, the in operator and
  * other wallets in the namespace are unaffected.
  */
-export function answerEveryKey(namespace: Record<string, unknown>, provider: unknown): Record<string, unknown> {
+function answerEveryKey(namespace: Record<string, unknown>, provider: unknown): Record<string, unknown> {
   return new Proxy(namespace, {
     get: (ns, key, receiver) => (typeof key === 'string' && !(key in ns) ? provider : Reflect.get(ns, key, receiver)),
   });

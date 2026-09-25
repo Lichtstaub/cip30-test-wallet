@@ -140,16 +140,13 @@ describe('setQuirk validation', () => {
     expect(() => control.setQuirk('signRejcted' as never, true as never)).toThrow(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
   });
 
-  it('rejects lateInjection after install with InvalidRequest, it only applies at install time', () => {
+  it.each([
+    ['lateInjection', 100],
+    ['answersEveryKey', true],
+  ] as const)('rejects %s after install with InvalidRequest, it only applies at install time', (name, value) => {
     const target: InstallTarget = {};
     const control = installWallet(testConfig(), target);
-    expect(() => control.setQuirk('lateInjection', 100)).toThrow(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
-  });
-
-  it('rejects answersEveryKey after install with InvalidRequest, it only applies at install time', () => {
-    const target: InstallTarget = {};
-    const control = installWallet(testConfig(), target);
-    expect(() => control.setQuirk('answersEveryKey', true)).toThrow(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
+    expect(() => control.setQuirk(name, value as never)).toThrow(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
   });
 });
 
