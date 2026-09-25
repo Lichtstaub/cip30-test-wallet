@@ -108,6 +108,7 @@ export function resolveDataSigner(address: Uint8Array, keys: DataSignerKeys, mod
     if (!bytesEqual(address, keys.drepHash)) throw dataSignError(DataSignErrorCode.ProofGeneration, 'the wallet does not hold the key for this DRep ID');
     return { role: 'drep', key: keys.drep, publicKey: keys.drepPub, headerAddress: address, drepForm: 'bare' };
   }
+  if (address.length === 0) throw apiError(APIErrorCode.InvalidRequest, 'addr is not an address');
   if (isByronAddress(address)) throw dataSignError(DataSignErrorCode.ProofGeneration, 'the wallet holds no Byron keys');
   if (address.length === 29 && (address[0] === 0x22 || address[0] === 0x23)) {
     throw apiError(APIErrorCode.InvalidRequest, 'addr is a CIP-129 governance id, not an address, pass the bare DRep ID or a type 6 address instead');

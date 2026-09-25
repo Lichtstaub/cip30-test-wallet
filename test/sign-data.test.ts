@@ -88,6 +88,16 @@ describe('resolveDataSigner, CIP-30', () => {
     expect(code(() => resolveDataSigner(hexToBytes('22' + bytesToHex(drp)), keys, 'cip30'))).toBe(-1);
   });
 
+  it('answers InvalidRequest for a zero-length address instead of throwing a plain Error', () => {
+    let caught: unknown;
+    try {
+      resolveDataSigner(new Uint8Array(0), keys, 'cip30');
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toEqual({ code: -1, info: 'addr is not an address' });
+  });
+
   it('gives a 29 byte CIP-129 governance id its own message instead of a generic wrong length, readShelleyAddress itself stays generic', () => {
     for (const header of ['22', '23']) {
       let caught: unknown;

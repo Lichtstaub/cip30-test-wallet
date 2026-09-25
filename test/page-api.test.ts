@@ -225,4 +225,9 @@ describe('signData', () => {
       expect(bytesToHex(d.payload)).toBe(payload);
     }
   });
+
+  it('rejects a bech32 address that decodes to zero bytes with InvalidRequest', async () => {
+    const { api } = await setup();
+    await expect(api.signData('addr1mykd6t', '')).rejects.toEqual(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
+  });
 });
