@@ -58,6 +58,37 @@ await wallet.release('signTx');
 
 The full option and handle reference is in [docs/fixture-api.md](docs/fixture-api.md).
 
+## Pages behind a wallet login
+
+Many dApps log in with a signed message (CIP-8 `signData`). The headless wallet signs that message like a real wallet, so the dApp issues a real session, and every page behind the login becomes testable. Sign in once per role in a setup step, save the session with Playwright's `storageState`, and reuse it in the tests. That keeps the number of logins low, which matters because login endpoints are usually rate limited.
+
+```ts
+// tests/drep.setup.ts
+import { test as setup } from 'cardano-headless-wallet/playwright';
+
+const mnemonic = process.env.E2E_DREP_MNEMONIC;
+setup.skip(!mnemonic, 'needs E2E_DREP_MNEMONIC, a testnet wallet registered as DRep');
+setup.use({ walletOptions: mnemonic ? { mnemonic } : {} });
+
+setup('sign in as DRep', async ({ page }) => {
+  await page.goto('/login?role=drep');
+  await page.getByRole('button', { name: 'Sign in with wallet' }).click();
+  await page.waitForURL('**/home/');
+  await page.context().storageState({ path: 'playwright/.auth/drep.json' });
+});
+```
+
+Tests that depend on this setup project start with `test.use({ storageState: 'playwright/.auth/drep.json' })`. Keep the auth folder out of version control.
+
+What decides whether a login works:
+
+- **Roles without chain state** work with any mnemonic, the default one included, for example a plain account login with the reward address.
+- **Roles the dApp checks on chain** need a wallet that really has that role on the dApp's network, for example a DRep registered on preprod. Pass its mnemonic through an environment variable, never commit it. Its keys end up in traces like any other, so use a testnet wallet only.
+- **Reading works, most governance actions do not yet.** The wallet signs messages and plain transactions. Votes, certificates and proposals are not signed yet, so pages whose main action is one of those can be opened and checked, but the action itself cannot complete.
+- **Token-gated pages** check real holdings on chain. The wallet's synthetic UTxOs do not count there, the address itself has to hold the tokens.
+
+The fixture injects into any URL, so this also works against a deployed site, not only a local dev server. The wallet's network has to match the site's. Against a mainnet site only flows that cost nothing make sense, such as a message-signing login, and only with a mnemonic that holds nothing. Remember that a production login creates real accounts and sessions on that site.
+
 ## Keys and secrets
 
 The wallet's extended private keys are serialised into the page's init script by design, that is how a headless CIP-30 provider signs without a node process to call back into. So they appear in Playwright traces, HAR files and any dump of the page. Use only throwaway mnemonics for tests, never one that holds real funds. The default mnemonic is the public CSL test vector and holds no funds.
