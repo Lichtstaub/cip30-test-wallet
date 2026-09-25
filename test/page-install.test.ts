@@ -15,7 +15,7 @@ describe('installWallet', () => {
     expect(chw.apiVersion).toBe('1');
     expect(chw.name).toBe('Headless Wallet');
     expect(chw.icon).toBe('');
-    expect(chw.supportedExtensions).toEqual([]);
+    expect(chw.supportedExtensions).toEqual([{ cip: 95 }]);
   });
 
   it('creates window.cardano when it does not exist and exposes the control object', () => {

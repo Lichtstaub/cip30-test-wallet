@@ -18,7 +18,7 @@ export interface ForeignUtxoConfig {
   lovelace: string;
 }
 
-export const QUIRK_NAMES = ['lateInjection', 'enableRejected', 'signRejected', 'signHangs', 'signDataRejected'] as const;
+export const QUIRK_NAMES = ['lateInjection', 'enableRejected', 'signRejected', 'signHangs', 'signDataRejected', 'noCip95', 'cip95NamespaceMissing'] as const;
 
 export type QuirkName = (typeof QUIRK_NAMES)[number];
 
@@ -36,6 +36,10 @@ export interface QuirkConfig {
   signHangs?: boolean;
   /** signData() and cip95.signData() throw DataSignError UserDeclined, like a user cancelling the message prompt. */
   signDataRejected?: boolean;
+  /** The wallet does not support CIP-95: no extension announced, no namespace, like an older wallet. */
+  noCip95?: boolean;
+  /** supportedExtensions and getExtensions claim CIP-95, but the enabled api has no cip95 namespace. */
+  cip95NamespaceMissing?: boolean;
 }
 
 export type HangableMethod = 'signTx';
