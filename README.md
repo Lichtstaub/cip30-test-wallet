@@ -58,6 +58,34 @@ await wallet.release('signTx');
 
 The full option and handle reference is in [docs/fixture-api.md](docs/fixture-api.md).
 
+## CI and coding agents
+
+An extension wallet asks for approval in its own popup, usually behind a password, so every connect and every signature needs a human. This wallet answers inside the page. A CI job or a coding agent that drives a browser can connect, sign and submit in one unattended run, with no seed to guard and no funds to lose. The default mnemonic is a public test vector.
+
+Everything the run produces is readable by a program:
+
+- The journal (`wallet.calls()`) lists every CIP-30 call with its arguments, result or error.
+- `expectSignedBy` and `expectSignedData` fail with a concrete reason when a signature does not verify.
+- Wallet errors are CIP-30 `{ code, info }` objects. Harness problems are `ChwError`s with a stable code such as `CHW_UNSUPPORTED_TX_FORM` or `CHW_UNRESOLVED_INPUT` and a hint on what to change.
+- `doctor --json` prints the full report, and the exit code (0 clean, 1 findings, 2 run failed) is enough to gate a pipeline.
+
+So an agent that changes a wallet flow can check its own work: write or extend a Playwright test, run it, read the journal and the assertion output, fix, repeat. A few lines in your project's agent instructions are enough:
+
+```md
+Wallet flows are tested with cip30-test-wallet (Playwright fixture, import from `cip30-test-wallet/playwright`).
+After changing connect, signing or submit code, run the wallet tests and check `wallet.calls()` and `expectSignedBy`.
+Reproduce user-side failures with `walletOptions.quirks` (see node_modules/cip30-test-wallet/quirks/README.md), never with a real wallet.
+Before deploying, run `npx cip30-test-wallet doctor <url> --json` and treat exit code 1 as a failed check.
+```
+
+Outside the Playwright test runner, the same wallet goes into any Playwright page through an init script:
+
+```ts
+import { initScript, prepareWallet } from 'cip30-test-wallet';
+
+await page.addInitScript({ content: initScript(prepareWallet({ networkId: 0 }).config) });
+```
+
 ## Pages behind a wallet login
 
 Many dApps log in with a signed message (CIP-8 `signData`). The test wallet signs that message like a real wallet, so the dApp issues a real session, and every page behind the login becomes testable. Sign in once per role in a setup step, save the session with Playwright's `storageState`, and reuse it in the tests. That keeps the number of logins low, which matters because login endpoints are usually rate limited.
@@ -146,4 +174,4 @@ npm run test:browser  # builds first, then Playwright in three engines
 npm run bundle:check  # the page bundle must stand alone: no Node, no WASM, no externals
 ```
 
-Related work: [cardano-test-wallet](https://github.com/cardanoapi/cardano-test-wallet) (MIT) is the conceptual predecessor, a simulated wallet built for GovTool. Sorbet and Cardano Dev Wallet are browser extensions for manual testing. This project targets CI.
+Related work: [cardano-test-wallet](https://github.com/cardanoapi/cardano-test-wallet) (MIT) is the conceptual predecessor, a simulated wallet built for GovTool. Sorbet and Cardano Dev Wallet are browser extensions for manual testing, with a human at the popup. This project is built for runs without one: CI pipelines and coding agents that drive a browser.
