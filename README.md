@@ -8,6 +8,10 @@
 
 It injects a CIP-30 test wallet into the page under test. The wallet holds real keys, returns real UTxO CBOR, signs real transaction CBOR with a real Ed25519 signature, and records every call in a journal your test can read. A catalogue of quirks reproduces the failures that only show up on a user's machine: a wallet on the wrong network, a wallet that injects late, a user who declines or never answers.
 
+![A Playwright test in the trace viewer: the test connects the demo dApp to the injected wallet, commits, and proves the submitted transaction carries the wallet's signature](https://raw.githubusercontent.com/Lichtstaub/cip30-test-wallet/main/media/trace-viewer.png)
+
+A Playwright test in the trace viewer. The wallet is detected, connects on preprod and signs the commit transaction without a popup, and `expectSignedBy` proves the submitted transaction carries its signature.
+
 **Status: 0.x.** The signing core, the Playwright fixture and the `doctor` command are covered by unit tests and by browser tests in Chromium, Firefox and WebKit, and they run in the end-to-end suites of real dApps. Until 1.0 a minor release can still change the API, the notes of each GitHub release say what changed. Not yet supported: `getCollateral`, native assets, governance transactions.
 
 Coding agents start with [AGENTS.md](AGENTS.md).

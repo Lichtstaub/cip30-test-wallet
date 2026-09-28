@@ -2,22 +2,48 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>cip30-test-wallet demo</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <h1>Minimal dApp</h1>
-  <p>Page-native eval: <code id="eval-result">pending</code></p>
-  <p>Wallets in window.cardano: <code id="wallets">pending</code> (scans: <code id="scan-count">0</code>)</p>
-  <p id="wallet-found" hidden>Wallet detected</p>
-  <button id="connect" type="button">Connect</button>
-  <p>Connect result: <code id="connect-result">pending</code></p>
-  <button id="commit" type="button">Commit</button>
-  <p>Commit result: <code id="commit-result">pending</code></p>
-  <button id="sign-message" type="button">Sign message</button>
-  <p>Sign message result: <code id="sign-message-result">pending</code></p>
-  <button id="drep-login" type="button">DRep login</button>
-  <p>DRep login result: <code id="drep-login-result">pending</code></p>
+  <main class="panel">
+    <header class="head">
+      <h1>Minimal dApp</h1>
+      <span class="network">preprod</span>
+    </header>
+
+    <dl class="env">
+      <div>
+        <dt>Wallets in window.cardano</dt>
+        <dd><code id="wallets">pending</code> <span class="scans">scans: <code id="scan-count">0</code></span></dd>
+      </div>
+      <div>
+        <dt>Page-native eval</dt>
+        <dd><code id="eval-result">pending</code></dd>
+      </div>
+    </dl>
+    <p id="wallet-found" class="found" hidden>Wallet detected</p>
+
+    <section class="actions">
+      <div class="row">
+        <button id="connect" type="button">Connect</button>
+        <p><span class="label">Connect result</span><code id="connect-result">pending</code></p>
+      </div>
+      <div class="row">
+        <button id="commit" type="button">Commit</button>
+        <p><span class="label">Commit result</span><code id="commit-result">pending</code></p>
+      </div>
+      <div class="row">
+        <button id="sign-message" type="button">Sign message</button>
+        <p><span class="label">Sign message result</span><code id="sign-message-result">pending</code></p>
+      </div>
+      <div class="row">
+        <button id="drep-login" type="button">DRep login</button>
+        <p><span class="label">DRep login result</span><code id="drep-login-result">pending</code></p>
+      </div>
+    </section>
+  </main>
   <script src="demo-tx.js"></script>
   <script src="app.js"></script>
 </body>
