@@ -166,7 +166,7 @@ A consumer SDK expecting real-wallet behaviour can still misbehave against a spe
 
 ## The demo dApp
 
-`examples/minimal-dapp` is a framework-free page served under a strict and a permissive Content Security Policy. It scans `window.cardano`, connects, checks the network, signs and submits a fixed transaction, signs a message with the stake key, and runs a DRep login that tries the bare DRep ID and the type 6 address in turn. `npm run serve:demo` starts it on port 4173, `npm run test:browser` runs the browser suite against it in Chromium, Firefox and WebKit.
+`examples/minimal-dapp` is a framework-free page served under a strict and a permissive Content Security Policy. It scans `window.cardano`, connects, checks the network, signs and submits a fixed transaction, signs a message with the stake key, and runs a DRep login that tries the bare DRep ID and the type 6 address in turn. `npm run serve:demo` starts it on port 4173, `npm run test:browser` runs the browser suite against it in Chromium, Firefox and WebKit. `npm run doctor:demo` runs `doctor --deep` against its strict and permissive variants in one go, arguments after `--` go to both runs, for example `npm run doctor:demo -- --browser webkit`.
 
 ## doctor
 
