@@ -4,7 +4,7 @@
 
 It injects a CIP-30 test wallet into the page under test. The wallet holds real keys, returns real UTxO CBOR, signs real transaction CBOR with a real Ed25519 signature, and records every call in a journal your test can read. A catalogue of quirks reproduces the failures that only show up on a user's machine: a wallet on the wrong network, a wallet that injects late, a user who declines or never answers.
 
-**Status: pre-release.** Milestone 3. The signing core, the Playwright fixture and the `doctor` command work end to end against the demo dApp in this repository. Not yet on npm. Not yet supported: `getCollateral`, native assets.
+**Status: alpha.** The signing core, the Playwright fixture and the `doctor` command work end to end against the demo dApp in this repository. The API can still change between alpha releases. Not yet supported: `getCollateral`, native assets.
 
 ## What is in the box
 
@@ -23,6 +23,10 @@ It injects a CIP-30 test wallet into the page under test. The wallet holds real 
 This release is a CIP-30 subset for transaction tests plus the first half of CIP-95. Missing on purpose, tracked for later milestones: `getCollateral`, native assets in balances and UTxOs, script inputs, certificates, and every transaction form outside the supported set below. `submitTx` is simulated: it records the transaction and returns its id, it never talks to a node. Fees, validity and script execution are not checked.
 
 ## Quick start
+
+```bash
+npm install --save-dev cip30-test-wallet @playwright/test
+```
 
 ```ts
 // tests/commit.spec.ts

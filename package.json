@@ -1,7 +1,7 @@
 {
   "name": "cip30-test-wallet",
   "version": "0.2.0-alpha.1",
-  "description": "CIP-30 test wallet for automated Cardano dApp tests in CI and coding agents, with a catalogue of real wallet quirks.",
+  "description": "CIP-30 test wallet for Cardano dApps that signs real transactions in CI and coding-agent runs, with no human at a wallet popup. Includes a quirk catalogue and a CSP doctor.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -25,6 +25,10 @@
     "coding-agents"
   ],
   "type": "module",
+  "publishConfig": {
+    "access": "public",
+    "tag": "alpha"
+  },
   "engines": {
     "node": ">=20.19"
   },
