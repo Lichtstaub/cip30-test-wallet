@@ -1,19 +1,16 @@
 // BIP32-Ed25519 as Cardano uses it: the Icarus master key (CIP-3) and the
 // V2 child derivation. Node only, the page receives finished extended keys.
 // Verified byte for byte against CSL in test/derive-bip32.test.ts.
-import { ed25519 } from '@noble/curves/ed25519.js';
 import { hmac } from '@noble/hashes/hmac.js';
 import { pbkdf2 } from '@noble/hashes/pbkdf2.js';
 import { sha512 } from '@noble/hashes/sha2.js';
 import { concat } from '../core/bytes.js';
+import { publicKey } from '../core/keys.js';
 
 // kL (32) || kR (32) || chain code (32), the layout CSL's Bip32PrivateKey uses.
 export type Bip32Key = Uint8Array;
 
 export const HARDENED = 0x80000000;
-
-const Point = ed25519.Point;
-const ORDER = Point.Fn.ORDER;
 
 // Icarus master key: PBKDF2-HMAC-SHA512 with the passphrase as password and
 // the BIP39 entropy as salt, then the Ed25519 bit clamp on kL. Clearing bit
@@ -24,12 +21,6 @@ export function rootKey(entropy: Uint8Array, passphrase: Uint8Array = new Uint8A
   key[31]! &= 0b0001_1111;
   key[31]! |= 0b0100_0000;
   return key;
-}
-
-function littleEndianToBigInt(bytes: Uint8Array): bigint {
-  let r = 0n;
-  for (let i = bytes.length - 1; i >= 0; i--) r = (r << 8n) | BigInt(bytes[i]!);
-  return r;
 }
 
 function indexBytes(index: number): Uint8Array {
@@ -66,7 +57,7 @@ function add256(kR: Uint8Array, zR: Uint8Array): Uint8Array {
 }
 
 export function publicKeyOf(key: Bip32Key): Uint8Array {
-  return Point.BASE.multiply(littleEndianToBigInt(key.subarray(0, 32)) % ORDER).toBytes();
+  return publicKey({ kind: 'extended', bytes: key.subarray(0, 64) });
 }
 
 export function deriveChild(parent: Bip32Key, index: number): Bip32Key {

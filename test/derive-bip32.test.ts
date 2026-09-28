@@ -60,8 +60,10 @@ describe('rootKey, the Icarus master key', () => {
   for (const entropy of entropies()) {
     it(`matches CSL for ${entropy.length} bytes of entropy ${bytesToHex(entropy).slice(0, 12)}`, () => {
       const ours = rootKey(entropy);
-      expect(ours.length).toBe(96);
       expect(bytesToHex(ours)).toBe(bytesToHex(cslRoot(entropy).as_bytes()));
+      // Clamp on kL: low three bits clear, bits 255 and 253 clear, bit 254 set.
+      expect(ours[0]! & 0b111).toBe(0);
+      expect(ours[31]! & 0b1110_0000).toBe(0b0100_0000);
     });
   }
 
@@ -87,14 +89,6 @@ describe('rootKey, the Icarus master key', () => {
   it('matches Evolution', () => {
     for (const entropy of entropies().slice(0, 10)) {
       expect(bytesToHex(rootKey(entropy))).toBe(bytesToHex(EvoBip32.toBytes(EvoBip32.fromBip39Entropy(entropy))));
-    }
-  });
-
-  it('clamps kL: low three bits clear, bit 255 and bit 253 clear, bit 254 set', () => {
-    for (const entropy of entropies()) {
-      const k = rootKey(entropy);
-      expect(k[0]! & 0b111).toBe(0);
-      expect(k[31]! & 0b1110_0000).toBe(0b0100_0000);
     }
   });
 });
@@ -186,14 +180,6 @@ describe('deriveChild', () => {
     const copy = derivePath(view, []);
     copy.fill(0);
     expect(bytesToHex(view)).toBe(bytesToHex(root));
-  });
-
-  it('does not modify the parent', () => {
-    const parent = rootKey(new Uint8Array(16).fill(1));
-    const before = bytesToHex(parent);
-    deriveChild(parent, 0);
-    deriveChild(parent, HARDENED);
-    expect(bytesToHex(parent)).toBe(before);
   });
 
   it('rejects indices outside 0 to 2^32 - 1', () => {

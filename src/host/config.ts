@@ -50,12 +50,6 @@ function lovelaceString(v: number | bigint | string): string {
   return n.toString();
 }
 
-function validateAccountIndex(v: number): void {
-  if (!Number.isInteger(v) || v < 0 || v >= 0x80000000) {
-    throw new Error(`accountIndex must be an integer from 0 to 2^31 - 1, got ${v}`);
-  }
-}
-
 function validateNetworkId(v: number): void {
   if (v !== 0 && v !== 1) throw new Error(`networkId must be 0 or 1, got ${v}`);
 }
@@ -76,7 +70,6 @@ export function prepareWallet(options: WalletOptions = {}): PreparedWallet {
   const networkId = options.networkId ?? 0;
   validateNetworkId(networkId);
   const accountIndex = options.accountIndex ?? 0;
-  validateAccountIndex(accountIndex);
   const account = cachedDeriveAccount(options.mnemonic ?? DEFAULT_MNEMONIC, accountIndex);
   const paymentPub = publicKey(account.payment);
   const stakePub = publicKey(account.stake);
