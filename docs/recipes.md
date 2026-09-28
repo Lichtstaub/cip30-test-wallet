@@ -49,7 +49,7 @@ import { nodeModulesPolyfillPlugin } from 'esbuild-plugins-node-modules-polyfill
 import { wasmLoader } from 'esbuild-plugin-wasm';
 
 await build({
-  entryPoints: ['dapp/app.mjs'],
+  entryPoints: ['dapp/app.ts'],
   outfile: 'dapp/app.js',
   bundle: true,
   platform: 'browser',
