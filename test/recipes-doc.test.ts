@@ -15,25 +15,18 @@ function promisedCode(quirk: string): number {
   return Number(/\{ code: (-?\d+) \}/.exec(row!)![1]);
 }
 
-async function rejection(run: () => Promise<unknown>): Promise<unknown> {
-  return run().then(
-    () => undefined,
-    (e: unknown) => e,
-  );
-}
-
 describe('docs/recipes.md user-side failure table', () => {
   it('enableRejected rejects enable() with the code the table names', async () => {
     const target: InstallTarget = {};
     installWallet(testConfig({ quirks: { enableRejected: true } }), target);
-    expect(await rejection(() => chwProvider(target).enable())).toMatchObject({ code: promisedCode('enableRejected') });
+    await expect(chwProvider(target).enable()).rejects.toMatchObject({ code: promisedCode('enableRejected') });
   });
 
   it('signRejected rejects signTx with the code the table names', async () => {
     const target: InstallTarget = {};
     installWallet(testConfig({ quirks: { signRejected: true } }), target);
     const api = await enableChw(target);
-    expect(await rejection(() => api.signTx(standardUnsignedTx('chw'), false))).toMatchObject({ code: promisedCode('signRejected') });
+    await expect(api.signTx(standardUnsignedTx('chw'), false)).rejects.toMatchObject({ code: promisedCode('signRejected') });
   });
 
   it('signDataRejected rejects signData with the code the table names', async () => {
@@ -41,7 +34,7 @@ describe('docs/recipes.md user-side failure table', () => {
     installWallet(testConfig({ quirks: { signDataRejected: true } }), target);
     const api = await enableChw(target);
     const [reward] = await api.getRewardAddresses();
-    expect(await rejection(() => api.signData(reward!, '00'))).toMatchObject({ code: promisedCode('signDataRejected') });
+    await expect(api.signData(reward!, '00')).rejects.toMatchObject({ code: promisedCode('signDataRejected') });
   });
 
   it('noCip95 leaves supportedExtensions empty as the table says', () => {

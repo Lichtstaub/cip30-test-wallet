@@ -1,15 +1,24 @@
 // Checks what `npm pack` would ship: every entry point the package exports,
-// the CLI with its executable bit, the docs and quirk notes, and nothing
+// the CLI with its executable bit, every file package.json "files" names, and nothing
 // from the source tree, the tests or local tooling.
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 
 const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
 const [report] = JSON.parse(execFileSync('npm', ['pack', '--dry-run', '--json'], { encoding: 'utf8' }));
 const files = new Map(report.files.map((f) => [f.path, f]));
 
 const strip = (p) => p.replace(/^\.\//, '');
-const required = new Set(['dist/page.js', 'README.md', 'AGENTS.md', 'LICENSE', 'quirks/README.md', 'docs/fixture-api.md', 'docs/recipes.md', 'docs/doctor.md']);
+// Everything package.json "files" names must ship: single files as they are,
+// directories with every file in them (npm leaves dotfiles out on its own).
+const listed = (entry) =>
+  statSync(entry).isDirectory()
+    ? readdirSync(entry, { recursive: true })
+        .map((rel) => join(entry, rel))
+        .filter((path) => statSync(path).isFile() && !path.split('/').some((part) => part.startsWith('.')))
+    : [entry];
+const required = new Set(pkg.files.flatMap(listed));
 for (const target of Object.values(pkg.exports)) {
   required.add(strip(target.default));
   required.add(strip(target.types));

@@ -77,7 +77,14 @@ The wallet's UTxOs are synthetic, they exist inside the wallet and on no chain. 
 - Protocol parameters still come from the network. Serve a recorded answer with `page.route` and the test runs offline.
 - Nothing reaches a chain. `submitTx` only records the transaction. A library or backend that submits on its own has to be intercepted with `page.route`, then `expectSignedBy` proves the transaction it would have sent.
 
-[docs/recipes.md](docs/recipes.md) has tested, complete recipes for Evolution SDK, Mesh and Lucid Evolution, backends that submit, offline protocol parameters, user-side failures and the journal.
+Tested, complete recipes in [docs/recipes.md](docs/recipes.md):
+
+- By library: [Evolution SDK](docs/recipes.md#evolution-sdk), [Mesh](docs/recipes.md#mesh), [Lucid Evolution](docs/recipes.md#lucid-evolution), and how to [bundle them for a test page](docs/recipes.md#bundling-a-dapp-for-the-test-page)
+- [A backend or provider that submits](docs/recipes.md#a-backend-or-provider-that-submits)
+- [Protocol parameters offline](docs/recipes.md#protocol-parameters-offline)
+- [User-side failures](docs/recipes.md#user-side-failures): declined, hanging, wrong network, late injection
+- [Reading the journal](docs/recipes.md#reading-the-journal) and [signing in with a message](docs/recipes.md#signing-in-with-a-message)
+- [Testing a wallet module directly on a dev server](docs/recipes.md#testing-a-wallet-module-directly-on-a-dev-server)
 
 ## CI and coding agents
 
