@@ -75,7 +75,6 @@
     }
   },
   "dependencies": {
-    "@evolution-sdk/evolution": "^0.5.9",
     "@noble/curves": "^2.4.0",
     "@noble/hashes": "^2.4.0",
     "@scure/base": "^2.0.0",
@@ -84,6 +83,7 @@
   "devDependencies": {
     "@emurgo/cardano-message-signing-nodejs": "^1.1.0",
     "@emurgo/cardano-serialization-lib-nodejs": "^17.0.0",
+    "@evolution-sdk/evolution": "^0.5.9",
     "@playwright/test": "^1.50.0",
     "@types/node": "^22.0.0",
     "esbuild": "^0.28.0",

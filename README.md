@@ -227,12 +227,12 @@ The sections always come in this order: the page as fetched, its policies one di
 Installed with the package:
 
 - `@noble/curves`, `@noble/hashes` and `@scure/base`: Ed25519, Blake2b and bech32, pure TypeScript without WASM. Together with the package's own CBOR and signing code they are the whole page bundle. It contains no WASM and no `eval`, because both can fail under the same content security policy `doctor` diagnoses.
-- `@evolution-sdk/evolution` and `@scure/bip39`: turn the mnemonic into CIP-1852 keys, in Node only. Neither reaches the page.
+- `@scure/bip39`: checks the mnemonic and turns it into entropy. The package's own BIP32-Ed25519 code derives the CIP-1852 keys from it with the two `@noble` libraries, in Node only. None of this reaches the page.
 - `@playwright/test`: optional peer, needed for the fixture and `doctor --deep`, not for the static `doctor`.
 
 Used by the test suite only:
 
-- Evolution SDK, `@emurgo/cardano-serialization-lib-nodejs` (CSL) and `@emurgo/cardano-message-signing-nodejs` are the reference implementations. Derived keys, addresses and signatures must match CSL byte for byte, and CSL must parse the UTxOs and witness sets the wallet returns. Body hashes and transaction ids must match Evolution, and Evolution must merge the witness sets without losing foreign witnesses. The COSE_Sign1 and COSE_Key that `signData` returns must match the message-signing library byte for byte. Both Emurgo libraries are Rust compiled to WASM, an independent codebase, so agreement with them is not agreement with ourselves. They are dev dependencies and are never installed by users.
+- Evolution SDK, `@emurgo/cardano-serialization-lib-nodejs` (CSL) and `@emurgo/cardano-message-signing-nodejs` are the reference implementations. Derived keys must match CSL byte for byte at every step of a few hundred seeded derivations, and match what Evolution derives. Addresses and signatures must match CSL byte for byte, and CSL must parse the UTxOs and witness sets the wallet returns. Body hashes and transaction ids must match Evolution, and Evolution must merge the witness sets without losing foreign witnesses. The COSE_Sign1 and COSE_Key that `signData` returns must match the message-signing library byte for byte. Both Emurgo libraries are Rust compiled to WASM, an independent codebase, so agreement with them is not agreement with ourselves. They are dev dependencies and are never installed by users.
 
 The spike results the signing core was accepted on are in [docs/verification.md](docs/verification.md).
 

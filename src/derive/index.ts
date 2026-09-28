@@ -1,9 +1,9 @@
-// Node only. CIP-1852 derivation through Evolution, which is pure TypeScript.
+// Node only. CIP-1852 derivation on top of bip32.ts.
 // The page never sees this file, it receives finished extended keys.
-import { Bip32PrivateKey, PrivateKey } from '@evolution-sdk/evolution';
 import { mnemonicToEntropy, validateMnemonic } from '@scure/bip39';
 import { wordlist } from '@scure/bip39/wordlists/english.js';
 import type { SigningKey } from '../core/keys.js';
+import { type Bip32Key, HARDENED, derivePath, rootKey } from './bip32.js';
 
 export interface DerivedAccount {
   payment: SigningKey;
@@ -11,19 +11,21 @@ export interface DerivedAccount {
   drep: SigningKey;
 }
 
-function extended(root: Bip32PrivateKey.Bip32PrivateKey, path: string): SigningKey {
-  const key = Bip32PrivateKey.toPrivateKey(Bip32PrivateKey.derivePath(root, path));
-  const bytes = PrivateKey.toBytes(key);
-  if (bytes.length !== 64) throw new Error('expected a 64 byte extended key from derivation');
-  return { kind: 'extended', bytes };
+// CIP-1852 roles: 0 external payment, 2 stake, 3 DRep (CIP-105).
+function extended(account: Bip32Key, role: number): SigningKey {
+  return { kind: 'extended', bytes: derivePath(account, [role, 0]).slice(0, 64) };
 }
 
 export function deriveAccount(mnemonic: string, accountIndex = 0): DerivedAccount {
   if (!validateMnemonic(mnemonic, wordlist)) throw new Error('invalid mnemonic');
-  const root = Bip32PrivateKey.fromBip39Entropy(mnemonicToEntropy(mnemonic, wordlist));
+  if (!Number.isInteger(accountIndex) || accountIndex < 0 || accountIndex >= HARDENED) {
+    throw new Error(`accountIndex must be an integer from 0 to 2^31 - 1, got ${accountIndex}`);
+  }
+  const root = rootKey(mnemonicToEntropy(mnemonic, wordlist));
+  const account = derivePath(root, [HARDENED + 1852, HARDENED + 1815, HARDENED + accountIndex]);
   return {
-    payment: extended(root, `m/1852'/1815'/${accountIndex}'/0/0`),
-    stake: extended(root, `m/1852'/1815'/${accountIndex}'/2/0`),
-    drep: extended(root, `m/1852'/1815'/${accountIndex}'/3/0`),
+    payment: extended(account, 0),
+    stake: extended(account, 2),
+    drep: extended(account, 3),
   };
 }
