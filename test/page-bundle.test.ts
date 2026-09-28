@@ -1,9 +1,8 @@
 import { existsSync } from 'node:fs';
 import { build } from 'esbuild';
 import { describe, expect, it } from 'vitest';
-import vm from 'node:vm';
 import { PAGE_BUNDLE_MAX_BYTES, PAGE_BUNDLE_OPTIONS } from '../scripts/page-bundle.mjs';
-import { testConfig } from './helpers/page.js';
+import { runInBareWindow, testConfig } from './helpers/page.js';
 
 describe('page bundle', () => {
   it('builds to a single self-contained script that installs the wallet into a bare window', async () => {
@@ -16,10 +15,7 @@ describe('page bundle', () => {
     expect(source).not.toMatch(/WebAssembly/);
     expect(source.length).toBeLessThan(PAGE_BUNDLE_MAX_BYTES);
 
-    const window: Record<string, unknown> = {};
-    const context = vm.createContext({ window, setTimeout, TextEncoder, TextDecoder, Date, console });
-    vm.runInContext(source, context);
-    vm.runInContext(`__chwInit(${JSON.stringify(testConfig())})`, context);
+    const window = runInBareWindow(`${source}\n;__chwInit(${JSON.stringify(testConfig())});`);
     const cardano = window['cardano'] as Record<string, { apiVersion: string }>;
     expect(cardano['chw']!.apiVersion).toBe('1');
     expect(window['__chw']).toBeDefined();

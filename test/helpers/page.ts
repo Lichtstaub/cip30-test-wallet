@@ -1,5 +1,6 @@
 import { bytesToHex } from '../../src/core/bytes.js';
 import { deriveAccount } from '../../src/derive/index.js';
+import vm from 'node:vm';
 import type { PageConfig } from '../../src/page/config.js';
 import type { InstallTarget } from '../../src/page/install.js';
 import type { Cip30Api, Cip30Provider } from '../../src/page/provider.js';
@@ -37,4 +38,12 @@ export async function enableChw(target: InstallTarget): Promise<TestApi> {
   const provider = chwProvider(target);
   await provider.isEnabled();
   return (await provider.enable({ extensions: [] })) as TestApi;
+}
+
+/** Runs a page script in a bare window, the way a browser runs an init script before the page. Returns that window. */
+export function runInBareWindow(source: string): Record<string, unknown> {
+  const window: Record<string, unknown> = {};
+  const context = vm.createContext({ window, setTimeout, TextEncoder, TextDecoder, Date, console });
+  vm.runInContext(source, context);
+  return window;
 }
