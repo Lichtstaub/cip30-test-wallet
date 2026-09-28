@@ -26,6 +26,12 @@ export interface SignedDataExpectation {
   /** Hex or bech32. When set, the COSE "address" header must hold exactly these bytes and the key must match its credential. */
   address?: string;
   publicKeyHex?: string;
+  /**
+   * Accept a bare 28 byte key hash as the address header without naming it in
+   * `address`. Only CIP-95 DRep signatures may carry that form, so it is off
+   * unless the test asks for it.
+   */
+  allowBareKeyHash?: boolean;
 }
 
 /**
@@ -33,7 +39,8 @@ export interface SignedDataExpectation {
  * COSE_Sign1 shape, alg EdDSA, unhashed payload equal to the request, an
  * Ed25519 signature over the Sig_structure, and the key bound to the
  * address in the protected header, always. A bare 28 byte header is taken
- * as the key hash itself, as CIP-95 DRep signatures may carry it.
+ * as the key hash itself, as CIP-95 DRep signatures may carry it, but only
+ * when the test names that hash in `address` or sets `allowBareKeyHash`.
  */
 export function expectSignedData(result: { signature: string; key: string }, expected: SignedDataExpectation): { address: Uint8Array; publicKey: Uint8Array } {
   function fail(why: string): never {
@@ -65,6 +72,9 @@ export function expectSignedData(result: { signature: string; key: string }, exp
   if (wantedAddress !== undefined) {
     const expectedAddress = attempt(() => parseAddressArg(wantedAddress), `expected address ${wantedAddress} is not a valid hex or bech32 address`);
     if (!bytesEqual(address, expectedAddress)) fail(`address header ${bytesToHex(address)} differs from the expected address`);
+  }
+  if (address.length === 28 && wantedAddress === undefined && expected.allowBareKeyHash !== true) {
+    fail('address header is a bare 28 byte key hash, which only CIP-95 DRep signatures carry. Name it in address or set allowBareKeyHash');
   }
   // The key must control the header address, whether or not the test names one.
   const credential = attempt(() => keyCredentialOf(address), `address header ${bytesToHex(address)} is not a valid address`);

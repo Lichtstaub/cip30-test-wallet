@@ -1,5 +1,5 @@
 import { blake2b } from '@noble/hashes/blake2.js';
-import { Tagged, decodeItem, readHeader, type CborValue } from './decode.js';
+import { Tagged, decode, decodeItem, readHeader, type CborValue } from './decode.js';
 import { encode } from './encode.js';
 
 // A Cardano transaction is [body, witness_set, is_valid, auxiliary_data].
@@ -57,24 +57,24 @@ export function extractBodyBytes(tx: Uint8Array): Uint8Array {
 }
 
 /**
- * Syntactic gate for submitTx: one complete CBOR item shaped like a
- * transaction, [body map, witness set map, is_valid boolean, auxiliary data].
- * Auxiliary data is null, a map (Shelley) or a tagged value (Alonzo and
- * later). Fees, validity and scripts are not checked. Without this gate
- * 84a0 (truncated) or 8400000000 (four bare integers) would be recorded and
- * get a transaction id.
+ * Syntactic gate for signTx and submitTx: one complete CBOR item shaped like
+ * a transaction, [body map, witness set map, is_valid boolean, auxiliary
+ * data], with nothing after it. Auxiliary data is null, a map (Shelley), an
+ * array (Allegra, [metadata, native scripts]) or a tagged value (Alonzo and
+ * later). Fees, validity and scripts are not checked. Without this gate 84a0
+ * (truncated), 8400000000 (four bare integers) or a transaction with trailing
+ * bytes would be signed or get a transaction id.
  */
 export function assertTransactionShape(tx: Uint8Array): void {
-  const { start, end } = bodyBounds(tx);
-  const body = decodeItem(tx, start).value;
+  // decode() rejects trailing bytes and handles both array forms.
+  const top = decode(tx);
+  if (!Array.isArray(top) || top.length !== 4) throw new Error('not a transaction: expected a CBOR array of 4 items');
+  const [body, witnessSet, isValid, aux] = top;
   if (!(body instanceof Map)) throw new Error('not a transaction: body must be a cbor map');
-  const witnessSetItem = decodeItem(tx, end);
-  if (!(witnessSetItem.value instanceof Map)) throw new Error('not a transaction: witness set must be a cbor map');
-  const isValidItem = decodeItem(tx, witnessSetItem.next);
-  if (typeof isValidItem.value !== 'boolean') throw new Error('not a transaction: is_valid must be a boolean');
-  const aux = decodeItem(tx, isValidItem.next).value;
-  if (!(aux === null || aux instanceof Map || aux instanceof Tagged)) {
-    throw new Error('not a transaction: auxiliary data must be null, a map or a tagged value');
+  if (!(witnessSet instanceof Map)) throw new Error('not a transaction: witness set must be a cbor map');
+  if (typeof isValid !== 'boolean') throw new Error('not a transaction: is_valid must be a boolean');
+  if (!(aux === null || aux instanceof Map || Array.isArray(aux) || aux instanceof Tagged)) {
+    throw new Error('not a transaction: auxiliary data must be null, a map, an array or a tagged value');
   }
 }
 

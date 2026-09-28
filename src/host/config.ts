@@ -40,6 +40,9 @@ export interface PreparedWallet {
 }
 
 function lovelaceString(v: number | bigint | string): string {
+  if (typeof v !== 'number' && typeof v !== 'bigint' && typeof v !== 'string') {
+    throw new Error(`lovelace must be a non-negative integer, got ${String(v)}`);
+  }
   let n: bigint;
   try {
     n = BigInt(v);
@@ -48,6 +51,20 @@ function lovelaceString(v: number | bigint | string): string {
   }
   if (n < 0n) throw new Error(`lovelace must be a non-negative integer, got ${v}`);
   return n.toString();
+}
+
+const HEX_RE = /^(?:[0-9a-fA-F]{2})+$/;
+
+/** Checked here so a bad entry fails in Node with a clear message, not later inside the page. */
+function foreignUtxo(f: { txId: string; index: number; addressHex: string; lovelace: number | bigint | string }, i: number) {
+  const where = `foreignUtxos[${i}]`;
+  if (typeof f.txId !== 'string' || f.txId.length !== 64 || !HEX_RE.test(f.txId)) throw new Error(`${where}.txId must be 64 hex characters`);
+  if (!Number.isSafeInteger(f.index) || f.index < 0) throw new Error(`${where}.index must be a non-negative integer, got ${f.index}`);
+  // 29 bytes is the shortest Shelley address (enterprise or reward).
+  if (typeof f.addressHex !== 'string' || !HEX_RE.test(f.addressHex) || f.addressHex.length < 58) {
+    throw new Error(`${where}.addressHex must be the hex bytes of an address`);
+  }
+  return { txId: f.txId.toLowerCase(), index: f.index, addressHex: f.addressHex.toLowerCase(), lovelace: lovelaceString(f.lovelace) };
 }
 
 function validateNetworkId(v: number): void {
@@ -88,7 +105,7 @@ export function prepareWallet(options: WalletOptions = {}): PreparedWallet {
       drep: { kind: account.drep.kind, hex: bytesToHex(account.drep.bytes) },
     },
     utxos: (options.utxos ?? [{ lovelace: 10_000_000 }]).map((u) => ({ lovelace: lovelaceString(u.lovelace) })),
-    foreignUtxos: (options.foreignUtxos ?? []).map((f) => ({ txId: f.txId, index: f.index, addressHex: f.addressHex, lovelace: lovelaceString(f.lovelace) })),
+    foreignUtxos: (options.foreignUtxos ?? []).map(foreignUtxo),
     quirks: { ...(options.quirks ?? {}) },
     stakeRegistered: options.stakeRegistered ?? false,
   };

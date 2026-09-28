@@ -1,7 +1,7 @@
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { isByronAddress, isScriptPayment, paymentHash } from './addresses.js';
 import { bytesEqual, bytesToHex, hexToBytes } from './bytes.js';
-import { encodeWitnessSet, existingVKeyWitnesses, parseBody, txHash, type ParsedBody } from './cbor/tx.js';
+import { assertTransactionShape, encodeWitnessSet, existingVKeyWitnesses, parseBody, txHash, type ParsedBody } from './cbor/tx.js';
 import { apiError, APIErrorCode, ChwError, TxSignErrorCode, txSignError, type Cip30Error } from './errors.js';
 import { keyHash, publicKey, sign, type SigningKey } from './keys.js';
 import type { Ledger, Utxo } from './ledger.js';
@@ -119,6 +119,7 @@ export async function signTx(txHex: string, partialSign: boolean, ctx: SignConte
   let resolvedInputs: Array<Utxo | undefined>;
   try {
     tx = hexToBytes(txHex);
+    assertTransactionShape(tx);
     body = parseBody(tx);
     resolvedInputs = await resolveInputs(body, ctx.ledger);
     const bodyHash = txHash(tx);

@@ -57,6 +57,16 @@ describe('resolveWalletOptions', () => {
   });
 });
 
+describe('init-script options', () => {
+  it('refuses install: false, a script that installs nothing would pass silently', () => {
+    withTempDir((dir) => {
+      const file = join(dir, 'w.json');
+      writeFileSync(file, JSON.stringify({ install: false }));
+      expect(() => runInitScript({ optionsFile: file }, {})).toThrow(/install: false/);
+    });
+  });
+});
+
 describe.skipIf(!existsSync('dist/page.js'))('init-script output', () => {
   it('installs the configured wallet when evaluated in a bare window', () => {
     const script = runInitScript({ networkId: 1, name: 'eternl' }, {})!;

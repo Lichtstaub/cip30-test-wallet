@@ -1,18 +1,12 @@
-export * from './core/bytes.js';
-export * from './core/cbor/decode.js';
-export * from './core/cbor/encode.js';
-export * from './core/cbor/tx.js';
-export * from './core/keys.js';
-export * from './core/addresses.js';
-export * from './core/errors.js';
-export * from './core/ledger.js';
-export * from './core/sign-tx.js';
-export * from './derive/index.js';
-export * from './page/config.js';
-export { installWallet, syntheticOwnedUtxo, buildLedger } from './page/install.js';
-export * from './host/config.js';
-export * from './host/bundle.js';
-export * from './host/assert.js';
-export * from './checks/csp.js';
-export * from './checks/report.js';
-export * from './host/doctor.js';
+// Public API of the main entry, the part README and docs describe. Everything
+// else under src is internal and can change in any release. Tests and repo
+// scripts import internals by path.
+export { DEFAULT_MNEMONIC, prepareWallet } from './host/config.js';
+export type { PreparedWallet, WalletOptions } from './host/config.js';
+export { initScript } from './host/bundle.js';
+export { expectSignedBy, expectSignedData } from './host/assert.js';
+export type { SignedDataExpectation } from './host/assert.js';
+export { APIErrorCode, ChwError, DataSignErrorCode, TxSignErrorCode } from './core/errors.js';
+export type { ChwErrorCode, Cip30Error } from './core/errors.js';
+export { QUIRK_NAMES } from './page/config.js';
+export type { JournalEntry, PageConfig, QuirkConfig, QuirkName } from './page/config.js';

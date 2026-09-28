@@ -91,6 +91,16 @@ describe('getUtxos', () => {
     await expect(api.getUtxos(undefined, { page: -1, limit: 1 })).rejects.toEqual(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
   });
 
+  it('answers a paginate that is not an object with InvalidRequest, never a TypeError', async () => {
+    const { api } = await setup();
+    const getUtxos = api.getUtxos as unknown as (amount: unknown, paginate: unknown) => Promise<unknown>;
+    const getUsed = api.getUsedAddresses as unknown as (paginate: unknown) => Promise<unknown>;
+    for (const bad of [null, 1, 'x']) {
+      await expect(getUtxos(undefined, bad)).rejects.toEqual(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
+      await expect(getUsed(bad)).rejects.toEqual(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
+    }
+  });
+
   it('rejects an amount that is not a cbor value', async () => {
     const { api } = await setup();
     await expect(api.getUtxos('zz')).rejects.toEqual(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
@@ -184,6 +194,42 @@ describe('signTx and submitTx', () => {
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn.mock.calls[0]![0]).toContain('certificates');
     warn.mockRestore();
+  });
+
+  it('rejects truncated transactions, trailing bytes and a bad is_valid in signTx and submitTx', async () => {
+    const { api, target } = await setup();
+    const tx = unsignedFor(target);
+    expect(tx.endsWith('f5f6')).toBe(true);
+    const bad = [
+      tx.slice(0, -4), // is_valid and auxiliary data missing
+      tx + '00', // trailing byte
+      tx.slice(0, -4) + '00f6', // is_valid is an integer
+    ];
+    for (const hex of bad) {
+      await expect(api.signTx(hex, false)).rejects.toEqual(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
+      await expect(api.submitTx(hex)).rejects.toEqual(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
+    }
+    // Allegra auxiliary data, [metadata, native scripts], is still valid CDDL.
+    const allegraAux = tx.slice(0, -2) + '82a080';
+    await expect(api.submitTx(allegraAux)).resolves.toMatch(/^[0-9a-f]{64}$/);
+    // Integers and tags have no indefinite form.
+    await expect(api.submitTx(tx.slice(0, -2) + 'dff6')).rejects.toEqual(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
+    // The indefinite length form of the same transaction stays valid.
+    const indefinite = '9f' + tx.slice(2) + 'ff';
+    await expect(api.signTx(indefinite, false)).resolves.toMatch(/^[0-9a-f]+$/);
+    await expect(api.submitTx(indefinite + '00')).rejects.toEqual(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
+  });
+
+  it('rejects a partialSign that is not a boolean, so "false" cannot switch the form check off', async () => {
+    const { api } = await setup();
+    const utxo = syntheticOwnedUtxo(config.name, 0, TEST_ADDRESS, 10_000_000n);
+    const withCert = buildTx({ inputs: [utxo.input], outputs: [{ address: TEST_ADDRESS, lovelace: 9_800_000n }], fee: 200_000n, certificatesPlaceholder: true });
+    const signTx = api.signTx as unknown as (tx: string, partial: unknown) => Promise<string>;
+    for (const value of ['false', 'true', 0, 1, null]) {
+      await expect(signTx(withCert, value)).rejects.toEqual(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
+    }
+    await expect(signTx(withCert, false)).rejects.toMatchObject({ code: 'CHW_UNSUPPORTED_TX_FORM' });
+    await expect(signTx(withCert, undefined)).rejects.toMatchObject({ code: 'CHW_UNSUPPORTED_TX_FORM' });
   });
 
   it('rejects a complete array of four whose items are not transaction parts', async () => {

@@ -45,6 +45,18 @@ describe('CIP-95 handshake', () => {
     expect(await api.getExtensions()).toEqual([{ cip: 95 }]);
   });
 
+  it('rejects malformed enable options with InvalidRequest and stays disconnected', async () => {
+    const { provider } = install();
+    const enable = provider.enable as unknown as (options: unknown) => Promise<unknown>;
+    for (const bad of ['95', 95, [], { extensions: '95' }, { extensions: [95] }, { extensions: [{ cip: '95' }] }, { extensions: [null] }, { extensions: new Array(1) }]) {
+      await expect(enable(bad)).rejects.toMatchObject({ code: -1 });
+    }
+    expect(await provider.isEnabled()).toBe(false);
+    for (const ok of [undefined, null, {}, { extensions: [] }]) {
+      await expect(enable(ok)).resolves.toBeDefined();
+    }
+  });
+
   it('noCip95 removes the extension everywhere', async () => {
     const { provider } = install({ quirks: { noCip95: true } });
     expect(provider.supportedExtensions).toEqual([]);
@@ -94,6 +106,15 @@ describe('CIP-95 key endpoints', () => {
     const api = await install().provider.enable(CIP95);
     const call = api.cip95!.getPubDRepKey as unknown as (x: unknown) => Promise<string>;
     await expect(call('x')).rejects.toMatchObject({ code: -1 });
+    await expect(call(null)).rejects.toMatchObject({ code: -1 });
+  });
+
+  it('treats an explicit undefined as no parameter', async () => {
+    const api = await install().provider.enable(CIP95);
+    const drep = api.cip95!.getPubDRepKey as unknown as (x: unknown) => Promise<string>;
+    const registered = api.cip95!.getRegisteredPubStakeKeys as unknown as (x: unknown) => Promise<string[]>;
+    expect(await drep(undefined)).toBe(bytesToHex(publicKey(account.drep)));
+    expect(await registered(undefined)).toEqual([]);
   });
 
   it('journals the calls with the cip95 prefix', async () => {
@@ -147,7 +168,9 @@ describe('cip95.signData', () => {
   it('coseAddress bareKeyHash puts the bare hash into the header for a type 6 request', async () => {
     const api = await install({ quirks: { coseAddress: 'bareKeyHash' } }).provider.enable(CIP95);
     const r = await api.cip95!.signData(type6, payload);
-    expect(bytesToHex(expectSignedData(r, { payload }).address)).toBe(bare);
+    expect(() => expectSignedData(r, { payload })).toThrow(/bare 28 byte key hash/);
+    expect(bytesToHex(expectSignedData(r, { payload, allowBareKeyHash: true }).address)).toBe(bare);
+    expect(bytesToHex(expectSignedData(r, { payload, address: bare }).address)).toBe(bare);
   });
 
   it('signDataRejected also applies to cip95.signData', async () => {

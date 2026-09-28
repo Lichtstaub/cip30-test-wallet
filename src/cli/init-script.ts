@@ -28,7 +28,10 @@ export function resolveWalletOptions(args: InitScriptArgs, env: NodeJS.ProcessEn
 
 /** Writes the script to args.out, or returns it for stdout when no path is given. */
 export function runInitScript(args: InitScriptArgs, env: NodeJS.ProcessEnv = process.env): string | undefined {
-  const script = initScript(prepareWallet(resolveWalletOptions(args, env)).config);
+  const options = resolveWalletOptions(args, env);
+  // The script exists to install the wallet, a file that does not would be a silent no-op.
+  if (options.install === false) throw new Error('install: false has no effect in an init script, leave it out');
+  const script = initScript(prepareWallet(options).config);
   if (args.out === undefined) return script;
   writeFileSync(args.out, script);
   return undefined;

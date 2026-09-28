@@ -91,10 +91,10 @@ export function buildProvider(ctx: WalletContext): Cip30Provider {
     isEnabled: () => control.record('isEnabled', [], async () => enabled),
     enable: (options) =>
       control.record('enable', [options], async () => {
+        const requested = requestedExtensions(options);
         if (control.quirks.enableRejected) throw apiError(APIErrorCode.Refused, 'user declined to connect the wallet');
         enabled = true;
-        const requested = Array.isArray(options?.extensions) ? options.extensions : [];
-        const granted = availableExtensions(control).filter((s) => requested.some((r) => r?.cip === s.cip));
+        const granted = availableExtensions(control).filter((s) => requested.some((r) => r.cip === s.cip));
         return buildApi(ctx, granted);
       }),
   };
@@ -145,6 +145,8 @@ export function buildApi(ctx: WalletContext, extensions: { cip: number }[] = [])
     signTx: (tx, partialSign = false) =>
       control.record('signTx', [tx, partialSign], async () => {
         if (typeof tx !== 'string') throw apiError(APIErrorCode.InvalidRequest, 'tx must be a hex string');
+        // A string "false" is truthy and would switch the form check off.
+        if (typeof partialSign !== 'boolean') throw apiError(APIErrorCode.InvalidRequest, 'partialSign must be a boolean');
         let bytes: Uint8Array;
         try {
           bytes = hexToBytes(tx);
@@ -188,11 +190,13 @@ function buildCip95Api(ctx: WalletContext): Cip95Api {
   const { control, config } = ctx;
   const stakeHex = bytesToHex(ctx.keys.stakePub);
   // CIP-95: these endpoints take no parameters, passing one is InvalidRequest.
+  // An explicit undefined counts as absent, wrappers often forward optional
+  // arguments that way and real wallets ignore them.
   const noArgs =
     <T>(method: string, run: () => Promise<T>) =>
     (...args: unknown[]) =>
       control.record(`cip95.${method}`, args, async () => {
-        if (args.length > 0) throw apiError(APIErrorCode.InvalidRequest, `${method} takes no parameters`);
+        if (args.some((a) => a !== undefined)) throw apiError(APIErrorCode.InvalidRequest, `${method} takes no parameters`);
         return run();
       });
   return {
@@ -253,7 +257,29 @@ function parseValue(hex: string): { coin: bigint; hasAssets: boolean } {
   throw apiError(APIErrorCode.InvalidRequest, 'amount must be a cbor value');
 }
 
+/**
+ * CIP-30 enable({ extensions: [{ cip: number }] }). No options, an empty
+ * object and an unsupported CIP number are fine. A malformed shape is
+ * InvalidRequest, so a dApp that sends one does not connect silently without
+ * the extensions it meant to ask for.
+ */
+function requestedExtensions(options: unknown): Array<{ cip: number }> {
+  if (options === undefined || options === null) return [];
+  if (typeof options !== 'object' || Array.isArray(options)) throw apiError(APIErrorCode.InvalidRequest, 'enable options must be an object');
+  const extensions = (options as { extensions?: unknown }).extensions;
+  if (extensions === undefined) return [];
+  // Array.from visits holes too, every() would skip them.
+  const isExtension = (e: unknown) => typeof e === 'object' && e !== null && Number.isInteger((e as { cip?: unknown }).cip);
+  if (!Array.isArray(extensions) || !Array.from(extensions).every(isExtension)) {
+    throw apiError(APIErrorCode.InvalidRequest, 'enable extensions must be an array of { cip: number }');
+  }
+  return extensions as Array<{ cip: number }>;
+}
+
 function paginateList<T>(items: T[], paginate: { page: number; limit: number }): T[] {
+  if (typeof paginate !== 'object' || paginate === null) {
+    throw apiError(APIErrorCode.InvalidRequest, 'paginate must be an object with page and limit');
+  }
   const { page, limit } = paginate;
   if (!Number.isInteger(page) || !Number.isInteger(limit) || page < 0 || limit <= 0) {
     throw apiError(APIErrorCode.InvalidRequest, 'paginate needs a non-negative integer page and a positive integer limit');
