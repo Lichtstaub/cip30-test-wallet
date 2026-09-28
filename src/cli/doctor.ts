@@ -3,6 +3,8 @@ import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { exitCode, formatHuman, formatJson } from '../checks/report.js';
 import { runDoctor, type DoctorOptions } from '../host/doctor.js';
+import { takeValue } from './args.js';
+import { parseInitScriptArgs, type InitScriptArgs } from './init-script-args.js';
 
 export const USAGE = `usage: cip30-test-wallet doctor <url> [--deep] [--browser chromium|firefox|webkit] [--click <selector>] [--expect <selector>] [--inject-after <ms>] [--timeout <ms>] [--settle <ms>] [--json]
 
@@ -11,24 +13,28 @@ secure context, content security policy versus eval, and with --deep, when the
 page touches window.cardano and whether an injected wallet is detected.
 --timeout bounds the static fetch (default 15000 ms), --settle bounds how long
 the deep run waits after load and click before reading the probes.
-Exit codes: 0 clean, 1 findings, 2 the run itself failed.`;
+Exit codes: 0 clean, 1 findings, 2 the run itself failed.
+
+usage: cip30-test-wallet init-script [--options <file.json>] [--network 0|1] [--name <name>] [--mnemonic-env <VAR>] [--out <file.js>]
+
+Prints the test wallet as one init script, for browser drivers that load a
+script file before the page's own scripts, such as Playwright MCP with
+--init-script. --options reads wallet options as JSON, the same shape as the
+fixture's walletOptions. --mnemonic-env names the environment variable that
+holds the mnemonic, so it stays out of the command line. The script contains
+the wallet's private keys, use test mnemonics only.`;
 
 type Parsed =
   | { command: 'doctor'; url: string; json: boolean; options: DoctorOptions }
+  | { command: 'init-script'; args: InitScriptArgs }
   | { command: 'help' }
   | { command: 'error'; message: string };
 
 const BROWSERS = new Set(['chromium', 'firefox', 'webkit']);
 
-/** The value following rest[i], or undefined when the flag is the last argument. next is the index that value was read from. */
-function takeValue(rest: string[], i: number): { value: string; next: number } | undefined {
-  const value = rest[i + 1];
-  if (value === undefined) return undefined;
-  return { value, next: i + 1 };
-}
-
 export function parseArgs(argv: string[]): Parsed {
   if (argv.length === 0 || argv[0] === '--help' || argv[0] === '-h') return { command: 'help' };
+  if (argv[0] === 'init-script') return parseInitScriptArgs(argv.slice(1));
   if (argv[0] !== 'doctor') return { command: 'error', message: `unknown command ${argv[0]}` };
   const [, url, ...rest] = argv;
   if (!url) return { command: 'error', message: 'missing url' };
@@ -99,6 +105,13 @@ export async function main(argv: string[], io: { out: (s: string) => void; err: 
     io.err(`${parsed.message}\n${USAGE}`);
     return 2;
   }
+  if (parsed.command === 'init-script') {
+    // Loaded on demand, so a doctor run never pays for the key derivation stack.
+    const { runInitScript } = await import('./init-script.js');
+    const script = runInitScript(parsed.args);
+    if (script !== undefined) io.out(script);
+    return 0;
+  }
   const report = await runDoctor(parsed.url, parsed.options);
   io.out(parsed.json ? formatJson(report) : formatHuman(report));
   return exitCode(report);
@@ -116,12 +129,17 @@ function isEntryModule(): boolean {
   }
 }
 
+/** Exits once stdout and stderr are flushed. A bare process.exit cuts piped output off at the pipe buffer, 64 KB on most systems. */
+function exitAfterFlush(code: number): void {
+  process.stdout.write('', () => process.stderr.write('', () => process.exit(code)));
+}
+
 if (isEntryModule()) {
   main(process.argv.slice(2), { out: (s) => process.stdout.write(s + '\n'), err: (s) => process.stderr.write(s + '\n') }).then(
-    (code) => process.exit(code),
+    (code) => exitAfterFlush(code),
     (e) => {
       process.stderr.write(`${e instanceof Error ? e.message : String(e)}\n`);
-      process.exit(2);
+      exitAfterFlush(2);
     },
   );
 }

@@ -82,7 +82,28 @@ Reproduce user-side failures with `walletOptions.quirks` (see node_modules/cip30
 Before deploying, run `npx cip30-test-wallet doctor <url> --json` and treat exit code 1 as a failed check.
 ```
 
-Outside the Playwright test runner, the same wallet goes into any Playwright page through an init script:
+### Agents that drive the browser themselves
+
+An agent that browses through Playwright MCP, or any driver that loads a script before the page's own scripts, gets the wallet from a file:
+
+```bash
+npx cip30-test-wallet init-script --network 0 --out wallet.js
+```
+
+```json
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": ["@playwright/mcp@latest", "--isolated", "--init-script", "/absolute/path/to/wallet.js"]
+    }
+  }
+}
+```
+
+Every page the agent opens then has the wallet in `window.cardano`. The agent reads the journal and controls the wallet with its evaluate tool through `window.__chw`: `journal`, `setQuirk(name, value)`, `release('signTx')` and `reject('signTx')`. Quirks, UTxOs and a mnemonic from an environment variable go in through `--options` and `--mnemonic-env`. Tested with Playwright MCP against the demo dApp under a strict content security policy. Details in [docs/init-script.md](docs/init-script.md).
+
+Inside your own Playwright code, without the test runner, the same wallet goes in through `page.addInitScript`:
 
 ```ts
 import { initScript, prepareWallet } from 'cip30-test-wallet';
@@ -123,7 +144,7 @@ The fixture injects into any URL, so this also works against a deployed site, no
 
 ## Keys and secrets
 
-The wallet's extended private keys are serialised into the page's init script by design, that is how an injected CIP-30 provider signs without a node process to call back into. So they appear in Playwright traces, HAR files and any dump of the page. Use only throwaway mnemonics for tests, never one that holds real funds. The default mnemonic is the public CSL test vector and holds no funds.
+The wallet's extended private keys are serialised into the page's init script by design, that is how an injected CIP-30 provider signs without a node process to call back into. So they appear in Playwright traces, HAR files and any dump of the page. The same holds for the file `init-script` writes, keep it out of version control. Use only throwaway mnemonics for tests, never one that holds real funds. The default mnemonic is the public CSL test vector and holds no funds.
 
 ## Defaults are spec-conformant, not convenient
 
