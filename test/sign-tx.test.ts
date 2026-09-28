@@ -4,7 +4,7 @@ import { Transaction, TransactionWitnessSet } from '@evolution-sdk/evolution';
 import { bytesToHex, concat, hexToBytes } from '../src/core/bytes.js';
 import { Tagged } from '../src/core/cbor/decode.js';
 import { encode } from '../src/core/cbor/encode.js';
-import { encodeWitnessSet, extractBodyBytes } from '../src/core/cbor/tx.js';
+import { encodeWitnessSet, parseTransaction } from '../src/core/cbor/tx.js';
 import { baseAddressBytes, rewardAddressBytes } from '../src/core/addresses.js';
 import { APIErrorCode, ChwError, TxSignErrorCode } from '../src/core/errors.js';
 import { keyHash, publicKey } from '../src/core/keys.js';
@@ -44,7 +44,7 @@ const witnessCount = (wsHex: string) => TransactionWitnessSet.fromCBORHex(wsHex)
 
 /** Replaces the witness set of an unsigned transaction with arbitrary raw bytes, bypassing Evolution's own validation. */
 const withWitnessSet = (txHex: string, witnessSetBytes: Uint8Array) =>
-  bytesToHex(concat(Uint8Array.of(0x84), extractBodyBytes(hexToBytes(txHex)), witnessSetBytes, encode(true), encode(null)));
+  bytesToHex(concat(Uint8Array.of(0x84), parseTransaction(hexToBytes(txHex)).bodyBytes, witnessSetBytes, encode(true), encode(null)));
 
 describe('synthetic transactions and UTxOs are valid for Evolution', () => {
   it('Evolution parses a transaction built with our encoder', () => {

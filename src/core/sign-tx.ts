@@ -1,7 +1,7 @@
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { isByronAddress, isScriptPayment, paymentHash } from './addresses.js';
 import { bytesEqual, bytesToHex, hexToBytes } from './bytes.js';
-import { assertTransactionShape, encodeWitnessSet, existingVKeyWitnesses, parseBody, txHash, type ParsedBody } from './cbor/tx.js';
+import { encodeWitnessSet, parseTransaction, txHash, type ParsedBody, type ParsedTransaction } from './cbor/tx.js';
 import { apiError, APIErrorCode, ChwError, TxSignErrorCode, txSignError, type Cip30Error } from './errors.js';
 import { keyHash, publicKey, sign, type SigningKey } from './keys.js';
 import type { Ledger, Utxo } from './ledger.js';
@@ -78,8 +78,10 @@ function checkSupportedForm(body: ParsedBody, resolvedInputs: ReadonlyArray<Utxo
  * check, no existing witnesses. This is the raw primitive signTx builds on.
  */
 export function signWithKeys(txHex: string, keys: SigningKey[]): string {
-  const tx = hexToBytes(txHex);
-  const hash = txHash(tx);
+  return witnessSetFor(txHash(hexToBytes(txHex)), keys);
+}
+
+function witnessSetFor(hash: Uint8Array, keys: SigningKey[]): string {
   const witnesses = keys.map((key) => ({ vkey: publicKey(key), signature: sign(key, hash) }));
   return bytesToHex(encodeWitnessSet(witnesses));
 }
@@ -108,28 +110,27 @@ export interface SignContext {
  *
  * Anything that fails to decode or parse (bad hex, malformed CBOR, an
  * oversized or undersized witness) becomes a plain CIP-30 InvalidRequest,
- * never a raw Error a dApp would not know how to handle.
+ * never a raw Error a dApp would not know how to handle. A caller that has
+ * already parsed the transaction passes the result instead of the hex.
  */
-export async function signTx(txHex: string, partialSign: boolean, ctx: SignContext): Promise<string> {
-  let tx: Uint8Array;
+export async function signTx(tx: string | ParsedTransaction, partialSign: boolean, ctx: SignContext): Promise<string> {
+  let parsed: ParsedTransaction;
   let body: ParsedBody;
   let myPay: Uint8Array;
   let myStake: Uint8Array;
   let covered: Uint8Array[];
   let resolvedInputs: Array<Utxo | undefined>;
   try {
-    tx = hexToBytes(txHex);
-    assertTransactionShape(tx);
-    body = parseBody(tx);
+    parsed = typeof tx === 'string' ? parseTransaction(hexToBytes(tx)) : tx;
+    body = parsed.body;
     resolvedInputs = await resolveInputs(body, ctx.ledger);
-    const bodyHash = txHash(tx);
     myPay = keyHash(publicKey(ctx.payment));
     myStake = keyHash(publicKey(ctx.stake));
     // Key hashes that a valid witness already in the transaction vouches
     // for. A witness with the wrong vkey or signature length cannot be
     // valid, so it is dropped before ed25519 ever sees it.
-    covered = existingVKeyWitnesses(tx)
-      .filter((w) => w.vkey.length === 32 && w.signature.length === 64 && ed25519.verify(w.signature, bodyHash, w.vkey))
+    covered = parsed.vkeyWitnesses
+      .filter((w) => w.vkey.length === 32 && w.signature.length === 64 && ed25519.verify(w.signature, parsed.hash, w.vkey))
       .map((w) => keyHash(w.vkey));
   } catch (e) {
     if (e instanceof ChwError || isCip30ErrorShape(e)) throw e;
@@ -181,5 +182,5 @@ export async function signTx(txHex: string, partialSign: boolean, ctx: SignConte
   const keys: SigningKey[] = [];
   if (needed.has('payment')) keys.push(ctx.payment);
   if (needed.has('stake')) keys.push(ctx.stake);
-  return signWithKeys(txHex, keys);
+  return witnessSetFor(parsed.hash, keys);
 }

@@ -220,6 +220,12 @@ describe('signTx and submitTx', () => {
     await expect(api.submitTx(indefinite + '00')).rejects.toEqual(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
   });
 
+  it('refuses a malformed transaction before any prompt quirk, so signHangs never holds it', async () => {
+    const { api, control } = await setup({ quirks: { signHangs: true } });
+    await expect(api.signTx('84a0', false)).rejects.toEqual(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
+    expect(control.journal.find((e) => e.method === 'signTx')!.error).toBeDefined();
+  });
+
   it('rejects a partialSign that is not a boolean, so "false" cannot switch the form check off', async () => {
     const { api } = await setup();
     const utxo = syntheticOwnedUtxo(config.name, 0, TEST_ADDRESS, 10_000_000n);
