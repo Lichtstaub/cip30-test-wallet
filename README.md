@@ -152,6 +152,51 @@ npx cip30-test-wallet doctor https://your-dapp.example --deep --browser webkit -
 
 Static: secure context, every content security policy in headers and meta tags, and whether the effective script policy blocks `eval`, which is how some mobile wallet in-app browsers inject, Eternl iOS among them. Deep: when the page reads `window.cardano` and whether it retries, whether the policy really blocks `eval` inside a first-party script, and whether an injected wallet, optionally a late one, is detected. Exit 0 clean, 1 findings, 2 run failed. Details in [docs/doctor.md](docs/doctor.md).
 
+A deep run against the strict variant of the demo dApp (`npm run serve:demo`), with a wallet that arrives after the page's only scan. Long explanations are shortened here:
+
+```text
+$ npx cip30-test-wallet doctor http://127.0.0.1:4173/strict/ --deep --inject-after 1000 --expect '#wallet-found'
+cip30-test-wallet doctor  http://127.0.0.1:4173/strict/
+
+Page
+  status          200
+  content type    text/html; charset=utf-8
+  secure context  yes
+
+Content security policy
+  header  default-src 'none'
+          script-src 'self'
+          style-src 'self' 'unsafe-inline'
+          connect-src 'self'
+          base-uri 'none'
+          form-action 'none'
+  eval    blocked by policy
+
+Deep run (chromium)
+  window.cardano  accessed once, after 108 ms
+  violations      script-src:eval:http://127.0.0.1:4173/strict/app.js:7
+  eval probe      blocked
+  injection       wallet injected at 1024 ms, present in window.cardano, 0 page reads
+                  after that
+  expect          #wallet-found not visible within 1500 ms
+
+Findings (3 warnings)
+  [warning] eval-blocked: eval is blocked by script-src from the header policy
+    The effective script policy has no 'unsafe-eval'. Some mobile wallet in-app browsers
+    inject their CIP-30 provider through eval, confirmed for Eternl iOS, [...]
+
+  [warning] single-scan: window.cardano was read once, 108 ms after load
+    One read and no retry within the observation window. [...]
+
+  [warning] wallet-not-detected: the wallet was injected at 1024 ms but #wallet-found
+            was not visible within 1500 ms
+    The page read window.cardano 0 times after the injection. [...]
+
+Result: findings above info, exit 1
+```
+
+The sections always come in this order: the page as fetched, its policies one directive per line, the browser measurements when `--deep` ran, the findings from error to info, and a result line with the exit code.
+
 ## Dependencies
 
 Installed with the package:

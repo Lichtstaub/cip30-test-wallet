@@ -89,23 +89,25 @@ function plural(n: number, word: string, suffix = 's'): string {
   return `${n} ${word}${n === 1 ? '' : suffix}`;
 }
 
-/** Label and value rows of one section, labels padded to a shared column. */
+/** Label and value rows of one section, labels padded to a shared column, long values wrapped under it. */
 function section(title: string, rows: Array<[string, string]>): string[] {
   const width = Math.max(...rows.map(([label]) => label.length));
-  return [title, ...rows.map(([label, value]) => `  ${label.padEnd(width)}  ${value}`.trimEnd())];
+  const hang = ' '.repeat(width + 4);
+  return [title, ...rows.flatMap(([label, value]) => wrap(value, `  ${label.padEnd(width)}  `, hang))];
 }
 
-/** Greedy word wrap, every line prefixed with indent. */
-function wrap(text: string, indent: string): string[] {
+/** Greedy word wrap. The first line starts with first, every further line with rest. */
+function wrap(text: string, first: string, rest = first): string[] {
   const out: string[] = [];
   let line = '';
+  const prefix = () => (out.length === 0 ? first : rest);
   for (const word of text.split(/\s+/).filter(Boolean)) {
-    if (line && indent.length + line.length + 1 + word.length > WRAP_WIDTH) {
-      out.push(indent + line);
+    if (line && prefix().length + line.length + 1 + word.length > WRAP_WIDTH) {
+      out.push(prefix() + line);
       line = word;
     } else line = line ? `${line} ${word}` : word;
   }
-  if (line) out.push(indent + line);
+  if (line) out.push(prefix() + line);
   return out;
 }
 
@@ -146,7 +148,9 @@ export function formatHuman(report: DoctorReport): string {
       'window.cardano',
       d.access.count === 0
         ? 'no access observed during the executed scenario'
-        : `first access after ${d.access.firstAccessMs} ms, ${plural(d.access.count, 'access', 'es')}, last after ${d.access.lastAccessMs} ms`,
+        : d.access.count === 1
+          ? `accessed once, after ${d.access.firstAccessMs} ms`
+          : `first access after ${d.access.firstAccessMs} ms, ${plural(d.access.count, 'access', 'es')}, last after ${d.access.lastAccessMs} ms`,
     ]);
     if (d.violations.length === 0) deep.push(['violations', 'none (script-src, default-src)']);
     else d.violations.forEach((v, i) => deep.push([i === 0 ? 'violations' : '', v]));
@@ -173,7 +177,9 @@ export function formatHuman(report: DoctorReport): string {
     const lines = [`Findings (${counts.join(', ')})`];
     findings.forEach((f, i) => {
       if (i > 0) lines.push('');
-      lines.push(`  [${f.severity}] ${f.id}: ${f.title}`);
+      // A long title continues under the id, the detail below stays indented less.
+      const tag = `  [${f.severity}] `;
+      lines.push(...wrap(`${f.id}: ${f.title}`, tag, ' '.repeat(tag.length)));
       lines.push(...wrap(f.detail, '    '));
     });
     blocks.push(lines);
