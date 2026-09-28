@@ -58,6 +58,7 @@
     "test:watch": "vitest",
     "test:browser": "npm run build && playwright test",
     "serve:demo": "node examples/minimal-dapp/serve.mjs",
+    "doctor:demo": "npm run build && node scripts/doctor-demo.mjs",
     "typecheck": "tsc --noEmit",
     "build": "node scripts/build.mjs",
     "bundle:check": "node scripts/bundle-check.mjs",
