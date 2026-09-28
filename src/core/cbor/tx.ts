@@ -24,62 +24,8 @@ const BODY_INPUTS = 0n;
 const BODY_WITHDRAWALS = 5n;
 const BODY_REQUIRED_SIGNERS = 14n;
 
-export function mapGet(map: Map<CborValue, CborValue>, key: bigint): CborValue | undefined {
+function mapGet(map: Map<CborValue, CborValue>, key: bigint): CborValue | undefined {
   return map.get(key);
-}
-
-/** Bounds of the body item inside the top-level transaction array. */
-function bodyBounds(tx: Uint8Array): { start: number; end: number } {
-  const top = readHeader(tx, 0);
-  if (top.major !== 4 || (!top.indefinite && top.arg !== 4n)) {
-    throw new Error('not a transaction: expected a CBOR array of 4 items');
-  }
-  const start = top.next;
-  const { next: end } = decodeItem(tx, start);
-  if (top.indefinite) {
-    // Definite-length arrays already carry their item count in the header.
-    // An indefinite-length array does not, so walk the remaining items up
-    // to the break byte and count them instead.
-    let count = 1;
-    let p = end;
-    while (tx[p] !== 0xff) {
-      count++;
-      p = decodeItem(tx, p).next;
-    }
-    if (count !== 4) throw new Error('not a transaction: expected a CBOR array of 4 items');
-  }
-  return { start, end };
-}
-
-export function extractBodyBytes(tx: Uint8Array): Uint8Array {
-  const { start, end } = bodyBounds(tx);
-  return tx.slice(start, end);
-}
-
-/**
- * Syntactic gate for signTx and submitTx: one complete CBOR item shaped like
- * a transaction, [body map, witness set map, is_valid boolean, auxiliary
- * data], with nothing after it. Auxiliary data is null, a map (Shelley), an
- * array (Allegra, [metadata, native scripts]) or a tagged value (Alonzo and
- * later). Fees, validity and scripts are not checked. Without this gate 84a0
- * (truncated), 8400000000 (four bare integers) or a transaction with trailing
- * bytes would be signed or get a transaction id.
- */
-export function assertTransactionShape(tx: Uint8Array): void {
-  // decode() rejects trailing bytes and handles both array forms.
-  const top = decode(tx);
-  if (!Array.isArray(top) || top.length !== 4) throw new Error('not a transaction: expected a CBOR array of 4 items');
-  const [body, witnessSet, isValid, aux] = top;
-  if (!(body instanceof Map)) throw new Error('not a transaction: body must be a cbor map');
-  if (!(witnessSet instanceof Map)) throw new Error('not a transaction: witness set must be a cbor map');
-  if (typeof isValid !== 'boolean') throw new Error('not a transaction: is_valid must be a boolean');
-  if (!(aux === null || aux instanceof Map || Array.isArray(aux) || aux instanceof Tagged)) {
-    throw new Error('not a transaction: auxiliary data must be null, a map, an array or a tagged value');
-  }
-}
-
-export function txHash(tx: Uint8Array): Uint8Array {
-  return blake2b(extractBodyBytes(tx), { dkLen: 32 });
 }
 
 /** Conway sets may be plain arrays or tag 258 around an array. No other tag is a set. */
@@ -98,11 +44,7 @@ function asBytes(value: CborValue, what: string): Uint8Array {
   return value;
 }
 
-export function parseBody(tx: Uint8Array): ParsedBody {
-  const { start } = bodyBounds(tx);
-  const body = decodeItem(tx, start).value;
-  if (!(body instanceof Map)) throw new Error('transaction body must be a CBOR map');
-
+function parseBodyMap(body: Map<CborValue, CborValue>): ParsedBody {
   const inputs = unwrapSet(mapGet(body, BODY_INPUTS)).map((item) => {
     if (!Array.isArray(item) || item.length !== 2) throw new Error('malformed transaction input');
     const [txId, index] = item;
@@ -142,15 +84,52 @@ export interface VKeyWitness {
 
 const WITNESS_VKEYS = 0n;
 
-/** VKey witnesses already present in the transaction (item 1, key 0). */
-export function existingVKeyWitnesses(tx: Uint8Array): VKeyWitness[] {
-  const { end: bodyEnd } = bodyBounds(tx);
-  const witnessSet = decodeItem(tx, bodyEnd).value;
-  if (!(witnessSet instanceof Map)) throw new Error('transaction witness set must be a CBOR map');
+function vkeyWitnessesOf(witnessSet: Map<CborValue, CborValue>): VKeyWitness[] {
   return unwrapSet(mapGet(witnessSet, WITNESS_VKEYS)).map((item) => {
     if (!Array.isArray(item) || item.length !== 2) throw new Error('malformed vkey witness');
     return { vkey: asBytes(item[0], 'witness vkey'), signature: asBytes(item[1], 'witness signature') };
   });
+}
+
+export interface ParsedTransaction {
+  /** The body exactly as the builder encoded it, never re-encoded. */
+  bodyBytes: Uint8Array;
+  /** Blake2b-256 of bodyBytes, the transaction id and what every witness signs. */
+  hash: Uint8Array;
+  body: ParsedBody;
+  /** VKey witnesses already in the transaction (witness set key 0). */
+  vkeyWitnesses: VKeyWitness[];
+}
+
+/**
+ * The single entry point for a transaction from outside: signTx, submitTx,
+ * the ledger and expectSignedBy all go through it, so one shape rule covers
+ * every path. It accepts one complete CBOR item shaped like a transaction,
+ * [body map, witness set map, is_valid boolean, auxiliary data], with nothing
+ * after it. Auxiliary data is null, a map (Shelley), an array (Allegra,
+ * [metadata, native scripts]) or a tagged value (Alonzo and later). Fees,
+ * validity and scripts are not checked. Throws a plain Error on anything
+ * else, callers turn that into their own error shape.
+ */
+export function parseTransaction(tx: Uint8Array): ParsedTransaction {
+  // decode() rejects trailing bytes and handles both array forms.
+  const top = decode(tx);
+  if (!Array.isArray(top) || top.length !== 4) throw new Error('not a transaction: expected a CBOR array of 4 items');
+  const [body, witnessSet, isValid, aux] = top;
+  if (!(body instanceof Map)) throw new Error('not a transaction: body must be a cbor map');
+  if (!(witnessSet instanceof Map)) throw new Error('not a transaction: witness set must be a cbor map');
+  if (typeof isValid !== 'boolean') throw new Error('not a transaction: is_valid must be a boolean');
+  if (!(aux === null || aux instanceof Map || Array.isArray(aux) || aux instanceof Tagged)) {
+    throw new Error('not a transaction: auxiliary data must be null, a map, an array or a tagged value');
+  }
+  // The body is the first item after the array header, definite or not.
+  const start = readHeader(tx, 0).next;
+  const bodyBytes = tx.slice(start, decodeItem(tx, start).next);
+  return { bodyBytes, hash: blake2b(bodyBytes, { dkLen: 32 }), body: parseBodyMap(body), vkeyWitnesses: vkeyWitnessesOf(witnessSet) };
+}
+
+export function txHash(tx: Uint8Array): Uint8Array {
+  return parseTransaction(tx).hash;
 }
 
 // transaction_witness_set = { ? 0: nonempty_set<vkeywitness>, ... }

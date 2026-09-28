@@ -1,13 +1,12 @@
 import { bytesToHex, hexToBytes } from '../core/bytes.js';
 import { decode } from '../core/cbor/decode.js';
 import { encode } from '../core/cbor/encode.js';
-import { assertTransactionShape, parseBody } from '../core/cbor/tx.js';
 import { signCose } from '../core/cose.js';
 import { APIErrorCode, apiError, DataSignErrorCode, dataSignError, TxSignErrorCode, txSignError } from '../core/errors.js';
 import type { SigningKey } from '../core/keys.js';
 import { encodeUtxo, type MemoryLedger } from '../core/ledger.js';
 import { parseAddressArg, parseHexArg, resolveDataSigner } from '../core/sign-data.js';
-import { resolveInputs, signTx as coreSignTx, unsupportedForms } from '../core/sign-tx.js';
+import { parseTxHex, resolveInputs, signTx as coreSignTx, unsupportedForms } from '../core/sign-tx.js';
 import type { Control } from './control.js';
 import type { PageConfig } from './config.js';
 
@@ -144,40 +143,28 @@ export function buildApi(ctx: WalletContext, extensions: { cip: number }[] = [])
       }),
     signTx: (tx, partialSign = false) =>
       control.record('signTx', [tx, partialSign], async () => {
-        if (typeof tx !== 'string') throw apiError(APIErrorCode.InvalidRequest, 'tx must be a hex string');
         // A string "false" is truthy and would switch the form check off.
         if (typeof partialSign !== 'boolean') throw apiError(APIErrorCode.InvalidRequest, 'partialSign must be a boolean');
-        let bytes: Uint8Array;
-        try {
-          bytes = hexToBytes(tx);
-        } catch {
-          throw apiError(APIErrorCode.InvalidRequest, 'tx must be a hex string');
-        }
+        // Parsed once, before any prompt quirk: a real wallet refuses a
+        // malformed transaction without ever showing it to the user.
+        const { parsed } = parseTxHex(tx);
         if (partialSign) {
           try {
-            const body = parseBody(bytes);
-            const skipped = unsupportedForms(body, await resolveInputs(body, ledger));
+            const skipped = unsupportedForms(parsed.body, await resolveInputs(parsed.body, ledger));
             if (skipped.length > 0) {
               console.warn('[cip30-test-wallet] partialSign: true skipped unsupported transaction forms: ' + skipped.join(', '));
             }
           } catch {
-            // Malformed input is reported as InvalidRequest by coreSignTx below, not warned about here.
+            // A ledger failure is reported by coreSignTx below, not warned about here.
           }
         }
         if (control.quirks.signHangs) await control.wait('signTx');
         if (control.quirks.signRejected) throw txSignError(TxSignErrorCode.UserDeclined, 'user declined to sign the transaction');
-        return coreSignTx(tx, partialSign, { payment: ctx.payment, stake: ctx.stake, ledger });
+        return coreSignTx(parsed, partialSign, { payment: ctx.payment, stake: ctx.stake, ledger });
       }),
     submitTx: (tx) =>
       control.record('submitTx', [tx], async () => {
-        if (typeof tx !== 'string') throw apiError(APIErrorCode.InvalidRequest, 'tx must be a hex string');
-        let bytes: Uint8Array;
-        try {
-          bytes = hexToBytes(tx);
-          assertTransactionShape(bytes);
-        } catch (error) {
-          throw apiError(APIErrorCode.InvalidRequest, (error as Error).message);
-        }
+        const { bytes } = parseTxHex(tx);
         return bytesToHex(await ledger.submit(bytes));
       }),
     signData: (addr, payload) => control.record('signData', [addr, payload], () => signDataWith(ctx, addr, payload, 'cip30')),

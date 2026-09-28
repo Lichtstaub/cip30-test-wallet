@@ -4,12 +4,12 @@ import { Transaction, TransactionWitnessSet } from '@evolution-sdk/evolution';
 import { bytesToHex, concat, hexToBytes } from '../src/core/bytes.js';
 import { Tagged } from '../src/core/cbor/decode.js';
 import { encode } from '../src/core/cbor/encode.js';
-import { encodeWitnessSet, extractBodyBytes } from '../src/core/cbor/tx.js';
+import { encodeWitnessSet, parseTransaction } from '../src/core/cbor/tx.js';
 import { baseAddressBytes, rewardAddressBytes } from '../src/core/addresses.js';
 import { APIErrorCode, ChwError, TxSignErrorCode } from '../src/core/errors.js';
 import { keyHash, publicKey } from '../src/core/keys.js';
 import { MemoryLedger, encodeUtxo, type Utxo } from '../src/core/ledger.js';
-import { signTx, signWithKeys, type SignContext } from '../src/core/sign-tx.js';
+import { parseTxHex, signTx as signParsed, signWithKeys, type SignContext } from '../src/core/sign-tx.js';
 import { deriveAccount } from '../src/derive/index.js';
 import { buildTx } from './helpers/build-tx.js';
 import { syntheticInput } from './helpers/synthetic.js';
@@ -33,6 +33,9 @@ const theirs: Utxo = { input: syntheticInput('theirs', 0n), address: otherAddres
 const scripts: Utxo = { input: syntheticInput('script', 0n), address: scriptAddress, lovelace: 3_000_000n };
 const unknown = syntheticInput('unknown', 0n);
 
+/** Core signTx takes a parsed transaction, the tests hand it hex like a dApp would. */
+const signTx = (txHex: string, partialSign: boolean, context: SignContext) => signParsed(parseTxHex(txHex).parsed, partialSign, context);
+
 function ctx(opts: { foreign?: Utxo[] } = {}): SignContext {
   return { payment: me.payment, stake: me.stake, ledger: new MemoryLedger({ owned: [mine], foreign: opts.foreign ?? [] }) };
 }
@@ -44,7 +47,7 @@ const witnessCount = (wsHex: string) => TransactionWitnessSet.fromCBORHex(wsHex)
 
 /** Replaces the witness set of an unsigned transaction with arbitrary raw bytes, bypassing Evolution's own validation. */
 const withWitnessSet = (txHex: string, witnessSetBytes: Uint8Array) =>
-  bytesToHex(concat(Uint8Array.of(0x84), extractBodyBytes(hexToBytes(txHex)), witnessSetBytes, encode(true), encode(null)));
+  bytesToHex(concat(Uint8Array.of(0x84), parseTransaction(hexToBytes(txHex)).bodyBytes, witnessSetBytes, encode(true), encode(null)));
 
 describe('synthetic transactions and UTxOs are valid for Evolution', () => {
   it('Evolution parses a transaction built with our encoder', () => {
@@ -211,7 +214,23 @@ describe('signTx error boundary', () => {
     );
   });
 
-  it('reports InvalidRequest for input that is not valid CBOR', async () => {
-    await expect(signTx('ffff', false, ctx())).rejects.toEqual(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
+  it('treats a 32 byte witness that is no curve point as no coverage, never as a raw error', async () => {
+    const tampered = withWitnessSet(pay([mine.input, theirs.input]), encodeWitnessSet([{ vkey: new Uint8Array(32).fill(0xff), signature: new Uint8Array(64).fill(0xff) }]));
+    await expect(signTx(tampered, false, ctx({ foreign: [theirs] }))).rejects.toEqual(expect.objectContaining({ code: TxSignErrorCode.ProofGeneration }));
+  });
+
+  it('parseTxHex reports InvalidRequest with the reason for bad hex and for input that is not valid CBOR', () => {
+    const thrown = (tx: unknown) => {
+      try {
+        parseTxHex(tx);
+      } catch (e) {
+        return e;
+      }
+      return undefined;
+    };
+    expect(thrown('ffff')).toEqual(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
+    expect(thrown('zz')).toEqual({ code: APIErrorCode.InvalidRequest, info: 'tx must be a hex string' });
+    expect(thrown(42)).toEqual({ code: APIErrorCode.InvalidRequest, info: 'tx must be a hex string' });
+    expect(thrown(pay([mine.input]) + '00')).toEqual({ code: APIErrorCode.InvalidRequest, info: 'cbor: trailing bytes after item' });
   });
 });
