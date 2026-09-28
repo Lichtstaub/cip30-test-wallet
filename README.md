@@ -1,5 +1,9 @@
 # cip30-test-wallet
 
+[![CI](https://github.com/Lichtstaub/cip30-test-wallet/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Lichtstaub/cip30-test-wallet/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/cip30-test-wallet)](https://www.npmjs.com/package/cip30-test-wallet)
+[![node](https://img.shields.io/node/v/cip30-test-wallet)](https://github.com/Lichtstaub/cip30-test-wallet/blob/main/package.json)
+
 `cip30-test-wallet` reproduces real Cardano wallet failures in automated browser tests, with no node, faucet, extension, or shared chain state.
 
 It injects a CIP-30 test wallet into the page under test. The wallet holds real keys, returns real UTxO CBOR, signs real transaction CBOR with a real Ed25519 signature, and records every call in a journal your test can read. A catalogue of quirks reproduces the failures that only show up on a user's machine: a wallet on the wrong network, a wallet that injects late, a user who declines or never answers.
