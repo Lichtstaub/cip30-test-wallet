@@ -1,6 +1,6 @@
 {
   "name": "cip30-test-wallet",
-  "version": "0.2.0-alpha.0",
+  "version": "0.2.0-alpha.1",
   "description": "CIP-30 test wallet for automated Cardano dApp tests in CI and coding agents, with a catalogue of real wallet quirks.",
   "license": "Apache-2.0",
   "repository": {
