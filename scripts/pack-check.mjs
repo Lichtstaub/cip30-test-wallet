@@ -9,7 +9,7 @@ const [report] = JSON.parse(execFileSync('npm', ['pack', '--dry-run', '--json'],
 const files = new Map(report.files.map((f) => [f.path, f]));
 
 const strip = (p) => p.replace(/^\.\//, '');
-const required = new Set(['dist/page.js', 'README.md', 'LICENSE', 'quirks/README.md', 'docs/fixture-api.md', 'docs/doctor.md']);
+const required = new Set(['dist/page.js', 'README.md', 'AGENTS.md', 'LICENSE', 'quirks/README.md', 'docs/fixture-api.md', 'docs/recipes.md', 'docs/doctor.md']);
 for (const target of Object.values(pkg.exports)) {
   required.add(strip(target.default));
   required.add(strip(target.types));

@@ -8,7 +8,9 @@
 
 It injects a CIP-30 test wallet into the page under test. The wallet holds real keys, returns real UTxO CBOR, signs real transaction CBOR with a real Ed25519 signature, and records every call in a journal your test can read. A catalogue of quirks reproduces the failures that only show up on a user's machine: a wallet on the wrong network, a wallet that injects late, a user who declines or never answers.
 
-**Status: alpha.** The signing core, the Playwright fixture and the `doctor` command work end to end against the demo dApp in this repository. The API can still change between alpha releases. Not yet supported: `getCollateral`, native assets.
+**Status: 0.x.** The signing core, the Playwright fixture and the `doctor` command are covered by unit tests and by browser tests in Chromium, Firefox and WebKit, and they run in the end-to-end suites of real dApps. Until 1.0 a minor release can still change the API, the notes of each GitHub release say what changed. Not yet supported: `getCollateral`, native assets, governance transactions.
+
+Coding agents start with [AGENTS.md](AGENTS.md).
 
 ## What is in the box
 
@@ -66,6 +68,16 @@ await wallet.release('signTx');
 
 The full option and handle reference is in [docs/fixture-api.md](docs/fixture-api.md).
 
+## Building and submitting transactions
+
+The wallet's UTxOs are synthetic, they exist inside the wallet and on no chain. Three things follow for a dApp under test:
+
+- Build from the wallet's `getUtxos()`. Evolution SDK, Mesh and Lucid Evolution do that when they are connected to the CIP-30 api. A builder that looks the address up at a chain indexer finds nothing.
+- Protocol parameters still come from the network. Serve a recorded answer with `page.route` and the test runs offline.
+- Nothing reaches a chain. `submitTx` only records the transaction. A library or backend that submits on its own has to be intercepted with `page.route`, then `expectSignedBy` proves the transaction it would have sent.
+
+[docs/recipes.md](docs/recipes.md) has tested, complete recipes for Evolution SDK, Mesh and Lucid Evolution, backends that submit, offline protocol parameters, user-side failures and the journal.
+
 ## CI and coding agents
 
 An extension wallet asks for approval in its own popup, usually behind a password, so every connect and every signature needs a human. This wallet answers inside the page. A CI job or a coding agent that drives a browser can connect, sign and submit in one unattended run, with no seed to guard and no funds to lose. The default mnemonic is a public test vector.
@@ -83,6 +95,7 @@ So an agent that changes a wallet flow can check its own work: write or extend a
 Wallet flows are tested with cip30-test-wallet (Playwright fixture, import from `cip30-test-wallet/playwright`).
 After changing connect, signing or submit code, run the wallet tests and check `wallet.calls()` and `expectSignedBy`.
 Reproduce user-side failures with `walletOptions.quirks` (see node_modules/cip30-test-wallet/quirks/README.md), never with a real wallet.
+Before writing a transaction test, read node_modules/cip30-test-wallet/AGENTS.md and docs/recipes.md: the wallet's UTxOs exist only in the wallet, and anything that submits outside the wallet must be intercepted.
 Before deploying, run `npx cip30-test-wallet doctor <url> --json` and treat exit code 1 as a failed check.
 ```
 
@@ -162,7 +175,7 @@ Evolution SDK always calls `signTx(cbor, true)`, so with Evolution the form chec
 
 ## Known consumer issues
 
-A consumer SDK expecting real-wallet behaviour can still misbehave against a spec-conformant wallet. See [docs/known-consumer-issues.md](docs/known-consumer-issues.md), currently one entry: Evolution SDK's `cip30Wallet(api).rewardAddress()` rejects the hex-encoded reward address CIP-30 requires.
+A consumer SDK expecting real-wallet behaviour can still misbehave against a spec-conformant wallet. See [docs/known-consumer-issues.md](docs/known-consumer-issues.md), for example Evolution SDK's `cip30Wallet(api).rewardAddress()`, which rejects the hex-encoded reward address CIP-30 requires.
 
 ## The demo dApp
 
@@ -252,10 +265,10 @@ npm run bundle:check  # the page bundle must stand alone: no Node, no WASM, no e
 
 Releases are published to npm by the release workflow, never from a local machine.
 
-1. Bump the version on a branch with `npm version prerelease --preid alpha --no-git-tag-version` (or `patch`, `minor`), open a PR and squash merge it.
-2. Tag the merge commit on `main` and push the tag: `git tag -a v0.2.0-alpha.3 -m v0.2.0-alpha.3 && git push origin v0.2.0-alpha.3`.
+1. Bump the version on a branch with `npm version minor --no-git-tag-version` (or `patch`, or `prerelease --preid beta`), open a PR and squash merge it.
+2. Tag the merge commit on `main` and push the tag: `git tag -a v0.4.0 -m v0.4.0 && git push origin v0.4.0`.
 3. Approve the staged version on npmjs.com under Staged Packages (asks for 2FA). Only then is it installable.
 
-The workflow checks that the tag matches `package.json` and sits on `main`, runs typecheck, unit tests, build and the bundle check, stages the version on npm with provenance and creates the GitHub release. A prerelease tag such as `v0.2.0-alpha.3` goes to the npm dist-tag `alpha` and becomes a GitHub prerelease, a stable tag goes to `latest`. If the workflow fails after staging, approve the staged version first and then rerun it, it skips npm when that version already came from the same commit.
+The workflow checks that the tag matches `package.json` and sits on `main`, runs typecheck, unit tests, build and the bundle check, stages the version on npm with provenance and creates the GitHub release. A prerelease tag such as `v0.5.0-beta.1` goes to the npm dist-tag named after its identifier, `beta` here, and becomes a GitHub prerelease, a stable tag goes to `latest`. If the workflow fails after staging, approve the staged version first and then rerun it, it skips npm when that version already came from the same commit.
 
 Related work: [cardano-test-wallet](https://github.com/cardanoapi/cardano-test-wallet) (MIT) is the conceptual predecessor, a simulated wallet built for GovTool. Sorbet and Cardano Dev Wallet are browser extensions for manual testing, with a human at the popup. This project is built for runs without one: CI pipelines and coding agents that drive a browser.
