@@ -1,7 +1,9 @@
 // Runs `doctor --deep` against the demo dApp in one command: starts the demo
 // server on a free port, checks the strict variant with a wallet that arrives
-// after the page's only scan and the permissive variant with an early one,
-// then stops the server. Extra arguments are passed to both runs, for example
+// after the page's only scan, the permissive variant with an early one and the
+// hashed variant, where the eval probe must be skipped because appending it
+// would break the pinned scripts, then stops the server. Extra arguments are
+// passed to every run, for example
 // `npm run doctor:demo -- --browser webkit`.
 // The demo is expected to produce findings, so the exit code is 2 only when a
 // run itself failed and 0 otherwise.
@@ -12,6 +14,7 @@ const extra = process.argv.slice(2);
 const runs = [
   { variant: 'strict', args: ['--inject-after', '1000', '--expect', '#wallet-found'] },
   { variant: 'permissive', args: ['--expect', '#wallet-found'] },
+  { variant: 'hashed', args: ['--expect', '#wallet-found'] },
 ];
 
 const server = createDemoServer();
