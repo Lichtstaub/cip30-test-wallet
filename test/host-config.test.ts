@@ -41,6 +41,17 @@ describe('prepareWallet', () => {
     expect(() => prepareWallet({ networkId: 2 as never })).toThrow(/networkId/);
   });
 
+  it('rejects a malformed foreign utxo in Node, before it reaches the page', () => {
+    const good = { txId: 'ab'.repeat(32), index: 0, addressHex: '60' + '11'.repeat(28), lovelace: 1 };
+    expect(prepareWallet({ foreignUtxos: [good] }).config.foreignUtxos).toHaveLength(1);
+    expect(() => prepareWallet({ foreignUtxos: [{ ...good, txId: 'zz' }] })).toThrow(/foreignUtxos\[0\]\.txId/);
+    expect(() => prepareWallet({ foreignUtxos: [{ ...good, txId: 'ab'.repeat(31) }] })).toThrow(/txId/);
+    expect(() => prepareWallet({ foreignUtxos: [{ ...good, index: -1 }] })).toThrow(/index/);
+    expect(() => prepareWallet({ foreignUtxos: [{ ...good, index: 0.5 }] })).toThrow(/index/);
+    expect(() => prepareWallet({ foreignUtxos: [{ ...good, addressHex: 'xyz' }] })).toThrow(/addressHex/);
+    expect(() => prepareWallet({ foreignUtxos: [{ ...good, addressHex: '' }] })).toThrow(/addressHex/);
+  });
+
   it('rejects a negative accountIndex', () => {
     expect(() => prepareWallet({ accountIndex: -1 })).toThrow(/accountIndex/);
   });

@@ -50,6 +50,17 @@ function lovelaceString(v: number | bigint | string): string {
   return n.toString();
 }
 
+const HEX_RE = /^(?:[0-9a-fA-F]{2})+$/;
+
+/** Checked here so a bad entry fails in Node with a clear message, not later inside the page. */
+function foreignUtxo(f: { txId: string; index: number; addressHex: string; lovelace: number | bigint | string }, i: number) {
+  const where = `foreignUtxos[${i}]`;
+  if (typeof f?.txId !== 'string' || !/^[0-9a-fA-F]{64}$/.test(f.txId)) throw new Error(`${where}.txId must be 64 hex characters`);
+  if (!Number.isInteger(f.index) || f.index < 0) throw new Error(`${where}.index must be a non-negative integer, got ${f.index}`);
+  if (typeof f.addressHex !== 'string' || !HEX_RE.test(f.addressHex)) throw new Error(`${where}.addressHex must be a hex string`);
+  return { txId: f.txId.toLowerCase(), index: f.index, addressHex: f.addressHex.toLowerCase(), lovelace: lovelaceString(f.lovelace) };
+}
+
 function validateNetworkId(v: number): void {
   if (v !== 0 && v !== 1) throw new Error(`networkId must be 0 or 1, got ${v}`);
 }
@@ -88,7 +99,7 @@ export function prepareWallet(options: WalletOptions = {}): PreparedWallet {
       drep: { kind: account.drep.kind, hex: bytesToHex(account.drep.bytes) },
     },
     utxos: (options.utxos ?? [{ lovelace: 10_000_000 }]).map((u) => ({ lovelace: lovelaceString(u.lovelace) })),
-    foreignUtxos: (options.foreignUtxos ?? []).map((f) => ({ txId: f.txId, index: f.index, addressHex: f.addressHex, lovelace: lovelaceString(f.lovelace) })),
+    foreignUtxos: (options.foreignUtxos ?? []).map(foreignUtxo),
     quirks: { ...(options.quirks ?? {}) },
     stakeRegistered: options.stakeRegistered ?? false,
   };
