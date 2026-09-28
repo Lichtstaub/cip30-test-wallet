@@ -1,7 +1,7 @@
 {
   "name": "cip30-test-wallet",
   "version": "0.4.0",
-  "description": "CIP-30 test wallet for Cardano dApps that signs real transactions in CI and coding-agent runs, with no human at a wallet popup. Includes a quirk catalogue and a CSP doctor.",
+  "description": "CIP-30 test wallet for Cardano dApps. Injects into Playwright tests and signs real transactions and messages with no wallet popup, so CI and coding agents can test wallet flows unattended. Includes a quirk catalogue and a CSP doctor.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
