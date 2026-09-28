@@ -26,8 +26,7 @@
   ],
   "type": "module",
   "publishConfig": {
-    "access": "public",
-    "tag": "alpha"
+    "access": "public"
   },
   "engines": {
     "node": ">=20.19"
@@ -35,7 +34,7 @@
   "main": "./dist/node/index.js",
   "types": "./dist/node/index.d.ts",
   "bin": {
-    "cip30-test-wallet": "./dist/node/cli/doctor.js"
+    "cip30-test-wallet": "dist/node/cli/doctor.js"
   },
   "exports": {
     ".": {
@@ -63,7 +62,8 @@
     "build": "node scripts/build.mjs",
     "bundle:check": "node scripts/bundle-check.mjs",
     "pack:check": "node scripts/pack-check.mjs",
-    "prepare": "node scripts/build.mjs"
+    "prepare": "node scripts/build.mjs",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build && npm run bundle:check"
   },
   "peerDependencies": {
     "@playwright/test": ">=1.50"

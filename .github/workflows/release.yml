@@ -1,0 +1,86 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions: {}
+
+# Never cancel a running publish in favour of a newer tag
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      # Staged publishing needs npm 11.15.0 or later, which ships with Node 24
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      # A stable tag goes to latest, a prerelease tag (v1.2.3-alpha.4) to the dist-tag named
+      # after its identifier, so an alpha never replaces latest once a stable version exists.
+      - name: Check tag, version and branch
+        run: |
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$ ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME is not vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-(alpha|beta|rc).N"
+            exit 1
+          fi
+          version="$(node -p "require('./package.json').version")"
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $version"
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Tagged commit $GITHUB_SHA is not on main"
+            exit 1
+          fi
+          npm_version="$(npm --version)"
+          if [ "$(printf '%s\n' 11.15.0 "$npm_version" | sort -V | head -n1)" != 11.15.0 ]; then
+            echo "::error::npm $npm_version is too old for staged publishing, needs 11.15.0"
+            exit 1
+          fi
+          if [[ "$version" == *-* ]]; then
+            prerelease="${version#*-}"
+            echo "DIST_TAG=${prerelease%%.*}" >> "$GITHUB_ENV"
+            echo "PRERELEASE=true" >> "$GITHUB_ENV"
+          else
+            echo "DIST_TAG=latest" >> "$GITHUB_ENV"
+            echo "PRERELEASE=false" >> "$GITHUB_ENV"
+          fi
+      - run: npm ci
+      # prepublishOnly runs typecheck, unit tests and build. The trusted publisher may
+      # only stage, a maintainer approves the version on npmjs.com with 2FA.
+      # A version already on npm from this exact commit means an earlier run
+      # got that far and failed later, so the rerun skips straight to the GitHub release.
+      - name: Stage on npm
+        run: |
+          name="$(node -p "require('./package.json').name")"
+          version="$(node -p "require('./package.json').version")"
+          published_head="$(npm view "$name@$version" gitHead 2>/dev/null || true)"
+          if [ -z "$published_head" ]; then
+            npm stage publish --provenance --tag "$DIST_TAG"
+          elif [ "$published_head" = "$GITHUB_SHA" ]; then
+            echo "$name@$version is already published from $GITHUB_SHA, skipping"
+          else
+            echo "::error::$name@$version is already published from $published_head, not from $GITHUB_SHA"
+            exit 1
+          fi
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists"
+          else
+            flags=(--verify-tag --generate-notes)
+            if [ "$PRERELEASE" = true ]; then flags+=(--prerelease); fi
+            gh release create "$GITHUB_REF_NAME" "${flags[@]}"
+          fi
