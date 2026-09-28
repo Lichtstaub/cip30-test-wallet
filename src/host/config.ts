@@ -40,6 +40,9 @@ export interface PreparedWallet {
 }
 
 function lovelaceString(v: number | bigint | string): string {
+  if (typeof v !== 'number' && typeof v !== 'bigint' && typeof v !== 'string') {
+    throw new Error(`lovelace must be a non-negative integer, got ${String(v)}`);
+  }
   let n: bigint;
   try {
     n = BigInt(v);
@@ -56,8 +59,11 @@ const HEX_RE = /^(?:[0-9a-fA-F]{2})+$/;
 function foreignUtxo(f: { txId: string; index: number; addressHex: string; lovelace: number | bigint | string }, i: number) {
   const where = `foreignUtxos[${i}]`;
   if (typeof f?.txId !== 'string' || !/^[0-9a-fA-F]{64}$/.test(f.txId)) throw new Error(`${where}.txId must be 64 hex characters`);
-  if (!Number.isInteger(f.index) || f.index < 0) throw new Error(`${where}.index must be a non-negative integer, got ${f.index}`);
-  if (typeof f.addressHex !== 'string' || !HEX_RE.test(f.addressHex)) throw new Error(`${where}.addressHex must be a hex string`);
+  if (!Number.isSafeInteger(f.index) || f.index < 0) throw new Error(`${where}.index must be a non-negative integer, got ${f.index}`);
+  // 29 bytes is the shortest Shelley address (enterprise or reward).
+  if (typeof f.addressHex !== 'string' || !HEX_RE.test(f.addressHex) || f.addressHex.length < 58) {
+    throw new Error(`${where}.addressHex must be the hex bytes of an address`);
+  }
   return { txId: f.txId.toLowerCase(), index: f.index, addressHex: f.addressHex.toLowerCase(), lovelace: lovelaceString(f.lovelace) };
 }
 

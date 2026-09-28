@@ -265,10 +265,12 @@ function parseValue(hex: string): { coin: bigint; hasAssets: boolean } {
  */
 function requestedExtensions(options: unknown): Array<{ cip: number }> {
   if (options === undefined || options === null) return [];
-  if (typeof options !== 'object') throw apiError(APIErrorCode.InvalidRequest, 'enable options must be an object');
+  if (typeof options !== 'object' || Array.isArray(options)) throw apiError(APIErrorCode.InvalidRequest, 'enable options must be an object');
   const extensions = (options as { extensions?: unknown }).extensions;
   if (extensions === undefined) return [];
-  if (!Array.isArray(extensions) || !extensions.every((e) => typeof e === 'object' && e !== null && Number.isInteger((e as { cip?: unknown }).cip))) {
+  // Array.from visits holes too, every() would skip them.
+  const isExtension = (e: unknown) => typeof e === 'object' && e !== null && Number.isInteger((e as { cip?: unknown }).cip);
+  if (!Array.isArray(extensions) || !Array.from(extensions).every(isExtension)) {
     throw apiError(APIErrorCode.InvalidRequest, 'enable extensions must be an array of { cip: number }');
   }
   return extensions as Array<{ cip: number }>;

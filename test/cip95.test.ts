@@ -48,7 +48,7 @@ describe('CIP-95 handshake', () => {
   it('rejects malformed enable options with InvalidRequest and stays disconnected', async () => {
     const { provider } = install();
     const enable = provider.enable as unknown as (options: unknown) => Promise<unknown>;
-    for (const bad of ['95', 95, { extensions: '95' }, { extensions: [95] }, { extensions: [{ cip: '95' }] }, { extensions: [null] }]) {
+    for (const bad of ['95', 95, [], { extensions: '95' }, { extensions: [95] }, { extensions: [{ cip: '95' }] }, { extensions: [null] }, { extensions: new Array(1) }]) {
       await expect(enable(bad)).rejects.toMatchObject({ code: -1 });
     }
     expect(await provider.isEnabled()).toBe(false);

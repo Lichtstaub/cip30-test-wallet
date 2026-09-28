@@ -39,7 +39,12 @@ export function readHeader(bytes: Uint8Array, offset: number): Header {
   const major = initial >> 5;
   const info = initial & 0x1f;
   if (info < 24) return { major, info, arg: BigInt(info), indefinite: false, next: offset + 1 };
-  if (info === 31) return { major, info, arg: 0n, indefinite: true, next: offset + 1 };
+  if (info === 31) {
+    // RFC 8949: integers and tags have no indefinite form. Major 7 with 31 is
+    // the break byte, which decodeItem refuses as a value.
+    if (major === 0 || major === 1 || major === 6) throw new Error(`cbor: major type ${major} has no indefinite form`);
+    return { major, info, arg: 0n, indefinite: true, next: offset + 1 };
+  }
   const width = info === 24 ? 1 : info === 25 ? 2 : info === 26 ? 4 : info === 27 ? 8 : -1;
   if (width < 0) throw new Error(`cbor: reserved additional info ${info}`);
   if (offset + 1 + width > bytes.length) throw new Error('cbor: unexpected end of input');

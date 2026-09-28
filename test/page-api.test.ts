@@ -209,6 +209,11 @@ describe('signTx and submitTx', () => {
       await expect(api.signTx(hex, false)).rejects.toEqual(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
       await expect(api.submitTx(hex)).rejects.toEqual(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
     }
+    // Allegra auxiliary data, [metadata, native scripts], is still valid CDDL.
+    const allegraAux = tx.slice(0, -2) + '82a080';
+    await expect(api.submitTx(allegraAux)).resolves.toMatch(/^[0-9a-f]{64}$/);
+    // Integers and tags have no indefinite form.
+    await expect(api.submitTx(tx.slice(0, -2) + 'dff6')).rejects.toEqual(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
     // The indefinite length form of the same transaction stays valid.
     const indefinite = '9f' + tx.slice(2) + 'ff';
     await expect(api.signTx(indefinite, false)).resolves.toMatch(/^[0-9a-f]+$/);

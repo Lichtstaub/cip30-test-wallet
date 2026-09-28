@@ -50,6 +50,9 @@ describe('prepareWallet', () => {
     expect(() => prepareWallet({ foreignUtxos: [{ ...good, index: 0.5 }] })).toThrow(/index/);
     expect(() => prepareWallet({ foreignUtxos: [{ ...good, addressHex: 'xyz' }] })).toThrow(/addressHex/);
     expect(() => prepareWallet({ foreignUtxos: [{ ...good, addressHex: '' }] })).toThrow(/addressHex/);
+    expect(() => prepareWallet({ foreignUtxos: [{ ...good, addressHex: '00' }] })).toThrow(/addressHex/);
+    expect(() => prepareWallet({ foreignUtxos: [{ ...good, index: 1e100 }] })).toThrow(/index/);
+    expect(() => prepareWallet({ foreignUtxos: [{ ...good, lovelace: true as never }] })).toThrow(/lovelace/);
   });
 
   it('rejects a negative accountIndex', () => {

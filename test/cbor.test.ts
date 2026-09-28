@@ -48,6 +48,10 @@ describe('cbor decode', () => {
     expect(bytesToHex(decode(h('5f 4201 02 4103 ff')) as Uint8Array)).toBe('010203');
   });
 
+  it('refuses the indefinite form for integers, tags and the bare break byte', () => {
+    for (const bad of ['1f', '3f', 'dff6', 'ff']) expect(() => decode(h(bad))).toThrow(/cbor/);
+  });
+
   it('reports the offset right after the decoded item', () => {
     const { value, next } = decodeItem(h('83010203 04'), 0);
     expect(value).toEqual([1n, 2n, 3n]);
