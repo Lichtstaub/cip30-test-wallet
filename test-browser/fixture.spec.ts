@@ -34,3 +34,16 @@ test.describe('install opt-out', () => {
     await expect(wallet.calls()).rejects.toThrow(/not installed/);
   });
 });
+
+test.describe('answersEveryKey', () => {
+  test.use({ walletOptions: { quirks: { answersEveryKey: true } } });
+  test('every unknown key answers with the wallet, a dApp that iterates the keys still lists it once', async ({ page }) => {
+    await page.goto('/strict/');
+    await expect(page.locator('#wallets')).toHaveText('chw');
+    const aliased = await page.evaluate(() => {
+      const ns = (window as unknown as { cardano: Record<string, unknown> }).cardano;
+      return ns['nami'] === ns['chw'];
+    });
+    expect(aliased).toBe(true);
+  });
+});

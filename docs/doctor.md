@@ -21,7 +21,7 @@ Every `Content-Security-Policy` header, every comma-separated policy inside one 
 
 `http-status` and `not-html` exist because a non-2xx status or a non-HTML body usually means the analysis below describes a challenge page, an error page, or a redirect target, not the dApp. Fetch a URL you already know answers with the real page if you see either.
 
-`eval-blocked` describes the conflict and names the wallets it is confirmed for. It never tells you to add `'unsafe-eval'`. Allowing eval weakens the policy, keeping it excludes the mobile in-app browsers that inject through eval. That is your decision.
+`eval-blocked` describes the conflict and names the wallets it is confirmed for. It never tells you to add `'unsafe-eval'`. Allowing eval weakens the policy, keeping it excludes the mobile in-app browsers that inject through eval, confirmed for Eternl iOS. VESPR iOS injects past the policy and is not affected. That is your decision.
 
 ## Deep run
 

@@ -20,6 +20,7 @@ export interface ForeignUtxoConfig {
 
 export const QUIRK_NAMES = [
   'lateInjection',
+  'answersEveryKey',
   'enableRejected',
   'signRejected',
   'signHangs',
@@ -33,11 +34,13 @@ export const QUIRK_NAMES = [
 export type QuirkName = (typeof QUIRK_NAMES)[number];
 
 /** Quirks that only take effect while the provider is being installed, so setQuirk always refuses them. */
-export const INSTALL_TIME_QUIRKS = ['lateInjection'] as const;
+export const INSTALL_TIME_QUIRKS = ['lateInjection', 'answersEveryKey'] as const;
 
 export interface QuirkConfig {
   /** Milliseconds before the provider appears in window.cardano. */
   lateInjection?: number;
+  /** window.cardano answers every key it does not hold with this wallet, like the VESPR iOS in-app browser. Object.keys and the in operator still see only the real entries. */
+  answersEveryKey?: boolean;
   /** enable() throws APIError Refused, like a user closing the connect dialog. */
   enableRejected?: boolean;
   /** signTx() throws TxSignError UserDeclined, like a user cancelling the signature. */

@@ -118,7 +118,7 @@ npx cip30-test-wallet doctor https://your-dapp.example
 npx cip30-test-wallet doctor https://your-dapp.example --deep --browser webkit --click '#connect' --expect '#wallet-found' --settle 3000
 ```
 
-Static: secure context, every content security policy in headers and meta tags, and whether the effective script policy blocks `eval`, which is how mobile wallet in-app browsers inject. Deep: when the page reads `window.cardano` and whether it retries, whether the policy really blocks `eval` inside a first-party script, and whether an injected wallet, optionally a late one, is detected. Exit 0 clean, 1 findings, 2 run failed. Details in [docs/doctor.md](docs/doctor.md).
+Static: secure context, every content security policy in headers and meta tags, and whether the effective script policy blocks `eval`, which is how some mobile wallet in-app browsers inject, Eternl iOS among them. Deep: when the page reads `window.cardano` and whether it retries, whether the policy really blocks `eval` inside a first-party script, and whether an injected wallet, optionally a late one, is detected. Exit 0 clean, 1 findings, 2 run failed. Details in [docs/doctor.md](docs/doctor.md).
 
 ## Dependencies
 

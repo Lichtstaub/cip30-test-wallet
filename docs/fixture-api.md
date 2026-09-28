@@ -29,7 +29,7 @@ The wallet is an automatic fixture: it is installed for every test in a file tha
 | `drepId` | `string` | CIP-129 DRep id, bech32 with prefix `drep` |
 | `calls(method?)` | `Promise<JournalEntry[]>` | Journal, optionally filtered |
 | `lastSubmittedTx()` | `Promise<string \| undefined>` | Hex CBOR handed to `submitTx` |
-| `setQuirk(name, value)` | `Promise<void>` | Flip a quirk at runtime. Rejects with `InvalidRequest` for an unknown quirk name, and for `lateInjection` after install, it only applies at install time through `walletOptions.quirks` |
+| `setQuirk(name, value)` | `Promise<void>` | Flip a quirk at runtime. Rejects with `InvalidRequest` for an unknown quirk name, and for `lateInjection` or `answersEveryKey` after install, they only apply at install time through `walletOptions.quirks` |
 | `release('signTx')`, `reject('signTx')` | `Promise<number>` | End a hanging `signTx`, resolving to how many calls it settled. Nothing pending resolves to `0` |
 
 A `JournalEntry` is `{ method, args, result?, error?, t }`. Results of `enable` are journaled as `'[api]'`. Key material never appears in the journal. CIP-95 methods carry a `cip95.` prefix: `cip95.getPubDRepKey`, `cip95.getRegisteredPubStakeKeys`, `cip95.getUnregisteredPubStakeKeys`, `cip95.signData`.

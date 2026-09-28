@@ -27,6 +27,48 @@ describe('lateInjection', () => {
   });
 });
 
+describe('answersEveryKey', () => {
+  it('answers every unknown key with the wallet while keys and the in operator see only real entries', async () => {
+    const other = { marker: true };
+    const target: InstallTarget = { cardano: { other } };
+    installWallet(testConfig({ quirks: { answersEveryKey: true } }), target);
+    const ns = target.cardano as Record<string, unknown>;
+    const provider = chwProvider(target);
+    for (const key of ['nami', 'eternl', 'lace', 'vespr', 'anything_at_all']) expect(ns[key]).toBe(provider);
+    expect(ns['other']).toBe(other);
+    expect(Object.keys(ns)).toEqual(['other', 'chw']);
+    expect('nami' in ns).toBe(false);
+    expect(Object.getOwnPropertyDescriptor(ns, 'nami')).toBeUndefined();
+    expect(typeof ns['hasOwnProperty']).toBe('function');
+    const api = (await (ns['nami'] as typeof provider).enable()) as { getNetworkId: () => Promise<number> };
+    expect(await api.getNetworkId()).toBe(0);
+  });
+
+  it('applies to the namespace once a late wallet appears', () => {
+    vi.useFakeTimers();
+    const target: InstallTarget = {};
+    installWallet(testConfig({ quirks: { answersEveryKey: true, lateInjection: 300 } }), target);
+    expect(target.cardano).toBeUndefined();
+    vi.advanceTimersByTime(300);
+    expect((target.cardano as Record<string, unknown>)['nami']).toBe(chwProvider(target));
+  });
+
+  it('keeps a wallet that injects after it under its own key', () => {
+    const target: InstallTarget = {};
+    installWallet(testConfig({ quirks: { answersEveryKey: true } }), target);
+    const late = { name: 'Late' };
+    (target.cardano as Record<string, unknown>)['late'] = late;
+    expect((target.cardano as Record<string, unknown>)['late']).toBe(late);
+    expect(Object.keys(target.cardano as object)).toEqual(['chw', 'late']);
+  });
+
+  it('leaves window.cardano a plain object without the quirk', () => {
+    const target: InstallTarget = {};
+    installWallet(testConfig(), target);
+    expect((target.cardano as Record<string, unknown>)['nami']).toBeUndefined();
+  });
+});
+
 describe('enableRejected', () => {
   it('throws APIError Refused from enable and stays disabled', async () => {
     const target: InstallTarget = {};
@@ -98,10 +140,13 @@ describe('setQuirk validation', () => {
     expect(() => control.setQuirk('signRejcted' as never, true as never)).toThrow(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
   });
 
-  it('rejects lateInjection after install with InvalidRequest, it only applies at install time', () => {
+  it.each([
+    ['lateInjection', 100],
+    ['answersEveryKey', true],
+  ] as const)('rejects %s after install with InvalidRequest, it only applies at install time', (name, value) => {
     const target: InstallTarget = {};
     const control = installWallet(testConfig(), target);
-    expect(() => control.setQuirk('lateInjection', 100)).toThrow(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
+    expect(() => control.setQuirk(name, value as never)).toThrow(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
   });
 });
 

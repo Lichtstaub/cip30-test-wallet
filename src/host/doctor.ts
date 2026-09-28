@@ -26,10 +26,11 @@ const DEFAULT_TIMEOUT_MS = 15000;
 const DOCTOR_USER_AGENT = 'Mozilla/5.0 (compatible; cip30-test-wallet doctor)';
 
 const EVAL_DETAIL =
-  "The effective script policy has no 'unsafe-eval'. Mobile wallet in-app browsers inject their CIP-30 provider through eval, " +
+  "The effective script policy has no 'unsafe-eval'. Some mobile wallet in-app browsers inject their CIP-30 provider through eval, " +
   'confirmed for Eternl iOS, where \'wasm-unsafe-eval\' was not enough. Under this policy those wallets never appear in window.cardano ' +
-  'and the dApp shows "no wallet installed", while desktop extensions are unaffected. Allowing eval weakens the policy, keeping it ' +
-  'excludes those browsers. That is a decision for the team, doctor only reports the conflict.';
+  'and the dApp shows "no wallet installed". Not every in-app browser is affected: VESPR iOS injects past the policy and was ' +
+  'observed working without eval (2026-09). Desktop extensions are unaffected. Allowing eval weakens the policy, keeping it ' +
+  'excludes the affected browsers. That is a decision for the team, doctor only reports the conflict.';
 
 export function staticFindings(report: DoctorReport, policies: Policy[], verdict: EvalVerdict): void {
   if (report.secureContext === false) {
