@@ -44,15 +44,20 @@ describe('prepareWallet', () => {
   it('rejects a malformed foreign utxo in Node, before it reaches the page', () => {
     const good = { txId: 'ab'.repeat(32), index: 0, addressHex: '60' + '11'.repeat(28), lovelace: 1 };
     expect(prepareWallet({ foreignUtxos: [good] }).config.foreignUtxos).toHaveLength(1);
-    expect(() => prepareWallet({ foreignUtxos: [{ ...good, txId: 'zz' }] })).toThrow(/foreignUtxos\[0\]\.txId/);
-    expect(() => prepareWallet({ foreignUtxos: [{ ...good, txId: 'ab'.repeat(31) }] })).toThrow(/txId/);
-    expect(() => prepareWallet({ foreignUtxos: [{ ...good, index: -1 }] })).toThrow(/index/);
-    expect(() => prepareWallet({ foreignUtxos: [{ ...good, index: 0.5 }] })).toThrow(/index/);
-    expect(() => prepareWallet({ foreignUtxos: [{ ...good, addressHex: 'xyz' }] })).toThrow(/addressHex/);
-    expect(() => prepareWallet({ foreignUtxos: [{ ...good, addressHex: '' }] })).toThrow(/addressHex/);
-    expect(() => prepareWallet({ foreignUtxos: [{ ...good, addressHex: '00' }] })).toThrow(/addressHex/);
-    expect(() => prepareWallet({ foreignUtxos: [{ ...good, index: 1e100 }] })).toThrow(/index/);
-    expect(() => prepareWallet({ foreignUtxos: [{ ...good, lovelace: true as never }] })).toThrow(/lovelace/);
+    const bad: Array<[Partial<typeof good>, RegExp]> = [
+      [{ txId: 'zz' }, /foreignUtxos\[0\]\.txId/],
+      [{ txId: 'ab'.repeat(31) }, /txId/],
+      [{ index: -1 }, /index/],
+      [{ index: 0.5 }, /index/],
+      [{ index: 1e100 }, /index/],
+      [{ addressHex: 'xyz' }, /addressHex/],
+      [{ addressHex: '' }, /addressHex/],
+      [{ addressHex: '00' }, /addressHex/],
+      [{ lovelace: true as never }, /lovelace/],
+    ];
+    for (const [patch, message] of bad) {
+      expect(() => prepareWallet({ foreignUtxos: [{ ...good, ...patch }] })).toThrow(message);
+    }
   });
 
   it('rejects a negative accountIndex', () => {

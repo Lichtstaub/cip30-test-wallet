@@ -58,7 +58,7 @@ const HEX_RE = /^(?:[0-9a-fA-F]{2})+$/;
 /** Checked here so a bad entry fails in Node with a clear message, not later inside the page. */
 function foreignUtxo(f: { txId: string; index: number; addressHex: string; lovelace: number | bigint | string }, i: number) {
   const where = `foreignUtxos[${i}]`;
-  if (typeof f?.txId !== 'string' || !/^[0-9a-fA-F]{64}$/.test(f.txId)) throw new Error(`${where}.txId must be 64 hex characters`);
+  if (typeof f.txId !== 'string' || f.txId.length !== 64 || !HEX_RE.test(f.txId)) throw new Error(`${where}.txId must be 64 hex characters`);
   if (!Number.isSafeInteger(f.index) || f.index < 0) throw new Error(`${where}.index must be a non-negative integer, got ${f.index}`);
   // 29 bytes is the shortest Shelley address (enterprise or reward).
   if (typeof f.addressHex !== 'string' || !HEX_RE.test(f.addressHex) || f.addressHex.length < 58) {

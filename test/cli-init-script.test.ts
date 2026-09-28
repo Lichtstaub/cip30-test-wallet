@@ -59,14 +59,11 @@ describe('resolveWalletOptions', () => {
 
 describe('init-script options', () => {
   it('refuses install: false, a script that installs nothing would pass silently', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'chw-init-'));
-    try {
+    withTempDir((dir) => {
       const file = join(dir, 'w.json');
       writeFileSync(file, JSON.stringify({ install: false }));
       expect(() => runInitScript({ optionsFile: file }, {})).toThrow(/install: false/);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
+    });
   });
 });
 
