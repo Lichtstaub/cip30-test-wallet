@@ -4,7 +4,11 @@
 // splices the wallet's witness set into it by hex offset because it has no
 // CBOR library, a real dApp would use Evolution or Mesh for that step.
 import { writeFileSync } from 'node:fs';
-import { Tagged, bytesToHex, encode, hexToBytes, prepareWallet, syntheticOwnedUtxo } from '../dist/node/index.js';
+import { bytesToHex, hexToBytes } from '../dist/node/core/bytes.js';
+import { Tagged } from '../dist/node/core/cbor/decode.js';
+import { encode } from '../dist/node/core/cbor/encode.js';
+import { prepareWallet } from '../dist/node/index.js';
+import { syntheticOwnedUtxo } from '../dist/node/page/install.js';
 import { bech32 } from '@scure/base';
 
 const wallet = prepareWallet();

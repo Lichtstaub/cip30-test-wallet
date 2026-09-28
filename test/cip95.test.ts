@@ -94,6 +94,15 @@ describe('CIP-95 key endpoints', () => {
     const api = await install().provider.enable(CIP95);
     const call = api.cip95!.getPubDRepKey as unknown as (x: unknown) => Promise<string>;
     await expect(call('x')).rejects.toMatchObject({ code: -1 });
+    await expect(call(null)).rejects.toMatchObject({ code: -1 });
+  });
+
+  it('treats an explicit undefined as no parameter', async () => {
+    const api = await install().provider.enable(CIP95);
+    const drep = api.cip95!.getPubDRepKey as unknown as (x: unknown) => Promise<string>;
+    const registered = api.cip95!.getRegisteredPubStakeKeys as unknown as (x: unknown) => Promise<string[]>;
+    expect(await drep(undefined)).toBe(bytesToHex(publicKey(account.drep)));
+    expect(await registered(undefined)).toEqual([]);
   });
 
   it('journals the calls with the cip95 prefix', async () => {
@@ -147,7 +156,9 @@ describe('cip95.signData', () => {
   it('coseAddress bareKeyHash puts the bare hash into the header for a type 6 request', async () => {
     const api = await install({ quirks: { coseAddress: 'bareKeyHash' } }).provider.enable(CIP95);
     const r = await api.cip95!.signData(type6, payload);
-    expect(bytesToHex(expectSignedData(r, { payload }).address)).toBe(bare);
+    expect(() => expectSignedData(r, { payload })).toThrow(/bare 28 byte key hash/);
+    expect(bytesToHex(expectSignedData(r, { payload, allowBareKeyHash: true }).address)).toBe(bare);
+    expect(bytesToHex(expectSignedData(r, { payload, address: bare }).address)).toBe(bare);
   });
 
   it('signDataRejected also applies to cip95.signData', async () => {

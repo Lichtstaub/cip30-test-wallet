@@ -1,5 +1,7 @@
 # Fixture reference
 
+`cip30-test-wallet/playwright` exports `test`, `expect`, `expectSignedBy` and `expectSignedData`. The main entry `cip30-test-wallet` exports `prepareWallet`, `initScript`, `DEFAULT_MNEMONIC`, `QUIRK_NAMES`, the two assertions and the error codes with `ChwError`, plus their types. Other modules in the package are internal and can change in any release.
+
 ## `test.use({ walletOptions })`
 
 | Option | Default | Meaning |
@@ -9,7 +11,7 @@
 | `icon` | `''` | CIP-30 `icon` |
 | `networkId` | `0` | `0` testnets, `1` mainnet. Addresses follow it |
 | `mnemonic` | public CSL test vector | CIP-1852 account source. Never use a funded mnemonic, the keys end up in the page and in Playwright traces |
-| `accountIndex` | `0` | CIP-1852 account |
+| `accountIndex` | `0` | CIP-1852 account, 0 to 2^31 - 1 |
 | `install` | `true` | Set `false` to skip injecting the provider. `name`, `addresses`, `paymentPublicKeyHex` and `stakePublicKeyHex` still work, every other handle member rejects |
 | `utxos` | `[{ lovelace: 10_000_000 }]` | Owned outputs, in order. Ids are deterministic per name and position |
 | `foreignUtxos` | `[]` | Outputs the ledger knows but does not own, for multi-party transactions |
@@ -51,8 +53,9 @@ Proves a `signData` or `cip95.signData` result the way a careful verifier does. 
 | `payload` | `string` | Hex of the payload the dApp asked the wallet to sign |
 | `address` | `string`, optional | Hex or bech32. When set, the COSE `address` header must hold exactly these bytes |
 | `publicKeyHex` | `string`, optional | When set, the COSE key must be exactly this key |
+| `allowBareKeyHash` | `boolean`, optional | Accept a bare 28 byte key hash in the address header without naming it in `address` |
 
-It checks, in order: `COSE_Key` and `COSE_Sign1` decode, `alg` is EdDSA on both, the payload is unhashed and equal to `expected.payload`, the Ed25519 signature verifies over the `Sig_structure`, the key and address match `expected` when given, and the key is bound to the address in the protected header. A bare 28 byte header is taken as the key hash itself, as CIP-95 DRep signatures may carry it. Throws with a specific reason on any mismatch, returns `{ address, publicKey }` on success.
+It checks, in order: `COSE_Key` and `COSE_Sign1` decode, `alg` is EdDSA on both, the payload is unhashed and equal to `expected.payload`, the Ed25519 signature verifies over the `Sig_structure`, the key and address match `expected` when given, and the key is bound to the address in the protected header. A bare 28 byte header is taken as the key hash itself, as CIP-95 DRep signatures may carry it, but only when `address` names that hash or `allowBareKeyHash` is set. Otherwise it fails, so a CIP-30 signature that drops the address from its header cannot pass. Throws with a specific reason on any mismatch, returns `{ address, publicKey }` on success.
 
 ```ts
 const [call] = await wallet.calls('signData');

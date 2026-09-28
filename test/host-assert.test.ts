@@ -63,6 +63,19 @@ describe('expectSignedData', () => {
     expect(() => expectSignedData({ signature: bytesToHex(wrongBinding.signature), key: bytesToHex(wrongBinding.key) }, { payload, address: bytesToHex(reward) })).toThrow(/does not match the address/);
   });
 
+  it('rejects a bare key hash header unless the test names it or allows it', () => {
+    // A payment key signing with its own bare hash as header: the binding
+    // holds, but a CIP-30 verifier needs the address, so this must not pass.
+    const bareHash = keyHash(publicKey(account.payment));
+    const bare = signCose(account.payment, bareHash, hexToBytes(payload));
+    const result = { signature: bytesToHex(bare.signature), key: bytesToHex(bare.key) };
+    expect(() => expectSignedData(result, { payload })).toThrow(/bare 28 byte key hash/);
+    expect(() => expectSignedData(result, { payload, publicKeyHex: bytesToHex(publicKey(account.payment)) })).toThrow(/bare 28 byte key hash/);
+    expect(() => expectSignedData(result, { payload, allowBareKeyHash: true })).not.toThrow();
+    expect(() => expectSignedData(result, { payload, address: bytesToHex(bareHash) })).not.toThrow();
+    expect(() => expectSignedData(result, { payload, address: bytesToHex(reward) })).toThrow(/differs from the expected address/);
+  });
+
   it('checks the key against the header address even when the test names no address', () => {
     const wrongBinding = signCose(account.payment, reward, hexToBytes(payload));
     expect(() => expectSignedData({ signature: bytesToHex(wrongBinding.signature), key: bytesToHex(wrongBinding.key) }, { payload })).toThrow(/does not match the address/);

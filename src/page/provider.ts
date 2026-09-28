@@ -188,11 +188,13 @@ function buildCip95Api(ctx: WalletContext): Cip95Api {
   const { control, config } = ctx;
   const stakeHex = bytesToHex(ctx.keys.stakePub);
   // CIP-95: these endpoints take no parameters, passing one is InvalidRequest.
+  // An explicit undefined counts as absent, wrappers often forward optional
+  // arguments that way and real wallets ignore them.
   const noArgs =
     <T>(method: string, run: () => Promise<T>) =>
     (...args: unknown[]) =>
       control.record(`cip95.${method}`, args, async () => {
-        if (args.length > 0) throw apiError(APIErrorCode.InvalidRequest, `${method} takes no parameters`);
+        if (args.some((a) => a !== undefined)) throw apiError(APIErrorCode.InvalidRequest, `${method} takes no parameters`);
         return run();
       });
   return {
