@@ -202,7 +202,7 @@ Deep run (chromium)
   violations      script-src:eval:http://127.0.0.1:4173/strict/app.js:7
   eval probe      blocked
   injection       wallet injected at 1024 ms, present in window.cardano, 0 page reads
-                  after that
+                    after that
   expect          #wallet-found not visible within 1500 ms
 
 Findings (3 warnings)
