@@ -24,7 +24,7 @@ const BODY_INPUTS = 0n;
 const BODY_WITHDRAWALS = 5n;
 const BODY_REQUIRED_SIGNERS = 14n;
 
-export function mapGet(map: Map<CborValue, CborValue>, key: bigint): CborValue | undefined {
+function mapGet(map: Map<CborValue, CborValue>, key: bigint): CborValue | undefined {
   return map.get(key);
 }
 

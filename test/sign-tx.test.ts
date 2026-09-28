@@ -9,7 +9,7 @@ import { baseAddressBytes, rewardAddressBytes } from '../src/core/addresses.js';
 import { APIErrorCode, ChwError, TxSignErrorCode } from '../src/core/errors.js';
 import { keyHash, publicKey } from '../src/core/keys.js';
 import { MemoryLedger, encodeUtxo, type Utxo } from '../src/core/ledger.js';
-import { signTx, signWithKeys, type SignContext } from '../src/core/sign-tx.js';
+import { parseTxHex, signTx as signParsed, signWithKeys, type SignContext } from '../src/core/sign-tx.js';
 import { deriveAccount } from '../src/derive/index.js';
 import { buildTx } from './helpers/build-tx.js';
 import { syntheticInput } from './helpers/synthetic.js';
@@ -32,6 +32,9 @@ const mine: Utxo = { input: syntheticInput('mine', 0n), address: myAddress, love
 const theirs: Utxo = { input: syntheticInput('theirs', 0n), address: otherAddress, lovelace: 5_000_000n };
 const scripts: Utxo = { input: syntheticInput('script', 0n), address: scriptAddress, lovelace: 3_000_000n };
 const unknown = syntheticInput('unknown', 0n);
+
+/** Core signTx takes a parsed transaction, the tests hand it hex like a dApp would. */
+const signTx = (txHex: string, partialSign: boolean, context: SignContext) => signParsed(parseTxHex(txHex).parsed, partialSign, context);
 
 function ctx(opts: { foreign?: Utxo[] } = {}): SignContext {
   return { payment: me.payment, stake: me.stake, ledger: new MemoryLedger({ owned: [mine], foreign: opts.foreign ?? [] }) };
@@ -211,7 +214,23 @@ describe('signTx error boundary', () => {
     );
   });
 
-  it('reports InvalidRequest for input that is not valid CBOR', async () => {
-    await expect(signTx('ffff', false, ctx())).rejects.toEqual(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
+  it('treats a 32 byte witness that is no curve point as no coverage, never as a raw error', async () => {
+    const tampered = withWitnessSet(pay([mine.input, theirs.input]), encodeWitnessSet([{ vkey: new Uint8Array(32).fill(0xff), signature: new Uint8Array(64).fill(0xff) }]));
+    await expect(signTx(tampered, false, ctx({ foreign: [theirs] }))).rejects.toEqual(expect.objectContaining({ code: TxSignErrorCode.ProofGeneration }));
+  });
+
+  it('parseTxHex reports InvalidRequest with the reason for bad hex and for input that is not valid CBOR', () => {
+    const thrown = (tx: unknown) => {
+      try {
+        parseTxHex(tx);
+      } catch (e) {
+        return e;
+      }
+      return undefined;
+    };
+    expect(thrown('ffff')).toEqual(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
+    expect(thrown('zz')).toEqual({ code: APIErrorCode.InvalidRequest, info: 'tx must be a hex string' });
+    expect(thrown(42)).toEqual({ code: APIErrorCode.InvalidRequest, info: 'tx must be a hex string' });
+    expect(thrown(pay([mine.input]) + '00')).toEqual({ code: APIErrorCode.InvalidRequest, info: 'cbor: trailing bytes after item' });
   });
 });

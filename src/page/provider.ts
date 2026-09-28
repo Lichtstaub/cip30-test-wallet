@@ -1,13 +1,12 @@
 import { bytesToHex, hexToBytes } from '../core/bytes.js';
 import { decode } from '../core/cbor/decode.js';
 import { encode } from '../core/cbor/encode.js';
-import { parseTransaction, type ParsedTransaction } from '../core/cbor/tx.js';
 import { signCose } from '../core/cose.js';
 import { APIErrorCode, apiError, DataSignErrorCode, dataSignError, TxSignErrorCode, txSignError } from '../core/errors.js';
 import type { SigningKey } from '../core/keys.js';
 import { encodeUtxo, type MemoryLedger } from '../core/ledger.js';
 import { parseAddressArg, parseHexArg, resolveDataSigner } from '../core/sign-data.js';
-import { resolveInputs, signTx as coreSignTx, unsupportedForms } from '../core/sign-tx.js';
+import { parseTxHex, resolveInputs, signTx as coreSignTx, unsupportedForms } from '../core/sign-tx.js';
 import type { Control } from './control.js';
 import type { PageConfig } from './config.js';
 
@@ -144,12 +143,11 @@ export function buildApi(ctx: WalletContext, extensions: { cip: number }[] = [])
       }),
     signTx: (tx, partialSign = false) =>
       control.record('signTx', [tx, partialSign], async () => {
-        if (typeof tx !== 'string') throw apiError(APIErrorCode.InvalidRequest, 'tx must be a hex string');
         // A string "false" is truthy and would switch the form check off.
         if (typeof partialSign !== 'boolean') throw apiError(APIErrorCode.InvalidRequest, 'partialSign must be a boolean');
         // Parsed once, before any prompt quirk: a real wallet refuses a
         // malformed transaction without ever showing it to the user.
-        const parsed = parseTxArg(tx);
+        const { parsed } = parseTxHex(tx);
         if (partialSign) {
           try {
             const skipped = unsupportedForms(parsed.body, await resolveInputs(parsed.body, ledger));
@@ -166,9 +164,8 @@ export function buildApi(ctx: WalletContext, extensions: { cip: number }[] = [])
       }),
     submitTx: (tx) =>
       control.record('submitTx', [tx], async () => {
-        if (typeof tx !== 'string') throw apiError(APIErrorCode.InvalidRequest, 'tx must be a hex string');
-        parseTxArg(tx);
-        return bytesToHex(await ledger.submit(hexToBytes(tx)));
+        const { bytes } = parseTxHex(tx);
+        return bytesToHex(await ledger.submit(bytes));
       }),
     signData: (addr, payload) => control.record('signData', [addr, payload], () => signDataWith(ctx, addr, payload, 'cip30')),
   };
@@ -245,15 +242,6 @@ function parseValue(hex: string): { coin: bigint; hasAssets: boolean } {
     return { coin: value[0], hasAssets };
   }
   throw apiError(APIErrorCode.InvalidRequest, 'amount must be a cbor value');
-}
-
-/** Hex to a parsed transaction, any failure as CIP-30 InvalidRequest with the reason. */
-function parseTxArg(tx: string): ParsedTransaction {
-  try {
-    return parseTransaction(hexToBytes(tx));
-  } catch (error) {
-    throw apiError(APIErrorCode.InvalidRequest, error instanceof Error ? error.message : 'tx could not be decoded');
-  }
 }
 
 /**
