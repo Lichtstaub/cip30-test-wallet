@@ -44,6 +44,7 @@ test('commit writes the expected metadata', async ({ page, wallet }) => {
   await page.goto('/commit');
   await page.getByRole('button', { name: 'Connect' }).click();
   await page.getByRole('button', { name: 'Commit' }).click();
+  await expect(page.getByText('Commit submitted')).toBeVisible(); // the click does not wait for signing
 
   expect(await wallet.calls('signTx')).toHaveLength(1);
   const tx = await wallet.lastSubmittedTx();
@@ -95,7 +96,7 @@ So an agent that changes a wallet flow can check its own work: write or extend a
 Wallet flows are tested with cip30-test-wallet (Playwright fixture, import from `cip30-test-wallet/playwright`).
 After changing connect, signing or submit code, run the wallet tests and check `wallet.calls()` and `expectSignedBy`.
 Reproduce user-side failures with `walletOptions.quirks` (see node_modules/cip30-test-wallet/quirks/README.md), never with a real wallet.
-Before writing a transaction test, read node_modules/cip30-test-wallet/AGENTS.md and docs/recipes.md: the wallet's UTxOs exist only in the wallet, and anything that submits outside the wallet must be intercepted.
+Before writing a transaction test, read node_modules/cip30-test-wallet/AGENTS.md and node_modules/cip30-test-wallet/docs/recipes.md: the wallet's UTxOs exist only in the wallet, and anything that submits outside the wallet must be intercepted.
 Before deploying, run `npx cip30-test-wallet doctor <url> --json` and treat exit code 1 as a failed check.
 ```
 

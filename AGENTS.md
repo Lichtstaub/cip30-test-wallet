@@ -24,7 +24,8 @@ In an installed project these files are under `node_modules/cip30-test-wallet/`.
 - A call count proves no signature. Prove it with `expectSignedBy(tx, wallet)` for transactions and `expectSignedData(result, { payload, address })` for messages.
 - Wallet errors are plain `{ code, info }` objects as CIP-30 requires. Code that reads `err.message` is a dApp bug the test just found.
 - A `ChwError` with code `CHW_UNSUPPORTED_TX_FORM` or `CHW_UNRESOLVED_INPUT` is a harness diagnosis about the test setup, not wallet behaviour. Follow its hint (add the input to `utxos` or `foreignUtxos`, or sign with `partialSign: true`) instead of changing the dApp.
-- The journal (`wallet.calls()`) starts empty after every navigation. Read it before the dApp navigates away.
+- A click does not wait for the wallet. Wait for what the app shows afterwards before you read the journal or `lastSubmittedTx()`.
+- The journal (`wallet.calls()`) starts empty after every navigation. Read it before the dApp navigates away, see the login recipe.
 - Reproduce user-side failures with `walletOptions.quirks`, never with a real wallet. Use only the default mnemonic or a throwaway testnet mnemonic, the keys end up in traces.
 
 ## Minimal test
@@ -38,6 +39,8 @@ test('pays with a transaction the wallet really signed', async ({ page, wallet }
   await page.goto('/checkout');
   await page.getByRole('button', { name: 'Connect' }).click();
   await page.getByRole('button', { name: 'Pay' }).click();
+  // Wait for what the app shows when the payment went out, the click does not wait for signing.
+  await expect(page.getByText('Payment sent')).toBeVisible();
 
   expect(await wallet.calls('signTx')).toHaveLength(1);
   expectSignedBy((await wallet.lastSubmittedTx())!, wallet);

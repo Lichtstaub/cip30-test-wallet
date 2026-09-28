@@ -1,6 +1,6 @@
 # Recipes
 
-Complete, tested patterns for the tasks that come up when a dApp is tested with this wallet. Every snippet here ran in Chromium, Firefox and WebKit against a small dApp built the way the recipe describes. The library recipes name the version they were tested with.
+Complete, tested patterns for the tasks that come up when a dApp is tested with this wallet. The test snippets ran verbatim in Chromium, Firefox and WebKit against a small dApp built the way each recipe describes, the dApp snippets ran inside those dApps. The library recipes name the version they were tested with. The dev server recipe is a template, its pattern ran against an Astro app with that app's own module and function names.
 
 ## Read this first: where the wallet's funds live
 
@@ -34,6 +34,33 @@ export async function serve(page: Page) {
 }
 ```
 
+## Bundling a dApp for the test page
+
+Only needed for a test page like the one above. Your own app's bundler already produces what its pages load. These are the builds the recipes were tested with, esbuild 0.28:
+
+- **Evolution SDK:** a plain bundle, `npx esbuild dapp/app.ts --bundle --format=iife --platform=browser --outfile=dapp/app.js`.
+- **Mesh:** needs polyfills for Node's `Buffer` and `process`, through `esbuild-plugins-node-modules-polyfill` 1.8.
+- **Lucid Evolution:** the same polyfills plus its WebAssembly, embedded with `esbuild-plugin-wasm` 1.1.
+
+```js
+// build.mjs, for Lucid Evolution. For Mesh drop wasmLoader.
+import { build } from 'esbuild';
+import { nodeModulesPolyfillPlugin } from 'esbuild-plugins-node-modules-polyfill';
+import { wasmLoader } from 'esbuild-plugin-wasm';
+
+await build({
+  entryPoints: ['dapp/app.mjs'],
+  outfile: 'dapp/app.js',
+  bundle: true,
+  platform: 'browser',
+  format: 'esm',
+  target: 'es2022',
+  plugins: [nodeModulesPolyfillPlugin({ globals: { Buffer: true, process: true } }), wasmLoader({ mode: 'embedded' })],
+});
+```
+
+An ESM bundle loads with `<script type="module" src="/app.js"></script>`.
+
 ## Evolution SDK
 
 Tested with `@evolution-sdk/evolution` 0.5.14.
@@ -44,7 +71,7 @@ A client built with `withCip30(api)` takes its UTxOs from the wallet's `getUtxos
 // dApp side
 import { Address, Assets, Client, preprod, TransactionHash } from '@evolution-sdk/evolution';
 
-const api = await window.cardano[walletName].enable();
+const api = await (window as any).cardano[walletName].enable();
 if ((await api.getNetworkId()) !== 0) throw new Error('wrong network: switch your wallet to preprod');
 
 const client = Client.make(preprod).withKoios({ baseUrl: 'https://preprod.koios.rest/api/v1' }).withCip30(api);
@@ -111,7 +138,7 @@ try {
   const signed = Transaction.addVKeyWitnessesHex(unsigned, witnessSet);
   // hand `signed` to api.submitTx or to your backend
 } catch (e) {
-  if (e?.code === 2) showMessage('You declined the signature in your wallet.');
+  if ((e as { code?: unknown } | null)?.code === 2) showMessage('You declined the signature in your wallet.');
   else throw e;
 }
 ```
@@ -159,7 +186,7 @@ Tested with `@lucid-evolution/lucid` 0.6.5.
 // dApp side
 import { Koios, Lucid } from '@lucid-evolution/lucid';
 
-const api = await window.cardano[walletName].enable();
+const api = await (window as any).cardano[walletName].enable();
 const lucid = await Lucid(new Koios('https://preprod.koios.rest/api/v1'), 'Preprod');
 lucid.selectWallet.fromAPI(api);
 const tx = await lucid.newTx().pay.ToAddress(recipient, { lovelace: 5_000_000n }).complete();
@@ -210,7 +237,7 @@ export async function stubProtocolParameters(page: Page) {
 }
 ```
 
-Two details decide whether this works: the order of the two routes, and the CORS header. A missing header shows up in the dApp as a failed protocol parameter request. Record the file again when the network's parameters change, a stale file only changes the fee.
+Two details decide whether this works: the order of the two routes, and the CORS header. A missing header shows up in the dApp as a failed protocol parameter request. Record the file again when the network's parameters change. Builders read more than the fee from it, minimum output values, size limits and deposits among them, so a stale file can change the transaction or make the build fail.
 
 If the app goes through its own proxy, as many do because Koios sends no CORS headers, route the proxy path instead, for example `**/api/koios/**`.
 
@@ -277,6 +304,8 @@ test('connect checks the network before it reads addresses', async ({ page, wall
   await expect(page.getByText('Connected')).toBeVisible();
 
   const methods = (await wallet.calls()).map((e) => e.method);
+  expect(methods).toContain('getNetworkId');
+  expect(methods).toContain('getUsedAddresses');
   expect(methods.indexOf('getNetworkId')).toBeLessThan(methods.indexOf('getUsedAddresses'));
   expect(await wallet.calls('signTx')).toHaveLength(0);
 });
@@ -293,12 +322,13 @@ test.use({ walletOptions: { name: 'eternl', networkId: 0, utxos: [{ lovelace: 50
 
 test('the wallet connector connects and builds a signed payment', async ({ page, wallet }) => {
   await page.goto('/');
-  const result = await page.evaluate(async () => {
-    const mod = await import('/src/lib/wallet-connector.ts');
+  // The path is resolved by the dev server in the page, pass it in as a value.
+  const result = await page.evaluate(async (modulePath) => {
+    const mod = await import(modulePath);
     const connected = await mod.connectWallet('eternl', 0);
     const signed = await mod.buildPaymentTx('eternl', 'addr_test1...', 5_000_000);
     return { connected, signed };
-  });
+  }, '/src/lib/wallet-connector.ts');
   expect(result.connected.networkId).toBe(0);
   expectSignedBy(result.signed, wallet);
 });
@@ -308,7 +338,32 @@ Module path and function names are the app's own. Any request the module makes t
 
 ## Signing in with a message
 
-See [Pages behind a wallet login](../README.md#pages-behind-a-wallet-login) for `signData` logins, a setup project and `storageState`, and [fixture-api.md](fixture-api.md#expectsigneddataresult-expected) for `expectSignedData`.
+A `signData` login usually ends in a navigation, and a navigation empties the journal. Hold the verify request, read the signature while the login page is still there, then let the request through:
+
+```ts
+import { test, expect, expectSignedData } from 'cip30-test-wallet/playwright';
+import type { JournalEntry } from 'cip30-test-wallet';
+
+test('signs in with a message the wallet really signed', async ({ page, wallet }) => {
+  let signData: JournalEntry[] = [];
+  await page.route('**/api/auth/verify', async (route) => {
+    signData = await wallet.calls('signData');
+    await route.fallback();
+  });
+  await page.goto('/login');
+  await page.getByRole('button', { name: 'Sign in with wallet' }).click();
+  await page.waitForURL('**/home/');
+
+  const [call] = signData;
+  expect(call).toBeDefined();
+  expectSignedData(call!.result as { signature: string; key: string }, {
+    payload: call!.args[1] as string,
+    address: call!.args[0] as string,
+  });
+});
+```
+
+`route.fallback()` hands the request on to the app's real backend, or to another route the test registered earlier. To log in once per role and reuse the session, see [Pages behind a wallet login](../README.md#pages-behind-a-wallet-login). The checks `expectSignedData` runs are in [fixture-api.md](fixture-api.md#expectsigneddataresult-expected).
 
 ## Without the test runner
 
