@@ -92,7 +92,9 @@ function plural(n: number, word: string, suffix = 's'): string {
 /** Label and value rows of one section, labels padded to a shared column, long values wrapped under it. */
 function section(title: string, rows: Array<[string, string]>): string[] {
   const width = Math.max(...rows.map(([label]) => label.length));
-  const hang = ' '.repeat(width + 4);
+  // Continuation lines sit two columns right of the value column, so a wrapped
+  // value never reads as a row of its own, for example a second hash in script-src.
+  const hang = ' '.repeat(width + 6);
   return [title, ...rows.flatMap(([label, value]) => wrap(value, `  ${label.padEnd(width)}  `, hang))];
 }
 

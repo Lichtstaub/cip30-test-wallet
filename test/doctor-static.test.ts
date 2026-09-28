@@ -149,5 +149,7 @@ describe('formatters', () => {
     const at = lines.findIndex((line) => line.startsWith('  [warning] wallet-not-detected:'));
     expect(lines[at + 1]).toMatch(/^ {12}\S/);
     expect(lines).toContain('  window.cardano  accessed once, after 111 ms');
+    const injection = lines.findIndex((line) => line.startsWith('  injection'));
+    expect(lines[injection + 1]).toMatch(/^ {20}\S/);
   });
 });
