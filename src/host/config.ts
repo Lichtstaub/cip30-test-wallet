@@ -1,6 +1,5 @@
 // Node side. Turns the friendly WalletOptions into the JSON PageConfig,
-// deriving keys through Evolution here so the page never needs bip39 or
-// BIP32 code.
+// deriving keys here so the page never needs bip39 or BIP32 code.
 import { cip129DRepId, toBech32, walletAddresses } from '../core/addresses.js';
 import { bytesToHex } from '../core/bytes.js';
 import { keyHash } from '../core/hash.js';
@@ -52,7 +51,9 @@ function lovelaceString(v: number | bigint | string): string {
 }
 
 function validateAccountIndex(v: number): void {
-  if (!Number.isInteger(v) || v < 0) throw new Error(`accountIndex must be a non-negative integer, got ${v}`);
+  if (!Number.isInteger(v) || v < 0 || v >= 0x80000000) {
+    throw new Error(`accountIndex must be an integer from 0 to 2^31 - 1, got ${v}`);
+  }
 }
 
 function validateNetworkId(v: number): void {
