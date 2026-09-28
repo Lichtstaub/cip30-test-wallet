@@ -122,4 +122,32 @@ describe('formatters', () => {
     expect(text).toMatch(/\n {10}script-src 'self'\n/);
     expect(text.split('\n').every((line) => line.length <= 88 || !line.includes(' '))).toBe(true);
   });
+
+  it('human output wraps a long finding title under the id and names a single access once', async () => {
+    const r = await runDoctor(`${base}/strict/`);
+    r.findings.push({
+      id: 'wallet-not-detected',
+      severity: 'warning',
+      title: 'the wallet was injected at 1030 ms but #some-rather-long-selector-name was not visible within 1500 ms',
+      detail: 'detail',
+    });
+    r.deep = {
+      browser: 'chromium',
+      loadedUrl: r.finalUrl,
+      clickSelector: null,
+      clickAtMs: null,
+      settleMs: 1500,
+      routed: true,
+      access: { firstAccessMs: 111, count: 1, lastAccessMs: 111 },
+      violations: [],
+      routeProbe: 'ok',
+      routeProbeReason: null,
+      injection: { injectedAfterMs: 0, injectedAtMs: 10, providerVisible: true, accessesAfterInjection: 1, expectSelector: null, expectVisible: null, expectWaitMs: null },
+    };
+    const lines = formatHuman(r).split('\n');
+    expect(lines.filter((line) => line.length > 88)).toEqual([]);
+    const at = lines.findIndex((line) => line.startsWith('  [warning] wallet-not-detected:'));
+    expect(lines[at + 1]).toMatch(/^ {12}\S/);
+    expect(lines).toContain('  window.cardano  accessed once, after 111 ms');
+  });
 });
