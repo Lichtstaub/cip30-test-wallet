@@ -109,4 +109,17 @@ describe('formatters', () => {
     expect(text).toContain(r.finalUrl!);
     expect(JSON.parse(formatJson(r)).findings.map((f: { id: string }) => f.id)).toEqual(ids(r));
   });
+
+  it('human output groups the report into sections and sorts findings by severity', async () => {
+    const r = await runDoctor(`${base}/strict/`);
+    r.findings.unshift({ id: 'late-info', severity: 'info', title: 'an info', detail: 'detail' });
+    const text = formatHuman(r);
+    const order = ['Page', 'Content security policy', 'Findings (1 warning, 1 info)', 'Result: findings above info, exit 1'];
+    const positions = order.map((heading) => text.indexOf(`\n${heading}`));
+    expect(positions.every((p) => p > 0)).toBe(true);
+    expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+    expect(text.indexOf('[warning] eval-blocked')).toBeLessThan(text.indexOf('[info] late-info'));
+    expect(text).toMatch(/\n {10}script-src 'self'\n/);
+    expect(text.split('\n').every((line) => line.length <= 88 || !line.includes(' '))).toBe(true);
+  });
 });

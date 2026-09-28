@@ -43,11 +43,11 @@ The second load probes. The eval probe is appended to the response of the first 
 | `--expect` not visible within the settle window | `wallet-not-detected` | warning |
 | The browser ended up on a different URL than the static fetch | `deep-url-differs` | info |
 
-Wording is deliberately careful. "No access observed during the executed scenario" is not "this page does not use CIP-30", the page may read `window.cardano` after a click. "Read once" is not "a late wallet is never found", only `--inject-after` with `--expect` proves that. The injection line in the human output reads "injected wallet at `<ms>` ms: present, `<n>` page read(s) after that", the count only includes reads after the wallet actually installed, not the install's own reads. `wallet-not-detected` names both the millisecond the wallet was injected and the millisecond window `--expect` was given to appear, so a report that a wallet was "not detected" always says exactly what was measured and in what window, never that the page cannot detect a wallet in general.
+Wording is deliberately careful. "No access observed during the executed scenario" is not "this page does not use CIP-30", the page may read `window.cardano` after a click. "Read once" is not "a late wallet is never found", only `--inject-after` with `--expect` proves that. The injection row in the human output reads "wallet injected at `<ms>` ms, present in window.cardano, `<n>` page read(s) after that", the count only includes reads after the wallet actually installed, not the install's own reads. `wallet-not-detected` names both the millisecond the wallet was injected and the millisecond window `--expect` was given to appear, so a report that a wallet was "not detected" always says exactly what was measured and in what window, never that the page cannot detect a wallet in general.
 
 ## Output and exit codes
 
-Human readable by default, `--json` prints the full report. Exit 0 means no finding above info, 1 means at least one warning or error, 2 means the run itself failed (URL unreachable, timed out, browser missing).
+Human readable by default: the page, its content security policy (one directive per line), the deep run measurements when `--deep` ran, the findings sorted from error to info, run errors, and a closing result line with the exit code. `--json` prints the full report. Exit 0 means no finding above info, 1 means at least one warning or error, 2 means the run itself failed (URL unreachable, timed out, browser missing).
 
 ## What doctor cannot see
 
