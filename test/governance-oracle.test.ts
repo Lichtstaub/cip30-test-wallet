@@ -5,7 +5,7 @@ import { Address, Anchor, Assets, Credential, DRep, KeyHash, Transaction, Transa
 import { makeTxBuilder } from '@evolution-sdk/evolution/sdk/builders/TransactionBuilder';
 import { preprod } from '@evolution-sdk/evolution/sdk/client/Chain';
 import type { ProtocolParameters } from '@evolution-sdk/evolution/sdk/provider/Provider';
-import { bech32 } from '@scure/base';
+import { parseAddressArg } from '../src/core/sign-data.js';
 import { bytesToHex, hexToBytes } from '../src/core/bytes.js';
 import { prepareWallet } from '../src/host/config.js';
 import { installWallet, syntheticOwnedUtxo, type InstallTarget } from '../src/page/install.js';
@@ -18,8 +18,8 @@ import { enableChw } from './helpers/page.js';
 import { MNEMONIC } from './fixtures/vectors.js';
 
 const w = prepareWallet();
-const address = Uint8Array.from(bech32.fromWords(bech32.decode(w.addresses.payment, false).words));
-const rewardHex = bytesToHex(Uint8Array.from(bech32.fromWords(bech32.decode(w.addresses.reward, false).words)));
+const address = parseAddressArg(w.addresses.payment);
+const rewardHex = bytesToHex(parseAddressArg(w.addresses.reward));
 const utxo = syntheticOwnedUtxo('chw', 0, address, 10_000_000n);
 const input = { txId: utxo.input.txId, index: 0 };
 const stakeCred = (C: typeof CSL) => C.Credential.from_keyhash(C.Ed25519KeyHash.from_bytes(hexToBytes(rewardHex).slice(1)));

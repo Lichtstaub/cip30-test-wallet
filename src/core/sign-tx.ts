@@ -1,8 +1,7 @@
-import { ed25519 } from '@noble/curves/ed25519.js';
 import { bytesEqual, bytesToHex, hexToBytes } from './bytes.js';
 import { encodeWitnessSet, parseTransaction, txHash, type ParsedBody, type ParsedTransaction } from './cbor/tx.js';
 import { apiError, APIErrorCode, ChwError, TxSignErrorCode, txSignError } from './errors.js';
-import { keyHash, publicKey, sign, type SigningKey } from './keys.js';
+import { keyHash, publicKey, sign, verifiesOver, type SigningKey } from './keys.js';
 import type { Ledger, Utxo } from './ledger.js';
 import { deprecatedCertificate, formsOutOfScope, requirements, type Role } from './requirements.js';
 import { parseHexArg } from './sign-data.js';
@@ -50,6 +49,12 @@ function witnessSetFor(hash: Uint8Array, keys: SigningKey[]): string {
   return bytesToHex(encodeWitnessSet(witnesses));
 }
 
+/** The one place a pre-Conway certificate becomes TxSignError DeprecatedCertificate. */
+export function refuseDeprecatedCertificate(body: ParsedBody): void {
+  const deprecated = deprecatedCertificate(body);
+  if (deprecated) throw txSignError(TxSignErrorCode.DeprecatedCertificate, `${deprecated} is deprecated since Conway`);
+}
+
 export interface SignContext {
   payment: SigningKey;
   stake: SigningKey;
@@ -80,8 +85,7 @@ export interface SignContext {
 export async function signTx(parsed: ParsedTransaction, partialSign: boolean, ctx: SignContext): Promise<string> {
   const { body, hash, vkeyWitnesses } = parsed;
   // CIP-95: a pre-Conway certificate is refused regardless of consent and of partialSign.
-  const deprecated = deprecatedCertificate(body);
-  if (deprecated) throw txSignError(TxSignErrorCode.DeprecatedCertificate, `${deprecated} is deprecated since Conway`);
+  refuseDeprecatedCertificate(body);
 
   const resolvedInputs = await resolveInputs(body, ctx.ledger);
   const reqs = requirements(body, resolvedInputs);
@@ -101,19 +105,18 @@ export async function signTx(parsed: ParsedTransaction, partialSign: boolean, ct
     }
   }
 
-  const roles: Array<[Role, SigningKey]> = [
-    ['payment', ctx.payment],
-    ['stake', ctx.stake],
-    ...(ctx.drep ? [['drep', ctx.drep] as [Role, SigningKey]] : []),
-  ];
-  const roleHashes = roles.map(([role, key]) => [role, keyHash(publicKey(key))] as const);
-  const roleOf = (h: Uint8Array) => roleHashes.find(([, own]) => bytesEqual(own, h))?.[0];
+  const roles = new Map<Role, { key: SigningKey; hash: Uint8Array }>();
+  const addRole = (role: Role, key: SigningKey) => roles.set(role, { key, hash: keyHash(publicKey(key)) });
+  addRole('payment', ctx.payment);
+  addRole('stake', ctx.stake);
+  if (ctx.drep) addRole('drep', ctx.drep);
+  const roleOf = (h: Uint8Array) => [...roles].find(([, own]) => bytesEqual(own.hash, h))?.[0];
 
   // Key hashes that a valid witness already in the transaction vouches for. A
   // witness with the wrong vkey or signature length cannot be valid, so it is
   // dropped before ed25519 ever sees it.
   const covered = vkeyWitnesses
-    .filter((w) => w.vkey.length === 32 && w.signature.length === 64 && ed25519.verify(w.signature, hash, w.vkey))
+    .filter((w) => verifiesOver(w, hash))
     .map((w) => keyHash(w.vkey));
   const isCovered = (h: Uint8Array) => covered.some((c) => bytesEqual(c, h));
 
@@ -126,5 +129,6 @@ export async function signTx(parsed: ParsedTransaction, partialSign: boolean, ct
     }
   }
 
-  return witnessSetFor(hash, roles.filter(([role]) => needed.has(role)).map(([, key]) => key));
+  const signing = (['payment', 'stake', 'drep'] as const).filter((role) => needed.has(role)).map((role) => roles.get(role)!.key);
+  return witnessSetFor(hash, signing);
 }

@@ -1,15 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { TransactionWitnessSet, VKey } from '@evolution-sdk/evolution';
 import { hexToBytes } from '../src/core/bytes.js';
 import { APIErrorCode, TxSignErrorCode } from '../src/core/errors.js';
 import { prepareWallet } from '../src/host/config.js';
 import { installWallet, syntheticOwnedUtxo, type InstallTarget } from '../src/page/install.js';
-import { buildTx } from './helpers/build-tx.js';
+import { buildTx, witnessVkeys } from './helpers/build-tx.js';
 import { enableChw } from './helpers/page.js';
-import { bech32 } from '@scure/base';
+import { parseAddressArg } from '../src/core/sign-data.js';
 
 const prepared = (quirks = {}) => prepareWallet({ quirks });
-const addressOf = (w: ReturnType<typeof prepareWallet>) => Uint8Array.from(bech32.fromWords(bech32.decode(w.addresses.payment, false).words));
+const addressOf = (w: ReturnType<typeof prepareWallet>) => parseAddressArg(w.addresses.payment);
 const govActionId = [new Uint8Array(32).fill(3), 0n];
 
 function voteTx(w: ReturnType<typeof prepareWallet>, extra: Array<[bigint, unknown]> = []) {
@@ -25,7 +24,7 @@ async function api(w: ReturnType<typeof prepareWallet>) {
 }
 
 // Evolution's toJSON() gives a VKey object, not a hex string, see test/witness.test.ts:44.
-const vkeys = (ws: string) => (TransactionWitnessSet.fromCBORHex(ws).toJSON().vkeyWitnesses ?? []).map((x) => VKey.toHex(x.vkey));
+const vkeys = witnessVkeys;
 
 afterEach(() => vi.restoreAllMocks());
 

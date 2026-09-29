@@ -6,8 +6,8 @@ import { APIErrorCode, apiError, DataSignErrorCode, dataSignError, TxSignErrorCo
 import type { SigningKey } from '../core/keys.js';
 import { encodeUtxo, type MemoryLedger } from '../core/ledger.js';
 import { parseAddressArg, parseHexArg, resolveDataSigner } from '../core/sign-data.js';
-import { deprecatedCertificate, requirements } from '../core/requirements.js';
-import { parseTxHex, resolveInputs, signTx as coreSignTx, unsupportedForms } from '../core/sign-tx.js';
+import { requirements } from '../core/requirements.js';
+import { parseTxHex, refuseDeprecatedCertificate, resolveInputs, signTx as coreSignTx, unsupportedForms } from '../core/sign-tx.js';
 import type { Control } from './control.js';
 import type { PageConfig } from './config.js';
 
@@ -150,8 +150,7 @@ export function buildApi(ctx: WalletContext, extensions: { cip: number }[] = [])
         // malformed transaction without ever showing it to the user.
         const { parsed } = parseTxHex(tx);
         // CIP-95: refused regardless of user consent, so before any prompt quirk and at both partialSign values.
-        const deprecated = deprecatedCertificate(parsed.body);
-        if (deprecated) throw txSignError(TxSignErrorCode.DeprecatedCertificate, `${deprecated} is deprecated since Conway`);
+        refuseDeprecatedCertificate(parsed.body);
         // Validates every governance field before any prompt quirk. No ledger needed, unresolved inputs are skipped.
         requirements(parsed.body, []);
         if (partialSign) {

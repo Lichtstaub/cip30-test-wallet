@@ -10,6 +10,7 @@
 // tag 258, changing the body bytes and therefore the body hash a witness
 // was signed over. Emitting tag 258 ourselves keeps a round trip through
 // Evolution byte-for-byte stable.
+import { TransactionWitnessSet, VKey } from '@evolution-sdk/evolution';
 import { encode } from '../../src/core/cbor/encode.js';
 import { Tagged, type CborValue } from '../../src/core/cbor/decode.js';
 import { parseTransaction, type TxInput } from '../../src/core/cbor/tx.js';
@@ -65,4 +66,9 @@ export function standardUnsignedTx(walletName: string, address: Uint8Array = TES
 export function spliceWitnessSet(txHex: string, witnessSetHex: string): string {
   const { bodyBytes } = parseTransaction(hexToBytes(txHex));
   return bytesToHex(concat(Uint8Array.of(0x84), bodyBytes, hexToBytes(witnessSetHex), encode(true), encode(null)));
+}
+
+/** Hex vkeys of a witness set, in witness order. */
+export function witnessVkeys(witnessSetHex: string): string[] {
+  return (TransactionWitnessSet.fromCBORHex(witnessSetHex).toJSON().vkeyWitnesses ?? []).map((w) => VKey.toHex(w.vkey));
 }

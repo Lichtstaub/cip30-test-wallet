@@ -3,6 +3,7 @@ import { bytesEqual, bytesToHex, hexToBytes } from '../core/bytes.js';
 import { parseTransaction } from '../core/cbor/tx.js';
 import { decodeCoseKey, decodeCoseSign1, sigStructure } from '../core/cose.js';
 import { keyHash } from '../core/hash.js';
+import { verifiesOver } from '../core/keys.js';
 import { keyCredentialOf, parseAddressArg } from '../core/sign-data.js';
 import type { Role } from '../core/requirements.js';
 
@@ -33,7 +34,7 @@ export function expectSignedBy(
     const hex = keys[role];
     if (!hex) throw new Error(`expectSignedBy: the wallet handle has no ${role} public key`);
     const pub = hexToBytes(hex);
-    const ok = vkeyWitnesses.some((w) => bytesEqual(w.vkey, pub) && ed25519.verify(w.signature, hash, pub));
+    const ok = vkeyWitnesses.some((w) => bytesEqual(w.vkey, pub) && verifiesOver(w, hash));
     if (!ok) throw new Error(`expectSignedBy: no valid witness from the wallet's ${role} key over body hash ${bytesToHex(hash)}`);
   }
 }

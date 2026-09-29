@@ -77,7 +77,6 @@ describe('requirements: the witness table of the spec, row by row', () => {
   it('certificates 5 and 6 are deprecated, found without reading their fields', () => {
     const body = bodyWith([[4n, [[9n, key(1), key(2)], [6n, 'anything']]]]);
     expect(deprecatedCertificate(body)).toBe('certificate 6 (move_instantaneous_rewards)');
-    expect(requirements(body, [utxo]).deprecated).toBe('certificate 6 (move_instantaneous_rewards)');
     expect(deprecatedCertificate(bodyWith([[4n, [[5n]]]]))).toBe('certificate 5 (genesis_key_delegation)');
   });
 

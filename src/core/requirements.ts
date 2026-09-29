@@ -32,8 +32,6 @@ export interface Requirements {
   scripts: ScriptRequirement[];
   /** Forms this release cannot reason about: unlisted body keys, Byron inputs, unknown certificate or voter types. */
   unsupported: string[];
-  /** The first pre-Conway certificate, if any. CIP-95 refuses it before anything else. */
-  deprecated?: string;
 }
 
 const SUPPORTED_BODY_KEYS = new Set<bigint>([0n, 1n, 2n, 3n, 4n, 5n, 7n, 8n, 14n, 15n, 19n, 20n, 21n, 22n]);
@@ -106,10 +104,15 @@ export function deprecatedCertificate(body: ParsedBody): string | undefined {
   return found ? certificateName(found[0] as bigint) : undefined;
 }
 
-function addCredential(value: CborValue | undefined, where: string, foreignOnly: boolean, out: Requirements): void {
+function parseCredential(value: CborValue | undefined, where: string): { isScript: boolean; hash: Uint8Array } {
   if (!Array.isArray(value) || value.length !== 2 || (value[0] !== 0n && value[0] !== 1n)) malformed(`credential in ${where}`);
   const hash = hash28(value[1], `credential hash in ${where}`);
-  if (value[0] === 1n) out.scripts.push({ scriptHash: hash, source: `${where} with a script credential` });
+  return { isScript: value[0] === 1n, hash };
+}
+
+function addCredential(value: CborValue | undefined, where: string, foreignOnly: boolean, out: Requirements): void {
+  const { isScript, hash } = parseCredential(value, where);
+  if (isScript) out.scripts.push({ scriptHash: hash, source: `${where} with a script credential` });
   else out.keys.push({ keyHash: hash, source: where, foreignOnly });
 }
 
@@ -124,10 +127,8 @@ const CERTIFICATE_ARITY: Record<string, number> = {
 function addCertificate(cert: CborValue[], out: Requirements): void {
   const index = cert[0] as bigint;
   const where = certificateName(index);
-  if (DEPRECATED_CERTIFICATES.has(index)) {
-    out.deprecated ??= where;
-    return;
-  }
+  // Callers refuse these through deprecatedCertificate, there is nothing to require.
+  if (DEPRECATED_CERTIFICATES.has(index)) return;
   const arity = CERTIFICATE_ARITY[index.toString()];
   if (arity === undefined) {
     out.unsupported.push(where);
@@ -137,8 +138,7 @@ function addCertificate(cert: CborValue[], out: Requirements): void {
   if (index === 0n) {
     // No witness during the Conway transition, TxCert.hs, not even for a script
     // credential. The credential is still checked, it is the certificate's only field.
-    const scratch: Requirements = { keys: [], scripts: [], unsupported: [] };
-    addCredential(cert[1], where, false, scratch);
+    parseCredential(cert[1], where);
     return;
   }
   if (OWN_CREDENTIAL_CERTIFICATES.has(index)) return addCredential(cert[1], where, false, out);

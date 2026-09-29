@@ -118,9 +118,8 @@ function parseBodyMap(body: Map<CborValue, CborValue>): ParsedBody {
     // treasury_withdrawals_action = (2, withdrawals, guardrail / nil)
     const last = action[action.length - 1];
     if (actionIndex === 0n || actionIndex === 2n) {
-      if (last === null) return { actionIndex };
-      if (!(last instanceof Uint8Array)) throw new Error('malformed governance action');
-      return { actionIndex, guardrail: asBytes(last, 'guardrail script hash') };
+      if (last !== null && !(last instanceof Uint8Array)) throw new Error('malformed governance action');
+      return last === null ? { actionIndex } : { actionIndex, guardrail: last };
     }
     return { actionIndex };
   });

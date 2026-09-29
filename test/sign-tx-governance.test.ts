@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { TransactionWitnessSet, VKey } from '@evolution-sdk/evolution';
 import { bytesToHex } from '../src/core/bytes.js';
 import { baseAddressBytes, rewardAddressBytes } from '../src/core/addresses.js';
 import { ChwError, TxSignErrorCode } from '../src/core/errors.js';
@@ -7,7 +6,7 @@ import { keyHash, publicKey } from '../src/core/keys.js';
 import { MemoryLedger, type Utxo } from '../src/core/ledger.js';
 import { parseTxHex, signTx as signParsed, signWithKeys, type SignContext } from '../src/core/sign-tx.js';
 import { deriveAccount } from '../src/derive/index.js';
-import { buildTx, spliceWitnessSet } from './helpers/build-tx.js';
+import { buildTx, spliceWitnessSet, witnessVkeys } from './helpers/build-tx.js';
 import { syntheticInput } from './helpers/synthetic.js';
 import { MNEMONIC } from './fixtures/vectors.js';
 
@@ -30,9 +29,9 @@ const ctx = (drep = true): SignContext => ({
 const tx = (entries: Array<[bigint, unknown]>) =>
   buildTx({ inputs: [mine.input], outputs: [{ address: mine.address, lovelace: 9_000_000n }], fee: 200_000n, extraBodyEntries: new Map(entries) });
 const sign = (txHex: string, partial: boolean, context = ctx()) => signParsed(parseTxHex(txHex).parsed, partial, context);
-const signers = (wsHex: string) => (TransactionWitnessSet.fromCBORHex(wsHex).toJSON().vkeyWitnesses ?? []).length;
+const signers = (wsHex: string) => witnessVkeys(wsHex).length;
 // Evolution's toJSON() gives a VKey object, not a hex string, see test/witness.test.ts:44.
-const vkeysOf = (wsHex: string) => (TransactionWitnessSet.fromCBORHex(wsHex).toJSON().vkeyWitnesses ?? []).map((w) => VKey.toHex(w.vkey));
+const vkeysOf = witnessVkeys;
 const pub = (k: typeof me.payment) => bytesToHex(publicKey(k));
 const other = deriveAccount(MNEMONIC, 3);
 const otherStake = keyHash(publicKey(other.stake));
