@@ -1,6 +1,7 @@
 // Builds a minimal Conway transaction with our own encoder. Evolution must be
-// able to parse the result, which the tests assert. Certificates are only
-// stubbed as "present" to exercise the unsupported-field path.
+// able to parse the result, which the tests assert. certificatesPlaceholder
+// adds a registration certificate without deposit, the one certificate that
+// needs no witness.
 //
 // inputs and required_signers are Conway sets, CDDL nonempty_set<T> =
 // #6.258([+T]) / [+T]. Evolution's own serializer always emits the tag 258
@@ -11,8 +12,8 @@
 // Evolution byte-for-byte stable.
 import { encode } from '../../src/core/cbor/encode.js';
 import { Tagged, type CborValue } from '../../src/core/cbor/decode.js';
-import type { TxInput } from '../../src/core/cbor/tx.js';
-import { bytesToHex, hexToBytes } from '../../src/core/bytes.js';
+import { parseTransaction, type TxInput } from '../../src/core/cbor/tx.js';
+import { bytesToHex, concat, hexToBytes } from '../../src/core/bytes.js';
 import { syntheticOwnedUtxo } from '../../src/page/install.js';
 
 export interface BuildTxOptions {
@@ -58,4 +59,10 @@ export const TEST_ADDRESS = hexToBytes('00' + '11'.repeat(28) + '22'.repeat(28))
 export function standardUnsignedTx(walletName: string, address: Uint8Array = TEST_ADDRESS): string {
   const utxo = syntheticOwnedUtxo(walletName, 0, address, 10_000_000n);
   return buildTx({ inputs: [utxo.input], outputs: [{ address, lovelace: 9_800_000n }], fee: 200_000n });
+}
+
+/** Replaces the witness set of a transaction with the given one, keeping the body bytes exactly. */
+export function spliceWitnessSet(txHex: string, witnessSetHex: string): string {
+  const { bodyBytes } = parseTransaction(hexToBytes(txHex));
+  return bytesToHex(concat(Uint8Array.of(0x84), bodyBytes, hexToBytes(witnessSetHex), encode(true), encode(null)));
 }
