@@ -112,4 +112,15 @@ describe('installWallet', () => {
     bad.keys.payment.hex = 'abcd';
     expect(() => installWallet(bad, {})).toThrow(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
   });
+
+  it('turns a bad hand-written utxo value into a CIP-30 error, not an Error', () => {
+    let caught: unknown;
+    try {
+      installWallet(testConfig({ utxos: [{ lovelace: '1', datumHash: 'zz' }] }), {});
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).not.toBeInstanceOf(Error);
+    expect(caught).toMatchObject({ code: -1 });
+  });
 });

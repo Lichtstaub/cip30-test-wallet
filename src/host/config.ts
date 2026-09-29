@@ -69,6 +69,9 @@ const HEX_RE = /^(?:[0-9a-fA-F]{2})+$/;
 function utxoExtras(u: UtxoExtrasInput, where: string): UtxoExtras {
   const out: UtxoExtras = {};
   if (u.assets !== undefined) {
+    if (typeof u.assets !== 'object' || u.assets === null || Array.isArray(u.assets)) {
+      throw new Error(`${where}.assets must be an object of unit to quantity`);
+    }
     const units: Record<string, string> = {};
     for (const [unit, quantity] of Object.entries(u.assets)) {
       if (typeof quantity === 'number' && !Number.isSafeInteger(quantity)) {

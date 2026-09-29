@@ -1,7 +1,7 @@
 import { isByronAddress, isScriptPayment, paymentHash } from './addresses.js';
 import { bytesToHex } from './bytes.js';
 import type { CborValue } from './cbor/decode.js';
-import { unwrapSet, type ParsedBody } from './cbor/tx.js';
+import { spentInputs, unwrapSet, type ParsedBody } from './cbor/tx.js';
 import { apiError, APIErrorCode } from './errors.js';
 import type { Utxo } from './ledger.js';
 
@@ -175,11 +175,10 @@ export function requirements(body: ParsedBody, resolvedInputs: ReadonlyArray<Utx
     }
   }
 
-  const spent = [...body.inputs.map((input) => ({ input, label: 'input' })), ...body.collateralInputs.map((input) => ({ input, label: 'collateral input' }))];
-  for (const [i, { input, label }] of spent.entries()) {
+  for (const [i, { input, collateral }] of spentInputs(body).entries()) {
     const utxo = resolvedInputs[i];
     if (!utxo) continue;
-    const where = `${label} ${bytesToHex(input.txId)}#${input.index}`;
+    const where = `${collateral ? 'collateral input' : 'input'} ${bytesToHex(input.txId)}#${input.index}`;
     if (isByronAddress(utxo.address)) out.unsupported.push('an input at a Byron address');
     else if (isScriptPayment(utxo.address)) out.scripts.push({ scriptHash: paymentHash(utxo.address), source: 'an input at a script address' });
     else out.keys.push({ keyHash: paymentHash(utxo.address), source: where, foreignOnly: false });

@@ -40,17 +40,15 @@ export function syntheticOwnedUtxo(name: string, index: number, address: Uint8Ar
 /** The optional output parts of a configured UTxO, turned from JSON into ledger values. */
 export function utxoExtras(c: UtxoExtras): Pick<Utxo, 'assets' | 'datum' | 'scriptRef'> {
   const out: Pick<Utxo, 'assets' | 'datum' | 'scriptRef'> = {};
-  if (c.assets) {
-    // A PageConfig written by hand skips the checks in Node, so a bad unit must still reach the caller as a CIP-30 error.
-    try {
-      out.assets = parseAssetUnits(c.assets);
-    } catch (error) {
-      throw apiError(APIErrorCode.InvalidRequest, (error as Error).message);
-    }
+  // A hand-written PageConfig that skips the Node checks fails at install with a CIP-30 error.
+  try {
+    if (c.assets) out.assets = parseAssetUnits(c.assets);
+    if (c.datumHash) out.datum = { kind: 'hash', hash: hexToBytes(c.datumHash) };
+    if (c.inlineDatum) out.datum = { kind: 'inline', cbor: hexToBytes(c.inlineDatum) };
+    if (c.scriptRef) out.scriptRef = hexToBytes(c.scriptRef);
+  } catch (error) {
+    throw apiError(APIErrorCode.InvalidRequest, error instanceof Error ? error.message : 'invalid utxo value');
   }
-  if (c.datumHash) out.datum = { kind: 'hash', hash: hexToBytes(c.datumHash) };
-  if (c.inlineDatum) out.datum = { kind: 'inline', cbor: hexToBytes(c.inlineDatum) };
-  if (c.scriptRef) out.scriptRef = hexToBytes(c.scriptRef);
   return out;
 }
 

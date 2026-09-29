@@ -22,6 +22,11 @@ export interface ParsedProposal {
   guardrail?: Uint8Array;
 }
 
+/** Every input the transaction spends or puts at risk, body inputs first and then collateral inputs. The one source of that order. */
+export function spentInputs(body: ParsedBody): Array<{ input: TxInput; collateral: boolean }> {
+  return [...body.inputs.map((input) => ({ input, collateral: false })), ...body.collateralInputs.map((input) => ({ input, collateral: true }))];
+}
+
 export interface ParsedBody {
   inputs: TxInput[];
   /** Collateral inputs (body key 13), spent only when a script fails. */

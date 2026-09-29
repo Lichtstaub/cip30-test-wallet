@@ -74,6 +74,7 @@ describe('walletOptions.utxos with assets, datum and script ref', () => {
 
   it('refuses malformed entries in Node with the entry named', () => {
     expect(() => prepareWallet({ utxos: [{ lovelace: 1, assets: { zz: 1 } }] })).toThrow(/utxos\[0\]/);
+    expect(() => prepareWallet({ utxos: [{ lovelace: 1, assets: null as never }] })).toThrow(/utxos\[0\]\.assets must be an object/);
     expect(() => prepareWallet({ utxos: [{ lovelace: 1, datumHash: 'ab' }] })).toThrow(/utxos\[0\]\.datumHash/);
     expect(() => prepareWallet({ utxos: [{ lovelace: 1, datumHash, inlineDatum: inlineDatumHex }] })).toThrow(/either datumHash or inlineDatum/);
     expect(() => prepareWallet({ utxos: [{ lovelace: 1, inlineDatum: 'ff' }] })).toThrow(/utxos\[0\]\.inlineDatum/);
