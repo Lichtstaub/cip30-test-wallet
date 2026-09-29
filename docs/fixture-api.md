@@ -40,9 +40,11 @@ A `JournalEntry` is `{ method, args, result?, error?, t }`. Results of `enable` 
 
 The journal and every `setQuirk` change live in the page, not in the test process. Each navigation resets both to the wallet's initial configuration. Read `wallet.calls()` before navigating away from the page you want to assert on, not after.
 
-## `expectSignedBy(txHex, wallet)`
+## `expectSignedBy(txHex, wallet, options?)`
 
-Throws unless `txHex` carries a vkey witness whose key is the wallet's payment key and whose signature verifies over the transaction's body hash. Use it on `await wallet.lastSubmittedTx()`.
+Throws unless `txHex` carries a vkey witness whose key is that of every role in `options.roles` (payment by default) and whose signature verifies over the transaction's body hash. Use it on `await wallet.lastSubmittedTx()`.
+
+`options.roles` names the keys that must have signed, any of `payment`, `stake` and `drep`, default `['payment']`. An empty list is an error. A vote needs `['payment', 'drep']`, a vote delegation `['payment', 'stake']`.
 
 ## `expectSignedData(result, expected)`
 
@@ -68,6 +70,6 @@ expectSignedData(call!.result as { signature: string; key: string }, {
 
 ## Errors
 
-CIP-30 errors are plain objects: `APIError` `{ code: -1 | -2 | -3 | -4, info }`, `TxSignError` `{ code: 1 | 2, info }`, `DataSignError` `{ code: 1 | 2 | 3, info }` (`ProofGeneration`, `AddressNotPK`, `UserDeclined`), `PaginateError` `{ maxSize }`. Harness diagnoses are `ChwError` instances with `code` `CHW_UNRESOLVED_INPUT` or `CHW_UNSUPPORTED_TX_FORM`. Decoding failures become `APIError` InvalidRequest.
+CIP-30 errors are plain objects: `APIError` `{ code: -1 | -2 | -3 | -4, info }`, `TxSignError` `{ code: 1 | 2 | 3, info }`, `DataSignError` `{ code: 1 | 2 | 3, info }` (`ProofGeneration`, `AddressNotPK`, `UserDeclined`), `PaginateError` `{ maxSize }`. Harness diagnoses are `ChwError` instances with `code` `CHW_UNRESOLVED_INPUT` or `CHW_UNSUPPORTED_TX_FORM`. Decoding failures become `APIError` InvalidRequest. Code 3, `DeprecatedCertificate` (CIP-95), comes for a pre-Conway certificate at both `partialSign` values and before any prompt quirk such as `signHangs`.
 
 The deployed-site check lives in [doctor.md](doctor.md).

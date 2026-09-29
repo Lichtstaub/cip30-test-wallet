@@ -41,3 +41,15 @@ Connect through Evolution's `cip30Wallet` helper against any wallet installed by
 **Workaround.** The `cip30Code` helper from the Evolution recipe, or `tx.sign.withWallet().completeSafe()`, whose `left.cause` is the CIP-30 object. See the Lucid Evolution recipe in [recipes.md](recipes.md#lucid-evolution).
 
 **Status.** Reported upstream: not yet.
+
+## Evolution SDK: a pool registration with a tagged owner set does not parse
+
+**What the Conway CDDL says.** `pool_owners : set<addr_keyhash>`, and a set may be a plain array or carry tag 258. CSL emits the tagged form by default.
+
+**What Evolution does.** Evolution SDK 0.5.13, `Transaction.fromCBORHex` and `Transaction.addVKeyWitnessesHex`, throws a `ParseError` for a transaction whose `pool_registration` certificate carries the tagged owner set. Its schema expects a plain array there. Retiring a pool, the committee certificates and every stake and DRep certificate are not affected.
+
+**How to reproduce with this wallet.** Build a pool registration with CSL, sign it with this wallet at `partialSign: true` and merge the witness set with `Transaction.addVKeyWitnessesHex`. The merge throws before anything is submitted. The wallet itself signs the transaction correctly.
+
+**Workaround.** Merge the witness set with CSL. Evolution's own builder is expected to emit the plain array form, which is untested here.
+
+**Status.** Reported upstream: not yet.

@@ -35,6 +35,19 @@ describe('expectSignedBy', () => {
     const signed = Transaction.addVKeyWitnessesHex(unsigned, await api.signTx(unsigned, true));
     expect(() => expectSignedBy(signed, mine)).toThrow(/no valid witness/);
   });
+
+  it('checks the roles a test names, payment by default', async () => {
+    const prepared = prepareWallet();
+    const target: InstallTarget = {};
+    installWallet(prepared.config, target);
+    const api = await enableChw(target);
+    const unsigned = standardUnsignedTx('chw');
+    const signed = Transaction.addVKeyWitnessesHex(unsigned, await api.signTx(unsigned, false));
+    expect(() => expectSignedBy(signed, prepared, { roles: ['payment'] })).not.toThrow();
+    expect(() => expectSignedBy(signed, prepared, { roles: ['payment', 'drep'] })).toThrow(/no valid witness from the wallet's drep key/);
+    expect(() => expectSignedBy(signed, { paymentPublicKeyHex: prepared.paymentPublicKeyHex }, { roles: ['stake'] })).toThrow(/has no stake public key/);
+    expect(() => expectSignedBy(signed, prepared, { roles: [] })).toThrow(/roles must name at least one key/);
+  });
 });
 
 describe('expectSignedData', () => {

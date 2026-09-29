@@ -3,19 +3,39 @@ import { bytesEqual, bytesToHex, hexToBytes } from '../core/bytes.js';
 import { parseTransaction } from '../core/cbor/tx.js';
 import { decodeCoseKey, decodeCoseSign1, sigStructure } from '../core/cose.js';
 import { keyHash } from '../core/hash.js';
+import { verifiesOver } from '../core/keys.js';
 import { keyCredentialOf, parseAddressArg } from '../core/sign-data.js';
+import type { Role } from '../core/requirements.js';
+
+/** The wallet keys a test can require a witness from. The same union signTx uses for its roles. */
+export type SignerRole = Role;
 
 /**
  * Proves the submitted transaction really carries this wallet's signature
- * over its own body hash. Recording submitTx alone proves nothing, a dApp
- * could submit the unsigned transaction and still get a hash back.
+ * over its own body hash, for every role the test names (payment when it
+ * names none). Recording submitTx alone proves nothing, a dApp could submit
+ * the unsigned transaction and still get a hash back.
  */
-export function expectSignedBy(txHex: string, wallet: { paymentPublicKeyHex: string }): void {
+export function expectSignedBy(
+  txHex: string,
+  wallet: { paymentPublicKeyHex: string; stakePublicKeyHex?: string; drepPublicKeyHex?: string },
+  options: { roles?: SignerRole[] } = {},
+): void {
+  const roles = options.roles ?? ['payment'];
+  // An empty list would pass without checking anything.
+  if (roles.length === 0) throw new Error('expectSignedBy: roles must name at least one key');
   const { hash, vkeyWitnesses } = parseTransaction(hexToBytes(txHex));
-  const pub = hexToBytes(wallet.paymentPublicKeyHex);
-  const ok = vkeyWitnesses.some((w) => bytesEqual(w.vkey, pub) && ed25519.verify(w.signature, hash, pub));
-  if (!ok) {
-    throw new Error(`expectSignedBy: no valid witness from the wallet's payment key over body hash ${bytesToHex(hash)}`);
+  const keys: Record<SignerRole, string | undefined> = {
+    payment: wallet.paymentPublicKeyHex,
+    stake: wallet.stakePublicKeyHex,
+    drep: wallet.drepPublicKeyHex,
+  };
+  for (const role of roles) {
+    const hex = keys[role];
+    if (!hex) throw new Error(`expectSignedBy: the wallet handle has no ${role} public key`);
+    const pub = hexToBytes(hex);
+    const ok = vkeyWitnesses.some((w) => bytesEqual(w.vkey, pub) && verifiesOver(w, hash));
+    if (!ok) throw new Error(`expectSignedBy: no valid witness from the wallet's ${role} key over body hash ${bytesToHex(hash)}`);
   }
 }
 

@@ -6,7 +6,8 @@ import { APIErrorCode, apiError, DataSignErrorCode, dataSignError, TxSignErrorCo
 import type { SigningKey } from '../core/keys.js';
 import { encodeUtxo, type MemoryLedger } from '../core/ledger.js';
 import { parseAddressArg, parseHexArg, resolveDataSigner } from '../core/sign-data.js';
-import { parseTxHex, resolveInputs, signTx as coreSignTx, unsupportedForms } from '../core/sign-tx.js';
+import { requirements } from '../core/requirements.js';
+import { parseTxHex, refuseDeprecatedCertificate, resolveInputs, signTx as coreSignTx, unsupportedForms } from '../core/sign-tx.js';
 import type { Control } from './control.js';
 import type { PageConfig } from './config.js';
 
@@ -148,6 +149,10 @@ export function buildApi(ctx: WalletContext, extensions: { cip: number }[] = [])
         // Parsed once, before any prompt quirk: a real wallet refuses a
         // malformed transaction without ever showing it to the user.
         const { parsed } = parseTxHex(tx);
+        // CIP-95: refused regardless of user consent, so before any prompt quirk and at both partialSign values.
+        refuseDeprecatedCertificate(parsed.body);
+        // Validates every governance field before any prompt quirk. No ledger needed, unresolved inputs are skipped.
+        requirements(parsed.body, []);
         if (partialSign) {
           try {
             const skipped = unsupportedForms(parsed.body, await resolveInputs(parsed.body, ledger));
@@ -160,7 +165,9 @@ export function buildApi(ctx: WalletContext, extensions: { cip: number }[] = [])
         }
         if (control.quirks.signHangs) await control.wait('signTx');
         if (control.quirks.signRejected) throw txSignError(TxSignErrorCode.UserDeclined, 'user declined to sign the transaction');
-        return coreSignTx(parsed, partialSign, { payment: ctx.payment, stake: ctx.stake, ledger });
+        // A wallet without CIP-95 has no DRep key, its DRep requirements are foreign.
+        const drep = control.quirks.noCip95 ? {} : { drep: ctx.drep };
+        return coreSignTx(parsed, partialSign, { payment: ctx.payment, stake: ctx.stake, ...drep, ledger });
       }),
     submitTx: (tx) =>
       control.record('submitTx', [tx], async () => {

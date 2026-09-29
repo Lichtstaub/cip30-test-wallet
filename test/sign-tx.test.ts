@@ -140,11 +140,9 @@ describe('exit criterion 5: ownership decision', () => {
     expect(witnessCount(await signTx(tx, false, ctx()))).toBe(2);
   });
 
-  it('refuses a body with certificates as an unsupported form in the spike', async () => {
+  it('signs a body with a registration certificate (0), which needs no stake witness', async () => {
     const tx = pay([mine.input], { certificatesPlaceholder: true });
-    await expect(signTx(tx, false, ctx())).rejects.toBeInstanceOf(ChwError);
-    await expect(signTx(tx, false, ctx())).rejects.toThrow(/CHW_UNSUPPORTED_TX_FORM/);
-    expect(witnessCount(await signTx(tx, true, ctx()))).toBe(1);
+    expect(witnessCount(await signTx(tx, false, ctx()))).toBe(1);
   });
 
   it('never puts key material into an error message', async () => {
@@ -170,8 +168,8 @@ describe('supported transaction forms are an allowlist, checked before ownership
     expect(witnessCount(await signTx(tx, true, ctx()))).toBe(1);
   });
 
-  it('refuses an unsupported body key (voting procedures, 19) the same way', async () => {
-    const tx = pay([mine.input], { extraBodyEntries: new Map([[19n, new Map()]]) });
+  it('refuses an unsupported body key (reference inputs, 18) the same way', async () => {
+    const tx = pay([mine.input], { extraBodyEntries: new Map([[18n, new Tagged(258n, [[theirs.input.txId, theirs.input.index]])]]) });
     await expect(signTx(tx, false, ctx())).rejects.toBeInstanceOf(ChwError);
     await expect(signTx(tx, false, ctx())).rejects.toThrow(/CHW_UNSUPPORTED_TX_FORM/);
     expect(witnessCount(await signTx(tx, true, ctx()))).toBe(1);
@@ -191,8 +189,10 @@ describe('supported transaction forms are an allowlist, checked before ownership
     expect((caught as ChwError).code).toBe('CHW_UNSUPPORTED_TX_FORM');
   });
 
-  it('reports unsupported form, not ProofGeneration, for a foreign key input alongside a certificate', async () => {
-    const tx = pay([mine.input, theirs.input], { certificatesPlaceholder: true });
+  it('reports unsupported form, not ProofGeneration, for a foreign key input alongside a script withdrawal', async () => {
+    const scriptReward = new Uint8Array(29);
+    scriptReward[0] = 0xf0;
+    const tx = pay([mine.input, theirs.input], { withdrawals: [{ rewardAddress: scriptReward, lovelace: 1n }] });
     let caught: unknown;
     try {
       await signTx(tx, false, ctx({ foreign: [theirs] }));

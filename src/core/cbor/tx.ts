@@ -11,6 +11,17 @@ export interface TxInput {
   index: bigint;
 }
 
+export interface ParsedVoter {
+  type: bigint;
+  hash: Uint8Array;
+}
+
+export interface ParsedProposal {
+  actionIndex: bigint;
+  /** parameter_change (0) and treasury_withdrawals (2) may name a guardrail script the ledger runs. */
+  guardrail?: Uint8Array;
+}
+
 export interface ParsedBody {
   inputs: TxInput[];
   requiredSigners: Uint8Array[];
@@ -18,18 +29,26 @@ export interface ParsedBody {
   withdrawals: { hash: Uint8Array; isScript: boolean }[];
   /** Every top-level body map key, in map order. Used to reject unsupported transaction forms. */
   bodyKeys: bigint[];
+  /** Every certificate as its raw CBOR array, in body order. requirements.ts owns the witness table. */
+  certificates: CborValue[][];
+  /** One entry per voter key of the voting procedures map, in map order. */
+  voters: ParsedVoter[];
+  proposals: ParsedProposal[];
 }
 
 const BODY_INPUTS = 0n;
+const BODY_CERTIFICATES = 4n;
 const BODY_WITHDRAWALS = 5n;
 const BODY_REQUIRED_SIGNERS = 14n;
+const BODY_VOTING_PROCEDURES = 19n;
+const BODY_PROPOSAL_PROCEDURES = 20n;
 
 function mapGet(map: Map<CborValue, CborValue>, key: bigint): CborValue | undefined {
   return map.get(key);
 }
 
 /** Conway sets may be plain arrays or tag 258 around an array. No other tag is a set. */
-function unwrapSet(value: CborValue | undefined): CborValue[] {
+export function unwrapSet(value: CborValue | undefined): CborValue[] {
   if (value === undefined) return [];
   if (value instanceof Tagged) {
     if (value.tag !== 258n || !Array.isArray(value.value)) throw new Error('expected a CBOR array or a tag 258 set');
@@ -66,6 +85,46 @@ function parseBodyMap(body: Map<CborValue, CborValue>): ParsedBody {
     }
   }
 
+  const rawCertificates = mapGet(body, BODY_CERTIFICATES);
+  // Only the index is checked here. Pre-Conway certificates 5 and 6 are
+  // recognised by their index alone, requirements.ts checks every other field.
+  const certificates = unwrapSet(rawCertificates).map((c) => {
+    if (!Array.isArray(c) || c.length < 1 || typeof c[0] !== 'bigint') throw new Error('malformed certificate');
+    return c;
+  });
+  if (rawCertificates !== undefined && certificates.length === 0) throw new Error('certificates must not be empty');
+
+  const voters: ParsedVoter[] = [];
+  const rawVotes = mapGet(body, BODY_VOTING_PROCEDURES);
+  if (rawVotes !== undefined) {
+    if (!(rawVotes instanceof Map)) throw new Error('voting procedures must be a map');
+    if (rawVotes.size === 0) throw new Error('voting procedures must not be empty');
+    for (const [voter, votes] of rawVotes) {
+      if (!Array.isArray(voter) || voter.length !== 2 || typeof voter[0] !== 'bigint') throw new Error('malformed voter');
+      // voting_procedures = {+ voter => {+ gov_action_id => voting_procedure}}
+      if (!(votes instanceof Map) || votes.size === 0) throw new Error('a voter must cast at least one vote');
+      voters.push({ type: voter[0], hash: asBytes(voter[1], 'voter hash') });
+    }
+  }
+
+  const rawProposals = mapGet(body, BODY_PROPOSAL_PROCEDURES);
+  const proposals = unwrapSet(rawProposals).map((p): ParsedProposal => {
+    if (!Array.isArray(p) || p.length !== 4) throw new Error('malformed proposal procedure');
+    const action = p[2];
+    if (!Array.isArray(action) || typeof action[0] !== 'bigint') throw new Error('malformed governance action');
+    const actionIndex = action[0];
+    // parameter_change_action = (0, prev, update, guardrail / nil)
+    // The action's own field count is not checked, only where the guardrail sits.
+    // treasury_withdrawals_action = (2, withdrawals, guardrail / nil)
+    const last = action[action.length - 1];
+    if (actionIndex === 0n || actionIndex === 2n) {
+      if (last !== null && !(last instanceof Uint8Array)) throw new Error('malformed governance action');
+      return last === null ? { actionIndex } : { actionIndex, guardrail: last };
+    }
+    return { actionIndex };
+  });
+  if (rawProposals !== undefined && proposals.length === 0) throw new Error('proposal procedures must not be empty');
+
   return {
     inputs,
     requiredSigners,
@@ -74,6 +133,9 @@ function parseBodyMap(body: Map<CborValue, CborValue>): ParsedBody {
       if (typeof k !== 'bigint') throw new Error('transaction body key must be an integer');
       return k;
     }),
+    certificates,
+    voters,
+    proposals,
   };
 }
 

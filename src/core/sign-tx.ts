@@ -1,10 +1,9 @@
-import { ed25519 } from '@noble/curves/ed25519.js';
-import { isByronAddress, isScriptPayment, paymentHash } from './addresses.js';
 import { bytesEqual, bytesToHex, hexToBytes } from './bytes.js';
 import { encodeWitnessSet, parseTransaction, txHash, type ParsedBody, type ParsedTransaction } from './cbor/tx.js';
 import { apiError, APIErrorCode, ChwError, TxSignErrorCode, txSignError } from './errors.js';
-import { keyHash, publicKey, sign, type SigningKey } from './keys.js';
+import { keyHash, publicKey, sign, verifiesOver, type SigningKey } from './keys.js';
 import type { Ledger, Utxo } from './ledger.js';
+import { deprecatedCertificate, formsOutOfScope, requirements, type Role } from './requirements.js';
 import { parseHexArg } from './sign-data.js';
 
 /**
@@ -22,65 +21,17 @@ export function parseTxHex(tx: unknown): { bytes: Uint8Array; parsed: ParsedTran
   }
 }
 
-// The spike only reasons about these top-level transaction body keys. Every
-// other key (certificates, mint, script data hash, collateral, reference
-// inputs, governance fields, and anything unknown) is an unsupported form.
-const SUPPORTED_BODY_KEYS = new Set<bigint>([0n, 1n, 2n, 3n, 5n, 7n, 8n, 14n, 15n]);
-
-const BODY_KEY_NAMES: Record<string, string> = {
-  '4': 'certificates',
-  '6': 'update',
-  '9': 'mint',
-  '11': 'script data hash',
-  '13': 'collateral inputs',
-  '16': 'collateral return',
-  '17': 'total collateral',
-  '18': 'reference inputs',
-  '19': 'voting procedures',
-  '20': 'proposal procedures',
-  '21': 'treasury value',
-  '22': 'donation',
-};
-
 /** Resolves every input once, in body.inputs order, so callers never look an input up twice. */
 export async function resolveInputs(body: ParsedBody, ledger: Ledger): Promise<Array<Utxo | undefined>> {
   return Promise.all(body.inputs.map((input) => ledger.resolveInput(input)));
 }
 
 /**
- * Every unsupported item in the body: a body key outside the allowlist, a
- * key input at a script or Byron address, a withdrawal with a script
- * credential. Named the way checkSupportedForm names the first offender, in
- * the same order, so a caller (the page's partialSign: true path) can warn
- * about everything signTx would otherwise have refused.
+ * Every item signTx refuses at partialSign: false, for the page's
+ * partialSign: true warning. Same order as the error signTx would raise.
  */
 export function unsupportedForms(body: ParsedBody, resolvedInputs: ReadonlyArray<Utxo | undefined>): string[] {
-  const found: string[] = [];
-  for (const key of body.bodyKeys) {
-    if (!SUPPORTED_BODY_KEYS.has(key)) {
-      const name = BODY_KEY_NAMES[key.toString()];
-      found.push(`body key ${key}${name ? ` (${name})` : ''}`);
-    }
-  }
-  for (const utxo of resolvedInputs) {
-    if (!utxo) continue; // an unresolved input is CHW_UNRESOLVED_INPUT, raised later by the ownership loop
-    if (isScriptPayment(utxo.address)) found.push('an input at a script address');
-    if (isByronAddress(utxo.address)) found.push('an input at a Byron address');
-  }
-  for (const withdrawal of body.withdrawals) {
-    if (withdrawal.isScript) found.push('a withdrawal with a script credential');
-  }
-  return found;
-}
-
-/**
- * Runs before the ownership decision and only when partialSign is false.
- * Raises CHW_UNSUPPORTED_TX_FORM naming the first unsupported item, if any.
- * With partialSign true the ownership loops below simply skip these instead.
- */
-function checkSupportedForm(body: ParsedBody, resolvedInputs: ReadonlyArray<Utxo | undefined>, unsupported: (what: string) => never): void {
-  const found = unsupportedForms(body, resolvedInputs);
-  if (found.length > 0) unsupported(found[0]!);
+  return formsOutOfScope(requirements(body, resolvedInputs));
 }
 
 /**
@@ -98,21 +49,29 @@ function witnessSetFor(hash: Uint8Array, keys: SigningKey[]): string {
   return bytesToHex(encodeWitnessSet(witnesses));
 }
 
+/** The one place a pre-Conway certificate becomes TxSignError DeprecatedCertificate. */
+export function refuseDeprecatedCertificate(body: ParsedBody): void {
+  const deprecated = deprecatedCertificate(body);
+  if (deprecated) throw txSignError(TxSignErrorCode.DeprecatedCertificate, `${deprecated} is deprecated since Conway`);
+}
+
 export interface SignContext {
   payment: SigningKey;
   stake: SigningKey;
+  /** Absent for a wallet without CIP-95, whose DRep requirements are then foreign. */
+  drep?: SigningKey;
   ledger: Ledger;
 }
 
 /**
- * CIP-30 signTx for a single-account wallet over the transaction forms the
- * spike supports: key inputs, required signers, withdrawals, all listed in
- * SUPPORTED_BODY_KEYS. Returns only the witnesses this call created.
+ * CIP-30 signTx for a single-account wallet over the forms requirements.ts
+ * understands. Returns only the witnesses this call created.
  *
+ * A pre-Conway certificate raises TxSignError DeprecatedCertificate first, at
+ * both partialSign values.
  * partialSign false: every requirement must be ours or already covered by
  * a valid witness in the transaction, otherwise TxSignError ProofGeneration.
- * Any unsupported transaction form (an unlisted body key, a script or Byron
- * input, a script withdrawal) raises CHW_UNSUPPORTED_TX_FORM before the
+ * Any unsupported transaction form raises CHW_UNSUPPORTED_TX_FORM before the
  * ownership decision runs at all, a harness diagnosis, never a fake wallet
  * error.
  * partialSign true: sign what is ours, ignore the rest, including
@@ -125,60 +84,51 @@ export interface SignContext {
  */
 export async function signTx(parsed: ParsedTransaction, partialSign: boolean, ctx: SignContext): Promise<string> {
   const { body, hash, vkeyWitnesses } = parsed;
+  // CIP-95: a pre-Conway certificate is refused regardless of consent and of partialSign.
+  refuseDeprecatedCertificate(body);
+
   const resolvedInputs = await resolveInputs(body, ctx.ledger);
-  const myPay = keyHash(publicKey(ctx.payment));
-  const myStake = keyHash(publicKey(ctx.stake));
-  // Key hashes that a valid witness already in the transaction vouches
-  // for. A witness with the wrong vkey or signature length cannot be
-  // valid, so it is dropped before ed25519 ever sees it.
-  const covered = vkeyWitnesses
-    .filter((w) => w.vkey.length === 32 && w.signature.length === 64 && ed25519.verify(w.signature, hash, w.vkey))
-    .map((w) => keyHash(w.vkey));
-
-  const needed = new Set<'payment' | 'stake'>();
-  const isCovered = (hash: Uint8Array) => covered.some((c) => bytesEqual(c, hash));
-
-  const refuse = (what: string): never => {
-    throw txSignError(TxSignErrorCode.ProofGeneration, `wallet cannot sign for ${what}`);
-  };
-  const unsupported = (what: string): never => {
-    throw new ChwError('CHW_UNSUPPORTED_TX_FORM', `${what} is not supported by this release, use partialSign: true to sign only the wallet's own share`);
-  };
-
-  if (!partialSign) checkSupportedForm(body, resolvedInputs, unsupported);
+  const reqs = requirements(body, resolvedInputs);
+  if (!partialSign) {
+    const [first] = formsOutOfScope(reqs);
+    if (first) {
+      throw new ChwError('CHW_UNSUPPORTED_TX_FORM', `${first} is not supported by this release, use partialSign: true to sign only the wallet's own share`);
+    }
+  }
 
   for (const [i, input] of body.inputs.entries()) {
-    const utxo = resolvedInputs[i];
-    if (!utxo) {
+    if (!resolvedInputs[i]) {
       throw new ChwError(
         'CHW_UNRESOLVED_INPUT',
         `input ${bytesToHex(input.txId)}#${input.index} is unknown to the mock ledger, add it to utxos or foreignUtxos`,
       );
     }
-    // Script and Byron inputs are unsupported forms, already rejected above
-    // when partialSign is false. Here they are simply skipped.
-    if (isScriptPayment(utxo.address) || isByronAddress(utxo.address)) continue;
-    const hash = paymentHash(utxo.address);
-    if (bytesEqual(hash, myPay)) needed.add('payment');
-    else if (!partialSign && !isCovered(hash)) refuse('an input owned by another key');
   }
 
-  for (const signer of body.requiredSigners) {
-    if (bytesEqual(signer, myPay)) needed.add('payment');
-    else if (bytesEqual(signer, myStake)) needed.add('stake');
-    else if (!partialSign && !isCovered(signer)) refuse('a required signer the wallet does not hold');
+  const roles = new Map<Role, { key: SigningKey; hash: Uint8Array }>();
+  const addRole = (role: Role, key: SigningKey) => roles.set(role, { key, hash: keyHash(publicKey(key)) });
+  addRole('payment', ctx.payment);
+  addRole('stake', ctx.stake);
+  if (ctx.drep) addRole('drep', ctx.drep);
+  const roleOf = (h: Uint8Array) => [...roles].find(([, own]) => bytesEqual(own.hash, h))?.[0];
+
+  // Key hashes that a valid witness already in the transaction vouches for. A
+  // witness with the wrong vkey or signature length cannot be valid, so it is
+  // dropped before ed25519 ever sees it.
+  const covered = vkeyWitnesses
+    .filter((w) => verifiesOver(w, hash))
+    .map((w) => keyHash(w.vkey));
+  const isCovered = (h: Uint8Array) => covered.some((c) => bytesEqual(c, h));
+
+  const needed = new Set<Role>();
+  for (const req of reqs.keys) {
+    const role = req.foreignOnly ? undefined : roleOf(req.keyHash);
+    if (role) needed.add(role);
+    else if (!partialSign && !isCovered(req.keyHash)) {
+      throw txSignError(TxSignErrorCode.ProofGeneration, `wallet cannot sign for ${req.source}`);
+    }
   }
 
-  for (const withdrawal of body.withdrawals) {
-    // A script withdrawal is an unsupported form, already rejected above
-    // when partialSign is false. Here it is simply skipped.
-    if (withdrawal.isScript) continue;
-    if (bytesEqual(withdrawal.hash, myStake)) needed.add('stake');
-    else if (!partialSign && !isCovered(withdrawal.hash)) refuse('a withdrawal from another stake key');
-  }
-
-  const keys: SigningKey[] = [];
-  if (needed.has('payment')) keys.push(ctx.payment);
-  if (needed.has('stake')) keys.push(ctx.stake);
-  return witnessSetFor(hash, keys);
+  const signing = (['payment', 'stake', 'drep'] as const).filter((role) => needed.has(role)).map((role) => roles.get(role)!.key);
+  return witnessSetFor(hash, signing);
 }

@@ -48,6 +48,11 @@ function extendedScalar(key: Uint8Array): bigint {
   return littleEndianToBigInt(key.slice(0, 32)) % ORDER;
 }
 
+/** True when the witness has well formed lengths and a valid Ed25519 signature over the message. Wrong lengths are dropped before ed25519 sees them. */
+export function verifiesOver(witness: { vkey: Uint8Array; signature: Uint8Array }, message: Uint8Array): boolean {
+  return witness.vkey.length === 32 && witness.signature.length === 64 && ed25519.verify(witness.signature, message, witness.vkey);
+}
+
 export function publicKey(key: SigningKey): Uint8Array {
   assertSize(key);
   if (key.kind === 'seed') return ed25519.getPublicKey(key.bytes);

@@ -13,6 +13,8 @@ export const APIErrorCode = {
 export const TxSignErrorCode = {
   ProofGeneration: 1,
   UserDeclined: 2,
+  // CIP-95: returned regardless of user consent for a pre-Conway certificate.
+  DeprecatedCertificate: 3,
 } as const;
 
 export const DataSignErrorCode = {

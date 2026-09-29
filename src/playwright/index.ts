@@ -5,7 +5,7 @@ import type { JournalEntry, QuirkConfig, QuirkName } from '../page/config.js';
 import type { Control } from '../page/control.js';
 
 export { expectSignedBy, expectSignedData } from '../host/assert.js';
-export type { SignedDataExpectation } from '../host/assert.js';
+export type { SignedDataExpectation, SignerRole } from '../host/assert.js';
 export type { WalletOptions } from '../host/config.js';
 export { expect };
 
