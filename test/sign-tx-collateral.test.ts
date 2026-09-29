@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Tagged } from '../src/core/cbor/decode.js';
 import { baseAddressBytes } from '../src/core/addresses.js';
-import { ChwError, TxSignErrorCode } from '../src/core/errors.js';
+import { APIErrorCode, ChwError, TxSignErrorCode } from '../src/core/errors.js';
 import { keyHash, publicKey } from '../src/core/keys.js';
 import { MemoryLedger, type Utxo } from '../src/core/ledger.js';
 import { parseTxHex, signTx as signParsed, signWithKeys, type SignContext } from '../src/core/sign-tx.js';
@@ -66,9 +66,15 @@ describe('collateral fields', () => {
   it('rejects an empty collateral set, a malformed collateral return and total', () => {
     const bad = (key: bigint, value: unknown) => () =>
       parseTxHex(buildTx({ inputs: [mine.input], outputs: [], fee: 1n, extraBodyEntries: new Map([[key, value]]) }));
-    expect(bad(13n, [])).toThrow();
-    expect(bad(16n, 5n)).toThrow();
-    expect(bad(17n, 'x')).toThrow();
+    for (const [key, value] of [[13n, []], [16n, 5n], [17n, 'x']] as const) {
+      let caught: unknown;
+      try {
+        bad(key, value)();
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toEqual(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
+    }
   });
 
   it('parses collateral inputs as a plain array and as tag 258', () => {

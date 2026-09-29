@@ -43,7 +43,7 @@ describe('getCollateral', () => {
 
   it('refuses more than 5 ADA, a bare value, and malformed amounts', async () => {
     const { api: a } = await api({ utxos });
-    for (const bad of [{ amount: 5_000_001 }, { amount: cbor(5_000_001n) }, cbor(1n), 7, [1], { amount: -1 }, { amount: 0 }, { amount: cbor(0n) }, { amount: 'zz' }, { amount: bytesToHex(encode([1n, new Map()] as never)) }, { amount: 1.5 }]) {
+    for (const bad of [{ amount: 5_000_001 }, { amount: cbor(5_000_001n) }, cbor(1n), 7, [1], { amount: -1 }, { amount: 0 }, { amount: cbor(0n) }, { amount: 'zz' }, { amount: bytesToHex(encode([1n, new Map()] as never)) }, { amount: 1.5 }, { amount: '' }, { amount: '0000' }, { amount: 'abc' }, { amount: NaN }]) {
       await expect(a.getCollateral!(bad)).rejects.toEqual(invalid);
     }
   });
