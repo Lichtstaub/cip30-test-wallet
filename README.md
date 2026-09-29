@@ -30,7 +30,7 @@ Coding agents start with [AGENTS.md](AGENTS.md).
 
 ## Not in the box yet
 
-This release is a CIP-30 subset for transaction tests plus the first half of CIP-95. Missing on purpose, tracked for later milestones: `getCollateral`, native assets in balances and UTxOs, script inputs, script credentials in certificates, votes and proposals, and every transaction form outside the supported set below. `submitTx` is simulated: it records the transaction and returns its id, it never talks to a node. Fees, validity and script execution are not checked.
+This release is a CIP-30 subset for transaction tests plus CIP-95, including governance transactions. Missing on purpose, tracked for later milestones: `getCollateral`, native assets in balances and UTxOs, script inputs, script credentials in certificates, votes and proposals, and every transaction form outside the supported set below. `submitTx` is simulated: it records the transaction and returns its id, it never talks to a node. Fees, validity and script execution are not checked.
 
 ## Quick start
 
