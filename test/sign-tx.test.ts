@@ -158,13 +158,13 @@ describe('exit criterion 5: ownership decision', () => {
 });
 
 describe('supported transaction forms are an allowlist, checked before ownership', () => {
-  it('refuses an unsupported body key (collateral inputs, 13) naming the key, signs its own share when partial', async () => {
+  it('refuses an unsupported body key (mint, 9) naming the key, signs its own share when partial', async () => {
     const tx = pay([mine.input], {
-      extraBodyEntries: new Map([[13n, new Tagged(258n, [[theirs.input.txId, theirs.input.index]])]]),
+      extraBodyEntries: new Map([[9n, new Map([[new Uint8Array(28), new Map([[new Uint8Array(0), 1n]])]])]]),
     });
     await expect(signTx(tx, false, ctx())).rejects.toBeInstanceOf(ChwError);
     await expect(signTx(tx, false, ctx())).rejects.toThrow(/CHW_UNSUPPORTED_TX_FORM/);
-    await expect(signTx(tx, false, ctx())).rejects.toThrow(/13/);
+    await expect(signTx(tx, false, ctx())).rejects.toThrow(/9/);
     expect(witnessCount(await signTx(tx, true, ctx()))).toBe(1);
   });
 

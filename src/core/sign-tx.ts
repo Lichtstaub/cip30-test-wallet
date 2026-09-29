@@ -21,9 +21,9 @@ export function parseTxHex(tx: unknown): { bytes: Uint8Array; parsed: ParsedTran
   }
 }
 
-/** Resolves every input once, in body.inputs order, so callers never look an input up twice. */
+/** Resolves every input and then every collateral input once, in body order, so callers never look an input up twice. */
 export async function resolveInputs(body: ParsedBody, ledger: Ledger): Promise<Array<Utxo | undefined>> {
-  return Promise.all(body.inputs.map((input) => ledger.resolveInput(input)));
+  return Promise.all([...body.inputs, ...body.collateralInputs].map((input) => ledger.resolveInput(input)));
 }
 
 /**
@@ -96,11 +96,12 @@ export async function signTx(parsed: ParsedTransaction, partialSign: boolean, ct
     }
   }
 
-  for (const [i, input] of body.inputs.entries()) {
+  const spentInputs = [...body.inputs.map((input) => ({ input, label: 'input' })), ...body.collateralInputs.map((input) => ({ input, label: 'collateral input' }))];
+  for (const [i, { input, label }] of spentInputs.entries()) {
     if (!resolvedInputs[i]) {
       throw new ChwError(
         'CHW_UNRESOLVED_INPUT',
-        `input ${bytesToHex(input.txId)}#${input.index} is unknown to the mock ledger, add it to utxos or foreignUtxos`,
+        `${label} ${bytesToHex(input.txId)}#${input.index} is unknown to the mock ledger, add it to utxos or foreignUtxos`,
       );
     }
   }
