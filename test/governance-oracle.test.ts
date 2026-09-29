@@ -130,7 +130,8 @@ describe('governance signing agrees with CSL and survives an Evolution merge', (
     // Valid Conway CDDL (pool_owners : set<addr_keyhash>) and CSL's default encoding.
     // When this starts passing through, Evolution fixed it: drop the splice above and the known-consumer-issues entry.
     const tx = cslGovernanceTx({ input, certificates: [poolRegistration] });
-    expect(() => Transaction.addVKeyWitnessesHex(tx, signWithKeys(tx, [operator]))).toThrow();
+    const witnessSet = signWithKeys(tx, [operator]);
+    expect(() => Transaction.addVKeyWitnessesHex(tx, witnessSet)).toThrow(/CDDLSchema|ParseError/);
   });
 });
 
