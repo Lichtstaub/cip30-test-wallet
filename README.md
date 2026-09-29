@@ -21,7 +21,7 @@ Coding agents start with [AGENTS.md](AGENTS.md).
 - A CIP-30 provider for the page: `apiVersion`, `name`, `icon`, `supportedExtensions`, `enable`, `isEnabled`, and the api methods `getNetworkId`, `getUtxos` (with `amount` and `paginate`), `getBalance`, `getUsedAddresses`, `getUnusedAddresses`, `getChangeAddress`, `getRewardAddresses`, `getExtensions`, `signTx`, `submitTx`, `signData`.
 - The `cip95` namespace: `getPubDRepKey`, `getRegisteredPubStakeKeys`, `getUnregisteredPubStakeKeys`, `signData`.
 - A Playwright fixture: `test.use({ walletOptions })` configures the wallet, `wallet` in the test reads the journal and flips quirks at runtime.
-- `expectSignedBy(txHex, wallet)`: proves the transaction your dApp submitted really carries the wallet's signature over its body hash. Recording `submitTx` alone proves nothing.
+- `expectSignedBy(txHex, wallet, { roles? })`: proves the transaction your dApp submitted really carries the wallet's signature (payment by default, optionally stake and DRep) over its body hash. Recording `submitTx` alone proves nothing.
 - `expectSignedData(result, expected)`: proves a `signData` or `cip95.signData` result the way a careful verifier does, checking the COSE signature, key and address.
 - The quirk catalogue in [`quirks/`](quirks/README.md), a provenance note for every switch.
 - `doctor`: a command line check of a deployed dApp for the secure-context and content-security-policy traps, with a browser mode that measures wallet detection.
@@ -30,7 +30,7 @@ Coding agents start with [AGENTS.md](AGENTS.md).
 
 ## Not in the box yet
 
-This release is a CIP-30 subset for transaction tests plus CIP-95, including governance transactions. Missing on purpose, tracked for later milestones: `getCollateral`, native assets in balances and UTxOs, script inputs, script credentials in certificates, votes and proposals, and every transaction form outside the supported set below. `submitTx` is simulated: it records the transaction and returns its id, it never talks to a node. Fees, validity and script execution are not checked.
+This release is a CIP-30 subset for transaction tests plus CIP-95, including governance transactions. Missing on purpose, tracked for later milestones: `getCollateral`, native assets in balances and UTxOs, script inputs, script credentials in certificates and votes, guardrail scripts in proposals, and every transaction form outside the supported set below. `submitTx` is simulated: it records the transaction and returns its id, it never talks to a node. Fees, validity and script execution are not checked.
 
 ## Quick start
 

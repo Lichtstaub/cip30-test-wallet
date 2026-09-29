@@ -10,7 +10,7 @@ The two tables below record the milestone 1 and 1b spikes the package is built o
 | 2 | Witness set accepted by Evolution, signature verifies | `test/witness.test.ts` | pass |
 | 3 | Mnemonic restore matches CSL, Evolution and the documented vector, signatures byte identical | `test/keys.test.ts`, `test/derive.test.ts` | pass |
 | 4 | Evolution merges our witness set without losing foreign witnesses, and a party that already signed counts as coverage | `test/witness.test.ts`, `test/sign-tx.test.ts` | pass |
-| 5 | Supported forms only: own key signs, uncovered foreign key refuses, script inputs, script credentials, guardrail scripts and unknown inputs raise a harness diagnosis | `test/sign-tx.test.ts` | pass |
+| 5 | Supported forms only: own key signs, uncovered foreign key refuses, script inputs, script credentials, guardrail scripts and unknown inputs raise a harness diagnosis | `test/sign-tx.test.ts`, `test/sign-tx-governance.test.ts` | pass |
 | 6 | submitTx returns the transaction id Evolution computes | `test/submit.test.ts` | pass |
 
 Typecheck (`npm run typecheck`): pass, no errors. All 52 tests pass.

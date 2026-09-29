@@ -42,7 +42,7 @@ The journal and every `setQuirk` change live in the page, not in the test proces
 
 ## `expectSignedBy(txHex, wallet, options?)`
 
-Throws unless `txHex` carries a vkey witness whose key is the wallet's payment key and whose signature verifies over the transaction's body hash. Use it on `await wallet.lastSubmittedTx()`.
+Throws unless `txHex` carries a vkey witness whose key is that of every role in `options.roles` (payment by default) and whose signature verifies over the transaction's body hash. Use it on `await wallet.lastSubmittedTx()`.
 
 `options.roles` names the keys that must have signed, any of `payment`, `stake` and `drep`, default `['payment']`. An empty list is an error. A vote needs `['payment', 'drep']`, a vote delegation `['payment', 'stake']`.
 

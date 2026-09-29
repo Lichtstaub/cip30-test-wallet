@@ -50,6 +50,6 @@ Connect through Evolution's `cip30Wallet` helper against any wallet installed by
 
 **How to reproduce with this wallet.** Build a pool registration with CSL, sign it with this wallet at `partialSign: true` and merge the witness set with `Transaction.addVKeyWitnessesHex`. The merge throws before anything is submitted. The wallet itself signs the transaction correctly.
 
-**Workaround.** Merge the witness set with CSL, or build the whole transaction with Evolution, which emits the plain array form.
+**Workaround.** Merge the witness set with CSL. Evolution's own builder is expected to emit the plain array form, which is untested here.
 
 **Status.** Reported upstream: not yet.
