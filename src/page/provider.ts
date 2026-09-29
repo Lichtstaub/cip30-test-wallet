@@ -8,7 +8,7 @@ import { encodeUtxo, type MemoryLedger } from '../core/ledger.js';
 import { parseAddressArg, parseHexArg, resolveDataSigner } from '../core/sign-data.js';
 import { requirements } from '../core/requirements.js';
 import { parseTxHex, refuseDeprecatedCertificate, resolveInputs, signTx as coreSignTx, unsupportedForms } from '../core/sign-tx.js';
-import { selectForAmount } from '../core/select.js';
+import { selectCollateral, selectForAmount } from '../core/select.js';
 import { addAssets, valueCbor, type MultiAsset } from '../core/value.js';
 import type { Control } from './control.js';
 import type { PageConfig } from './config.js';
@@ -52,6 +52,8 @@ export interface Cip30Api {
   signTx(tx: string, partialSign?: boolean): Promise<string>;
   submitTx(tx: string): Promise<string>;
   signData(addr: string, payload: string): Promise<DataSignature>;
+  getCollateral?(params?: { amount?: string | number | bigint }): Promise<string[] | null>;
+  experimental?: { getCollateral(params?: { amount?: string | number | bigint }): Promise<string[] | null> };
   cip95?: Cip95Api;
 }
 
@@ -100,6 +102,41 @@ export function buildProvider(ctx: WalletContext): Cip30Provider {
         return buildApi(ctx, granted);
       }),
   };
+}
+
+/** CIP-30 caps collateral at about 5 ADA ("something like 5 ADA"), Lace uses exactly this. */
+const MAX_COLLATERAL = 5_000_000n;
+
+/**
+ * getCollateral({ amount }). No argument or no amount means 5 ADA, the way
+ * Mesh calls it and Lace answers it. amount is CBOR hex of a coin (a string
+ * is always CBOR, never a decimal), or a number or bigint. A bare value
+ * instead of the object, anything else, or more than 5 ADA is InvalidRequest.
+ */
+function collateralAmount(params: unknown): bigint {
+  if (params === undefined) return MAX_COLLATERAL;
+  if (typeof params !== 'object' || params === null || Array.isArray(params)) {
+    throw apiError(APIErrorCode.InvalidRequest, 'getCollateral takes an object { amount }');
+  }
+  const amount = (params as { amount?: unknown }).amount;
+  if (amount === undefined) return MAX_COLLATERAL;
+  let value: bigint;
+  if (typeof amount === 'bigint') value = amount;
+  else if (typeof amount === 'number' && Number.isSafeInteger(amount)) value = BigInt(amount);
+  else if (typeof amount === 'string') {
+    let decoded: unknown;
+    try {
+      decoded = decode(hexToBytes(amount));
+    } catch {
+      throw apiError(APIErrorCode.InvalidRequest, 'amount is not valid cbor');
+    }
+    if (typeof decoded !== 'bigint') throw apiError(APIErrorCode.InvalidRequest, 'amount must be the cbor of a coin');
+    value = decoded;
+  } else throw apiError(APIErrorCode.InvalidRequest, 'amount must be cbor hex, a number or a bigint');
+  // CIP-30 returns "one or more UTXOs", a zero amount would ask for none.
+  if (value <= 0n) throw apiError(APIErrorCode.InvalidRequest, 'amount must be positive');
+  if (value > MAX_COLLATERAL) throw apiError(APIErrorCode.InvalidRequest, 'amount is above the 5 ADA collateral limit');
+  return value;
 }
 
 export function buildApi(ctx: WalletContext, extensions: { cip: number }[] = []): Cip30Api {
@@ -174,6 +211,16 @@ export function buildApi(ctx: WalletContext, extensions: { cip: number }[] = [])
     signData: (addr, payload) => control.record('signData', [addr, payload], () => signDataWith(ctx, addr, payload, 'cip30')),
   };
   if (extensions.some((e) => e.cip === CIP95) && !control.quirks.cip95NamespaceMissing) api.cip95 = buildCip95Api(ctx);
+  if (!control.quirks.noCollateral) {
+    const collateral = (method: string) => (params?: unknown) =>
+      control.record(method, [params], async () => {
+        const amount = collateralAmount(params);
+        const selected = selectCollateral(await ledger.getWalletUtxos(), amount);
+        return selected === null ? null : selected.map((u) => bytesToHex(encodeUtxo(u)));
+      });
+    api.getCollateral = collateral('getCollateral');
+    api.experimental = { getCollateral: collateral('experimental.getCollateral') };
+  }
   return api;
 }
 

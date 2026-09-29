@@ -41,6 +41,7 @@ export const QUIRK_NAMES = [
   'cip95NamespaceMissing',
   'cip95SignData',
   'coseAddress',
+  'noCollateral',
 ] as const;
 
 export type QuirkName = (typeof QUIRK_NAMES)[number];
@@ -69,6 +70,8 @@ export interface QuirkConfig {
   cip95SignData?: 'bareOnly' | 'type6Only';
   /** bareKeyHash: DRep signatures carry the bare 28 byte key hash in the COSE address header, whatever form was requested. */
   coseAddress?: 'bareKeyHash';
+  /** The api has neither getCollateral nor experimental.getCollateral, which the CIP-30 deprecation allows. Read at enable(). */
+  noCollateral?: boolean;
 }
 
 export type HangableMethod = 'signTx';
