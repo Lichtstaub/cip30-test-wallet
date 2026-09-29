@@ -1,11 +1,19 @@
 import { bytesEqual } from './bytes.js';
+import { Tagged, type CborValue } from './cbor/decode.js';
 import { encode } from './cbor/encode.js';
 import { txHash, type TxInput } from './cbor/tx.js';
+import { valueCbor, type MultiAsset } from './value.js';
+
+export type Datum = { kind: 'hash'; hash: Uint8Array } | { kind: 'inline'; cbor: Uint8Array };
 
 export interface Utxo {
   input: TxInput;
   address: Uint8Array;
   lovelace: bigint;
+  assets?: MultiAsset;
+  datum?: Datum;
+  /** CBOR of script = [language tag, script bytes] */
+  scriptRef?: Uint8Array;
 }
 
 /**
@@ -54,10 +62,30 @@ export class MemoryLedger implements Ledger {
 }
 
 /**
- * transaction_unspent_output = [transaction_input, transaction_output]
- * The output uses the legacy array form [address, coin], which every
- * CIP-30 consumer accepts. Assets come with milestone 2.
+ * The output the way cardano-js-sdk (Lace) writes it: the array form
+ * [address, value] or [address, value, datum_hash] (Alonzo), the Babbage map
+ * {0: address, 1: value, ?2: datum_option, ?3: script_ref} only when the
+ * output carries an inline datum or a reference script. A coin-only output
+ * stays [address, coin], byte-identical to earlier releases.
  */
+export function encodeOutput(u: Utxo): CborValue {
+  const value = valueCbor(u.lovelace, u.assets);
+  if (u.datum?.kind === 'inline' || u.scriptRef) {
+    const map = new Map<CborValue, CborValue>([
+      [0n, u.address],
+      [1n, value],
+    ]);
+    // datum_option = [0, hash32] / [1, #6.24(bytes .cbor plutus_data)]
+    if (u.datum) map.set(2n, u.datum.kind === 'hash' ? [0n, u.datum.hash] : [1n, new Tagged(24n, u.datum.cbor)]);
+    // script_ref = #6.24(bytes .cbor script)
+    if (u.scriptRef) map.set(3n, new Tagged(24n, u.scriptRef));
+    return map;
+  }
+  if (u.datum?.kind === 'hash') return [u.address, value, u.datum.hash];
+  return [u.address, value];
+}
+
+/** transaction_unspent_output = [transaction_input, transaction_output] */
 export function encodeUtxo(u: Utxo): Uint8Array {
-  return encode([[u.input.txId, u.input.index], [u.address, u.lovelace]] as never);
+  return encode([[u.input.txId, u.input.index], encodeOutput(u)] as never);
 }

@@ -66,5 +66,6 @@ describe('value', () => {
     expect(() => parseAssetUnits({ [P1 + 'zz']: '1' })).toThrow(/hex/);
     expect(() => parseAssetUnits({ [P1]: '0' })).toThrow(/positive/);
     expect(() => parseAssetUnits({ [P1]: '-1' })).toThrow(/positive/);
+    expect(() => parseAssetUnits({ [P1]: '0x10' })).toThrow(/positive integer/);
   });
 });

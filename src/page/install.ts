@@ -5,7 +5,8 @@ import { APIErrorCode, apiError } from '../core/errors.js';
 import { keyHash } from '../core/hash.js';
 import { publicKey, type SigningKey } from '../core/keys.js';
 import { MemoryLedger, type Utxo } from '../core/ledger.js';
-import type { KeyConfig, PageConfig } from './config.js';
+import { parseAssetUnits } from '../core/value.js';
+import type { KeyConfig, PageConfig, UtxoExtras } from './config.js';
 import { Control } from './control.js';
 import { buildProvider, type WalletContext } from './provider.js';
 
@@ -36,12 +37,30 @@ export function syntheticOwnedUtxo(name: string, index: number, address: Uint8Ar
   return { input: { txId, index: 0n }, address, lovelace };
 }
 
+/** The optional output parts of a configured UTxO, turned from JSON into ledger values. */
+export function utxoExtras(c: UtxoExtras): Pick<Utxo, 'assets' | 'datum' | 'scriptRef'> {
+  const out: Pick<Utxo, 'assets' | 'datum' | 'scriptRef'> = {};
+  if (c.assets) {
+    // A PageConfig written by hand skips the checks in Node, so a bad unit must still reach the caller as a CIP-30 error.
+    try {
+      out.assets = parseAssetUnits(c.assets);
+    } catch (error) {
+      throw apiError(APIErrorCode.InvalidRequest, (error as Error).message);
+    }
+  }
+  if (c.datumHash) out.datum = { kind: 'hash', hash: hexToBytes(c.datumHash) };
+  if (c.inlineDatum) out.datum = { kind: 'inline', cbor: hexToBytes(c.inlineDatum) };
+  if (c.scriptRef) out.scriptRef = hexToBytes(c.scriptRef);
+  return out;
+}
+
 export function buildLedger(config: PageConfig, address: Uint8Array): MemoryLedger {
-  const owned = config.utxos.map((u, i) => syntheticOwnedUtxo(config.name, i, address, BigInt(u.lovelace)));
+  const owned = config.utxos.map((u, i) => ({ ...syntheticOwnedUtxo(config.name, i, address, BigInt(u.lovelace)), ...utxoExtras(u) }));
   const foreign = config.foreignUtxos.map((f) => ({
     input: { txId: hexToBytes(f.txId), index: BigInt(f.index) },
     address: hexToBytes(f.addressHex),
     lovelace: BigInt(f.lovelace),
+    ...utxoExtras(f),
   }));
   return new MemoryLedger({ owned, foreign });
 }

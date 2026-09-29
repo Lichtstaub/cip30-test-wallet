@@ -27,12 +27,11 @@ export function parseAssetUnits(units: Record<string, string>): MultiAsset {
     const policy = unit.slice(0, 56);
     const name = unit.slice(56);
     if (name.length > 64) throw new Error(`asset unit ${rawUnit} has an asset name longer than 32 bytes`);
-    let quantity: bigint;
-    try {
-      quantity = BigInt(rawQuantity);
-    } catch {
+    // Decimal digits only: BigInt would also take 0x10, 0b1 and surrounding whitespace.
+    if (typeof rawQuantity !== 'string' || !/^\d+$/.test(rawQuantity)) {
       throw new Error(`asset quantity for ${rawUnit} must be a positive integer, got ${rawQuantity}`);
     }
+    const quantity = BigInt(rawQuantity);
     if (quantity <= 0n) throw new Error(`asset quantity for ${rawUnit} must be a positive integer, got ${rawQuantity}`);
     const names = out.get(policy) ?? new Map<string, bigint>();
     const total = (names.get(name) ?? 0n) + quantity;

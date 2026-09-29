@@ -7,11 +7,23 @@ export interface KeyConfig {
   hex: string;
 }
 
-export interface OwnedUtxoConfig {
+/**
+ * Optional parts of an output. Assets map units (policy id hex plus asset name
+ * hex) to decimal quantities. datumHash and inlineDatum exclude each other.
+ * scriptRef is the CBOR hex of [language tag, script bytes].
+ */
+export interface UtxoExtras {
+  assets?: Record<string, string>;
+  datumHash?: string;
+  inlineDatum?: string;
+  scriptRef?: string;
+}
+
+export interface OwnedUtxoConfig extends UtxoExtras {
   lovelace: string;
 }
 
-export interface ForeignUtxoConfig {
+export interface ForeignUtxoConfig extends UtxoExtras {
   txId: string;
   index: number;
   addressHex: string;
