@@ -19,17 +19,17 @@ export const MAX_COLLATERAL_INPUTS = 3;
  * configured order.
  */
 export function selectForAmount(utxos: readonly Utxo[], coin: bigint, assets: MultiAsset): Utxo[] | null {
-  const picked = new Set<number>();
+  const picked = new Set<Utxo>();
   for (const [policy, names] of assets) {
     for (const [name, wanted] of names) {
       let have = 0n;
-      for (const i of picked) have += assetQuantity(utxos[i]!.assets, policy, name);
-      for (const [i, utxo] of utxos.entries()) {
+      for (const utxo of picked) have += assetQuantity(utxo.assets, policy, name);
+      for (const utxo of utxos) {
         if (have >= wanted) break;
-        if (picked.has(i)) continue;
+        if (picked.has(utxo)) continue;
         const quantity = assetQuantity(utxo.assets, policy, name);
         if (quantity > 0n) {
-          picked.add(i);
+          picked.add(utxo);
           have += quantity;
         }
       }
@@ -37,16 +37,16 @@ export function selectForAmount(utxos: readonly Utxo[], coin: bigint, assets: Mu
     }
   }
   let sum = 0n;
-  for (const i of picked) sum += utxos[i]!.lovelace;
-  const pureFirst = [...utxos.keys()].sort((a, b) => Number(hasAssets(utxos[a]!.assets)) - Number(hasAssets(utxos[b]!.assets)) || a - b);
-  for (const i of pureFirst) {
+  for (const utxo of picked) sum += utxo.lovelace;
+  const pureFirst = [...utxos.filter((u) => !hasAssets(u.assets)), ...utxos.filter((u) => hasAssets(u.assets))];
+  for (const utxo of pureFirst) {
     if (sum >= coin) break;
-    if (picked.has(i)) continue;
-    picked.add(i);
-    sum += utxos[i]!.lovelace;
+    if (picked.has(utxo)) continue;
+    picked.add(utxo);
+    sum += utxo.lovelace;
   }
   if (sum < coin) return null;
-  return utxos.filter((_, i) => picked.has(i));
+  return utxos.filter((u) => picked.has(u));
 }
 
 /**
@@ -57,23 +57,18 @@ export function selectForAmount(utxos: readonly Utxo[], coin: bigint, assets: Mu
  * in configured order, null when even the largest ones are not enough.
  */
 export function selectCollateral(utxos: readonly Utxo[], amount: bigint): Utxo[] | null {
-  const candidates = [...utxos.keys()].filter((i) => {
-    const utxo = utxos[i]!;
-    return !hasAssets(utxo.assets) && !utxo.datum && !utxo.scriptRef;
-  });
-  const largestFirst = [...candidates].sort((a, b) => {
-    const diff = utxos[b]!.lovelace - utxos[a]!.lovelace;
-    return diff > 0n ? 1 : diff < 0n ? -1 : a - b;
-  });
+  const candidates = utxos.filter((u) => !hasAssets(u.assets) && !u.datum && !u.scriptRef);
+  // Array.prototype.sort is stable, so equal amounts keep their configured order.
+  const largestFirst = [...candidates].sort((a, b) => (a.lovelace < b.lovelace ? 1 : a.lovelace > b.lovelace ? -1 : 0));
   for (const order of [candidates, largestFirst]) {
-    const picked = new Set<number>();
+    const picked = new Set<Utxo>();
     let sum = 0n;
-    for (const i of order) {
+    for (const utxo of order) {
       if (sum >= amount || picked.size === MAX_COLLATERAL_INPUTS) break;
-      picked.add(i);
-      sum += utxos[i]!.lovelace;
+      picked.add(utxo);
+      sum += utxo.lovelace;
     }
-    if (sum >= amount) return utxos.filter((_, i) => picked.has(i));
+    if (sum >= amount) return utxos.filter((u) => picked.has(u));
   }
   return null;
 }

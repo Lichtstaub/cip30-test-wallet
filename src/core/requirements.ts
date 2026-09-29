@@ -175,10 +175,10 @@ export function requirements(body: ParsedBody, resolvedInputs: ReadonlyArray<Utx
     }
   }
 
-  for (const [i, { input, collateral }] of spentInputs(body).entries()) {
+  for (const [i, { input, label }] of spentInputs(body).entries()) {
     const utxo = resolvedInputs[i];
     if (!utxo) continue;
-    const where = `${collateral ? 'collateral input' : 'input'} ${bytesToHex(input.txId)}#${input.index}`;
+    const where = `${label} ${bytesToHex(input.txId)}#${input.index}`;
     if (isByronAddress(utxo.address)) out.unsupported.push('an input at a Byron address');
     else if (isScriptPayment(utxo.address)) out.scripts.push({ scriptHash: paymentHash(utxo.address), source: 'an input at a script address' });
     else out.keys.push({ keyHash: paymentHash(utxo.address), source: where, foreignOnly: false });

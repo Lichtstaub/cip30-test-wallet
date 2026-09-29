@@ -3,9 +3,9 @@ import { hexToBytes } from '../src/core/bytes.js';
 import type { Utxo } from '../src/core/ledger.js';
 import { selectCollateral, selectForAmount } from '../src/core/select.js';
 import { parseAssetUnits } from '../src/core/value.js';
-import { syntheticInput } from './helpers/synthetic.js';
+import { POLICY, syntheticInput } from './helpers/synthetic.js';
 
-const P = 'ab'.repeat(28);
+const P = POLICY;
 const address = hexToBytes('00' + '11'.repeat(56));
 const u = (i: number, lovelace: bigint, units?: Record<string, string>, extra: Partial<Utxo> = {}): Utxo => ({
   input: syntheticInput('s', BigInt(i)),

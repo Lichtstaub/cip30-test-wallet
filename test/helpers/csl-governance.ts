@@ -39,6 +39,11 @@ export function cslGovernanceTx(opts: CslGovernanceTx): string {
   return CSL.Transaction.new(body, CSL.TransactionWitnessSet.new()).to_hex();
 }
 
+/** The transaction id CSL computes over the body of a transaction, as hex. */
+export function cslTxId(txHex: string): string {
+  return CSL.FixedTransaction.from_hex(txHex).transaction_hash().to_hex();
+}
+
 /** Verifies every vkey witness of a witness set over the transaction id with CSL and returns the public keys that verified. */
 export function cslVerifiedKeys(txHex: string, witnessSetHex: string): string[] {
   const id = CSL.FixedTransaction.from_hex(txHex).transaction_hash();

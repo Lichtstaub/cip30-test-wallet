@@ -6,8 +6,9 @@ import { APIErrorCode } from '../src/core/errors.js';
 import { installWallet, type InstallTarget } from '../src/page/install.js';
 import type { PageConfig } from '../src/page/config.js';
 import { enableChw, testConfig } from './helpers/page.js';
+import { POLICY } from './helpers/synthetic.js';
 
-const P = 'ab'.repeat(28);
+const P = POLICY;
 type CollateralApi = { getCollateral?: (p?: unknown) => Promise<string[] | null>; experimental?: { getCollateral: (p?: unknown) => Promise<string[] | null> } };
 
 async function api(overrides: Partial<PageConfig> = {}) {

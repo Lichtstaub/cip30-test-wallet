@@ -38,7 +38,7 @@ export function syntheticOwnedUtxo(name: string, index: number, address: Uint8Ar
 }
 
 /** The optional output parts of a configured UTxO, turned from JSON into ledger values. */
-export function utxoExtras(c: UtxoExtras): Pick<Utxo, 'assets' | 'datum' | 'scriptRef'> {
+export function parseUtxoExtras(c: UtxoExtras): Pick<Utxo, 'assets' | 'datum' | 'scriptRef'> {
   const out: Pick<Utxo, 'assets' | 'datum' | 'scriptRef'> = {};
   // A hand-written PageConfig that skips the Node checks fails at install with a CIP-30 error.
   try {
@@ -53,12 +53,12 @@ export function utxoExtras(c: UtxoExtras): Pick<Utxo, 'assets' | 'datum' | 'scri
 }
 
 export function buildLedger(config: PageConfig, address: Uint8Array): MemoryLedger {
-  const owned = config.utxos.map((u, i) => ({ ...syntheticOwnedUtxo(config.name, i, address, BigInt(u.lovelace)), ...utxoExtras(u) }));
+  const owned = config.utxos.map((u, i) => ({ ...syntheticOwnedUtxo(config.name, i, address, BigInt(u.lovelace)), ...parseUtxoExtras(u) }));
   const foreign = config.foreignUtxos.map((f) => ({
     input: { txId: hexToBytes(f.txId), index: BigInt(f.index) },
     address: hexToBytes(f.addressHex),
     lovelace: BigInt(f.lovelace),
-    ...utxoExtras(f),
+    ...parseUtxoExtras(f),
   }));
   return new MemoryLedger({ owned, foreign });
 }

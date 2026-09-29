@@ -7,9 +7,9 @@ import { encodeOutput, encodeUtxo, type Utxo } from '../src/core/ledger.js';
 import { parseAssetUnits } from '../src/core/value.js';
 import { prepareWallet } from '../src/host/config.js';
 import { buildLedger } from '../src/page/install.js';
-import { syntheticInput } from './helpers/synthetic.js';
+import { POLICY, syntheticInput } from './helpers/synthetic.js';
 
-const P = 'ab'.repeat(28);
+const P = POLICY;
 const address = hexToBytes('00' + '11'.repeat(56));
 const base: Utxo = { input: syntheticInput('v', 0n), address, lovelace: 2_000_000n };
 // A PlutusV2 always-succeeds style script ref: [2, h'4e4d01000033222220051200120011']

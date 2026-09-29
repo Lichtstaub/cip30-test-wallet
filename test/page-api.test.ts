@@ -11,7 +11,7 @@ import { keyHash } from '../src/core/hash.js';
 import { installWallet, syntheticOwnedUtxo, type InstallTarget } from '../src/page/install.js';
 import { buildTx, standardUnsignedTx, TEST_ADDRESS } from './helpers/build-tx.js';
 import { oracleSignedData } from './helpers/cose-oracle.js';
-import { syntheticInput } from './helpers/synthetic.js';
+import { POLICY, syntheticInput } from './helpers/synthetic.js';
 import { chwProvider, enableChw, testConfig } from './helpers/page.js';
 
 const setup = async (overrides = {}) => {
@@ -21,6 +21,7 @@ const setup = async (overrides = {}) => {
   return { api, control, target };
 };
 
+const P = POLICY;
 const valueHex = (lovelace: bigint) => bytesToHex(encode(lovelace));
 
 describe('journal argument trimming', () => {
@@ -108,7 +109,6 @@ describe('getUtxos', () => {
   });
 
   it('returns the UTxOs that cover an asset demand, and null when the asset is short', async () => {
-    const P = 'ab'.repeat(28);
     const { api } = await setup({ utxos: [{ lovelace: '2000000', assets: { [P + '41']: '3' } }, { lovelace: '5000000' }] });
     const want = (qty: bigint) => bytesToHex(encode([1_000_000n, new Map([[hexToBytes(P), new Map([[hexToBytes('41'), qty]])]])] as never));
     expect(await api.getUtxos(want(3n))).toHaveLength(1);
@@ -123,7 +123,6 @@ describe('getBalance', () => {
   });
 
   it('reports assets as [coin, multiasset] summed across UTxOs', async () => {
-    const P = 'ab'.repeat(28);
     const { api } = await setup({ utxos: [{ lovelace: '2000000', assets: { [P + '41']: '3' } }, { lovelace: '1000000', assets: { [P + '41']: '4' } }] });
     const balance = decode(hexToBytes(await api.getBalance())) as [bigint, Map<Uint8Array, Map<Uint8Array, bigint>>];
     expect(balance[0]).toBe(3_000_000n);

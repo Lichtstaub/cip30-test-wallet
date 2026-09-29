@@ -114,13 +114,8 @@ describe('installWallet', () => {
   });
 
   it('turns a bad hand-written utxo value into a CIP-30 error, not an Error', () => {
-    let caught: unknown;
-    try {
-      installWallet(testConfig({ utxos: [{ lovelace: '1', datumHash: 'zz' }] }), {});
-    } catch (error) {
-      caught = error;
-    }
-    expect(caught).not.toBeInstanceOf(Error);
-    expect(caught).toMatchObject({ code: -1 });
+    const install = () => installWallet(testConfig({ utxos: [{ lovelace: '1', datumHash: 'zz' }] }), {});
+    expect(install).toThrow(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
+    expect(install).not.toThrow(Error);
   });
 });

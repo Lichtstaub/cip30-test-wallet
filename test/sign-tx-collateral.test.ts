@@ -67,13 +67,7 @@ describe('collateral fields', () => {
     const bad = (key: bigint, value: unknown) => () =>
       parseTxHex(buildTx({ inputs: [mine.input], outputs: [], fee: 1n, extraBodyEntries: new Map([[key, value]]) }));
     for (const [key, value] of [[13n, []], [16n, 5n], [17n, 'x']] as const) {
-      let caught: unknown;
-      try {
-        bad(key, value)();
-      } catch (error) {
-        caught = error;
-      }
-      expect(caught).toEqual(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
+      expect(bad(key, value)).toThrow(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
     }
   });
 

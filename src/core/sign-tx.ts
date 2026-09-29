@@ -96,11 +96,11 @@ export async function signTx(parsed: ParsedTransaction, partialSign: boolean, ct
     }
   }
 
-  for (const [i, { input, collateral }] of spentInputs(body).entries()) {
+  for (const [i, { input, label }] of spentInputs(body).entries()) {
     if (!resolvedInputs[i]) {
       throw new ChwError(
         'CHW_UNRESOLVED_INPUT',
-        `${collateral ? 'collateral input' : 'input'} ${bytesToHex(input.txId)}#${input.index} is unknown to the mock ledger, add it to utxos or foreignUtxos`,
+        `${label} ${bytesToHex(input.txId)}#${input.index} is unknown to the mock ledger, add it to utxos or foreignUtxos`,
       );
     }
   }

@@ -8,14 +8,15 @@ import { parseAddressArg } from '../src/core/sign-data.js';
 import { prepareWallet } from '../src/host/config.js';
 import { installWallet, syntheticOwnedUtxo, type InstallTarget } from '../src/page/install.js';
 import { buildTx } from './helpers/build-tx.js';
-import { cslVerifiedKeys, cslVerifiedKeysOfTx } from './helpers/csl-governance.js';
+import { cslTxId, cslVerifiedKeys, cslVerifiedKeysOfTx } from './helpers/csl-governance.js';
 import { evolutionBuild } from './helpers/evolution-build.js';
 import { enableChw } from './helpers/page.js';
+import { POLICY } from './helpers/synthetic.js';
 
 // Two policies, asset names of different length, one asset spread over two
 // UTxOs and one with an empty name, so order and summing are both exercised.
 const P1 = '01'.repeat(28);
-const P9 = 'ab'.repeat(28);
+const P9 = POLICY;
 const w = prepareWallet({
   utxos: [
     { lovelace: 10_000_000, assets: { [P9 + '41']: 5, [P9 + '626262']: 1, [P1]: 2 } },
@@ -72,8 +73,7 @@ describe('values against CSL and Evolution', () => {
     const ws = await (await walletApi()).signTx(tx, false);
     expect(cslVerifiedKeys(tx, ws)).toEqual([w.paymentPublicKeyHex]);
     const merged = Transaction.addVKeyWitnessesHex(tx, ws);
-    const id = (hex: string) => CSL.FixedTransaction.from_hex(hex).transaction_hash().to_hex();
-    expect(id(merged)).toBe(id(tx));
+    expect(cslTxId(merged)).toBe(cslTxId(tx));
     expect(cslVerifiedKeysOfTx(merged)).toEqual([w.paymentPublicKeyHex]);
   });
 
@@ -92,8 +92,7 @@ describe('values against CSL and Evolution', () => {
     });
     const ws = await (await walletApi()).signTx(tx, false);
     const merged = Transaction.addVKeyWitnessesHex(tx, ws);
-    const id = (hex: string) => CSL.FixedTransaction.from_hex(hex).transaction_hash().to_hex();
-    expect(id(merged)).toBe(id(tx));
+    expect(cslTxId(merged)).toBe(cslTxId(tx));
     expect(cslVerifiedKeysOfTx(merged)).toEqual([w.paymentPublicKeyHex]);
   });
 });

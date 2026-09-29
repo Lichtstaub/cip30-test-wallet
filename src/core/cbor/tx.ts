@@ -23,8 +23,11 @@ export interface ParsedProposal {
 }
 
 /** Every input the transaction spends or puts at risk, body inputs first and then collateral inputs. The one source of that order. */
-export function spentInputs(body: ParsedBody): Array<{ input: TxInput; collateral: boolean }> {
-  return [...body.inputs.map((input) => ({ input, collateral: false })), ...body.collateralInputs.map((input) => ({ input, collateral: true }))];
+export function spentInputs(body: ParsedBody): Array<{ input: TxInput; label: 'input' | 'collateral input' }> {
+  return [
+    ...body.inputs.map((input) => ({ input, label: 'input' as const })),
+    ...body.collateralInputs.map((input) => ({ input, label: 'collateral input' as const })),
+  ];
 }
 
 export interface ParsedBody {

@@ -1,3 +1,9 @@
+/** Even-length hex in any case, exactly `bytes` bytes long when given. The empty string only passes when bytes is undefined or 0. */
+export function isHex(value: unknown, bytes?: number): value is string {
+  if (typeof value !== 'string' || value.length % 2 !== 0 || !/^[0-9a-fA-F]*$/.test(value)) return false;
+  return bytes === undefined || value.length === bytes * 2;
+}
+
 export function hexToBytes(hex: string): Uint8Array {
   if (hex.length % 2 !== 0) throw new Error('hex string has odd length');
   if (!/^[0-9a-fA-F]*$/.test(hex)) throw new Error('hex string contains a non-hex character');

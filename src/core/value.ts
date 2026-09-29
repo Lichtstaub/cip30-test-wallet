@@ -1,13 +1,15 @@
-import { hexToBytes } from './bytes.js';
+import { hexToBytes, isHex } from './bytes.js';
 import type { CborValue } from './cbor/decode.js';
 
 // Native assets as the wallet holds them. Keys are lower case hex so two
 // spellings of the same unit are the same Map entry.
 
-/** policy id hex -> asset name hex -> quantity, all hex lower case. */
+/**
+ * policy id hex -> asset name hex -> quantity, all hex lower case. Invariant:
+ * every quantity is positive and no inner map is empty. parseAssetUnits,
+ * addAsset with positive quantities and parseValue keep it.
+ */
 export type MultiAsset = Map<string, Map<string, bigint>>;
-
-const HEX_RE = /^(?:[0-9a-f]{2})*$/;
 
 /** Conway positive_coin and coin top out at 2^64 - 1, the largest CBOR uint. */
 export const MAX_UINT64 = 18446744073709551615n;
@@ -22,7 +24,7 @@ export function parseAssetUnits(units: Record<string, string>): MultiAsset {
   const out: MultiAsset = new Map();
   for (const [rawUnit, rawQuantity] of Object.entries(units)) {
     const unit = rawUnit.toLowerCase();
-    if (!HEX_RE.test(unit)) throw new Error(`asset unit ${rawUnit} must be hex`);
+    if (!isHex(unit)) throw new Error(`asset unit ${rawUnit} must be hex`);
     if (unit.length < 56) throw new Error(`asset unit ${rawUnit} needs a 28 byte policy id`);
     const policy = unit.slice(0, 56);
     const name = unit.slice(56);
@@ -33,11 +35,8 @@ export function parseAssetUnits(units: Record<string, string>): MultiAsset {
     }
     const quantity = BigInt(rawQuantity);
     if (quantity <= 0n) throw new Error(`asset quantity for ${rawUnit} must be a positive integer, got ${rawQuantity}`);
-    const names = out.get(policy) ?? new Map<string, bigint>();
-    const total = (names.get(name) ?? 0n) + quantity;
-    if (total > MAX_UINT64) throw new Error(`asset quantity for ${rawUnit} is above 2^64 - 1`);
-    names.set(name, total);
-    out.set(policy, names);
+    if (assetQuantity(out, policy, name) + quantity > MAX_UINT64) throw new Error(`asset quantity for ${rawUnit} is above 2^64 - 1`);
+    addAsset(out, policy, name, quantity);
   }
   return out;
 }
@@ -47,18 +46,19 @@ export function assetQuantity(assets: MultiAsset | undefined, policy: string, na
 }
 
 export function hasAssets(assets: MultiAsset | undefined): boolean {
-  if (!assets) return false;
-  for (const names of assets.values()) for (const quantity of names.values()) if (quantity > 0n) return true;
-  return false;
+  return assets !== undefined && assets.size > 0;
+}
+
+/** Adds quantity to one unit, creating the policy map on first use. */
+export function addAsset(into: MultiAsset, policy: string, name: string, quantity: bigint): void {
+  const names = into.get(policy) ?? new Map<string, bigint>();
+  names.set(name, (names.get(name) ?? 0n) + quantity);
+  into.set(policy, names);
 }
 
 export function addAssets(into: MultiAsset, add: MultiAsset | undefined): void {
   if (!add) return;
-  for (const [policy, names] of add) {
-    const target = into.get(policy) ?? new Map<string, bigint>();
-    for (const [name, quantity] of names) target.set(name, (target.get(name) ?? 0n) + quantity);
-    into.set(policy, target);
-  }
+  for (const [policy, names] of add) for (const [name, quantity] of names) addAsset(into, policy, name, quantity);
 }
 
 // Canonical CBOR map order, the order CSL emits: shorter key first, then
@@ -73,11 +73,8 @@ export function valueCbor(coin: bigint, assets: MultiAsset | undefined): CborVal
   for (const policy of [...assets!.keys()].sort(canonical)) {
     const names = assets!.get(policy)!;
     const inner = new Map<CborValue, CborValue>();
-    for (const name of [...names.keys()].sort(canonical)) {
-      const quantity = names.get(name)!;
-      if (quantity > 0n) inner.set(hexToBytes(name), quantity);
-    }
-    if (inner.size > 0) multiasset.set(hexToBytes(policy), inner);
+    for (const name of [...names.keys()].sort(canonical)) inner.set(hexToBytes(name), names.get(name)!);
+    multiasset.set(hexToBytes(policy), inner);
   }
   return [coin, multiasset];
 }

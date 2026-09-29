@@ -8,7 +8,7 @@ import { installWallet, syntheticOwnedUtxo, type InstallTarget } from '../src/pa
 import { deriveAccount } from '../src/derive/index.js';
 import { signWithKeys } from '../src/core/sign-tx.js';
 import { keyHash, publicKey } from '../src/core/keys.js';
-import { cslGovernanceTx, cslVerifiedKeys, cslVerifiedKeysOfTx, cslWitnessCount, mergeWitnessSets, type CslCert } from './helpers/csl-governance.js';
+import { cslGovernanceTx, cslTxId, cslVerifiedKeys, cslVerifiedKeysOfTx, cslWitnessCount, mergeWitnessSets, type CslCert } from './helpers/csl-governance.js';
 import { spliceWitnessSet } from './helpers/build-tx.js';
 import { enableChw } from './helpers/page.js';
 import { evolutionBuild } from './helpers/evolution-build.js';
@@ -52,7 +52,6 @@ async function walletApi() {
   return enableChw(target);
 }
 
-const idOf = (hex: string) => CSL.FixedTransaction.from_hex(hex).transaction_hash().to_hex();
 
 /**
  * The full check of exit criterion 1: the wallet's witnesses verify with CSL,
@@ -64,7 +63,7 @@ async function signMergeAndCheck(tx: string, expectedKeys: string[], foreignKeys
   expect(cslVerifiedKeys(tx, ws).sort()).toEqual([...expectedKeys].sort());
   // Our splice replaces the witness set, so it must carry the foreign witnesses already in tx as well.
   const merged = merger === 'evolution' ? Transaction.addVKeyWitnessesHex(tx, ws) : spliceWitnessSet(tx, mergeWitnessSets(tx, ws));
-  expect(idOf(merged)).toBe(idOf(tx));
+  expect(cslTxId(merged)).toBe(cslTxId(tx));
   const all = [...expectedKeys, ...foreignKeys].sort();
   expect(cslVerifiedKeysOfTx(merged).sort()).toEqual(all);
   expect(cslWitnessCount(merged)).toBe(all.length);

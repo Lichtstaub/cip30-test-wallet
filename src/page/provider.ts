@@ -9,7 +9,7 @@ import { parseAddressArg, parseHexArg, resolveDataSigner } from '../core/sign-da
 import { requirements } from '../core/requirements.js';
 import { parseTxHex, refuseDeprecatedCertificate, resolveInputs, signTx as coreSignTx, unsupportedForms } from '../core/sign-tx.js';
 import { selectCollateral, selectForAmount } from '../core/select.js';
-import { addAssets, valueCbor, type MultiAsset } from '../core/value.js';
+import { addAsset, addAssets, valueCbor, type MultiAsset } from '../core/value.js';
 import type { Control } from './control.js';
 import type { PageConfig } from './config.js';
 
@@ -282,15 +282,11 @@ function parseValue(hex: string): { coin: bigint; assets: MultiAsset } {
     for (const [policy, assets] of value[1]) {
       if (!(policy instanceof Uint8Array) || policy.length !== 28) throw apiError(APIErrorCode.InvalidRequest, 'amount policy ids must be 28 bytes');
       if (!(assets instanceof Map)) throw apiError(APIErrorCode.InvalidRequest, 'amount multiasset must map policies to asset maps');
+      const policyHex = bytesToHex(policy);
       for (const [name, quantity] of assets) {
         if (!(name instanceof Uint8Array) || name.length > 32) throw apiError(APIErrorCode.InvalidRequest, 'amount asset names must be at most 32 bytes');
         if (typeof quantity !== 'bigint' || quantity < 0n) throw apiError(APIErrorCode.InvalidRequest, 'amount asset quantities must be non-negative integers');
-        if (quantity > 0n) {
-          const key = bytesToHex(policy);
-          const names = parsed.get(key) ?? new Map<string, bigint>();
-          names.set(bytesToHex(name), (names.get(bytesToHex(name)) ?? 0n) + quantity);
-          parsed.set(key, names);
-        }
+        if (quantity > 0n) addAsset(parsed, policyHex, bytesToHex(name), quantity);
       }
     }
     return { coin: value[0], assets: parsed };
