@@ -78,22 +78,33 @@
     });
   });
 
-  document.getElementById('commit').addEventListener('click', function () {
-    var out = document.getElementById('commit-result');
+  // Signs and submits one of the fixed demo transactions, splicing the wallet's
+  // witness set in place of the empty one (a0).
+  function signAndSubmit(demoTx, resultId) {
+    var out = document.getElementById(resultId);
     if (!connectedApi) {
       out.textContent = 'not connected';
       return;
     }
     out.textContent = 'signing';
-    connectedApi.signTx(DEMO_TX.unsignedHex, false).then(function (witnessSetHex) {
-      // Replace the empty witness set (a0) with the wallet's witness set.
-      var signed = DEMO_TX.unsignedHex.slice(0, DEMO_TX.bodyEndHex) + witnessSetHex + DEMO_TX.unsignedHex.slice(DEMO_TX.bodyEndHex + 2);
+    connectedApi.signTx(demoTx.unsignedHex, false).then(function (witnessSetHex) {
+      var signed = demoTx.unsignedHex.slice(0, demoTx.bodyEndHex) + witnessSetHex + demoTx.unsignedHex.slice(demoTx.bodyEndHex + 2);
       return connectedApi.submitTx(signed);
     }).then(function (hash) {
       out.textContent = 'submitted ' + hash;
     }).catch(function (e) {
       out.textContent = e && e.code === 2 ? 'declined' : 'error ' + (e && e.code);
     });
+  }
+
+  document.getElementById('commit').addEventListener('click', function () {
+    signAndSubmit(DEMO_TX, 'commit-result');
+  });
+  document.getElementById('vote').addEventListener('click', function () {
+    signAndSubmit(DEMO_VOTE_TX, 'vote-result');
+  });
+  document.getElementById('delegate').addEventListener('click', function () {
+    signAndSubmit(DEMO_DELEG_TX, 'delegate-result');
   });
 
   function firstWallet() {
