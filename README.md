@@ -14,13 +14,13 @@ It injects a CIP-30 test wallet into the page under test. The wallet holds real 
 
 A Playwright test in the trace viewer. The wallet is detected, connects on preprod and signs the commit transaction without a popup, and `expectSignedBy` proves the submitted transaction carries its signature.
 
-**Status: 0.x.** The signing core, the Playwright fixture and the `doctor` command are covered by unit tests and by browser tests in Chromium, Firefox and WebKit, and they run in the end-to-end suites of real dApps. Until 1.0 a minor release can still change the API, the notes of each GitHub release say what changed. Not yet supported: `getCollateral`, native assets.
+**Status: 0.x.** The signing core, the Playwright fixture and the `doctor` command are covered by unit tests and by browser tests in Chromium, Firefox and WebKit, and they run in the end-to-end suites of real dApps. Until 1.0 a minor release can still change the API, the notes of each GitHub release say what changed.
 
 Coding agents start with [AGENTS.md](AGENTS.md).
 
 ## What is in the box
 
-- A CIP-30 provider for the page: `apiVersion`, `name`, `icon`, `supportedExtensions`, `enable`, `isEnabled`, and the api methods `getNetworkId`, `getUtxos` (with `amount` and `paginate`), `getBalance`, `getUsedAddresses`, `getUnusedAddresses`, `getChangeAddress`, `getRewardAddresses`, `getExtensions`, `signTx`, `submitTx`, `signData`.
+- A CIP-30 provider for the page: `apiVersion`, `name`, `icon`, `supportedExtensions`, `enable`, `isEnabled`, and the api methods `getNetworkId`, `getUtxos` (with `amount` and `paginate`), `getBalance` (with native assets), `getCollateral`, `experimental.getCollateral`, `getUsedAddresses`, `getUnusedAddresses`, `getChangeAddress`, `getRewardAddresses`, `getExtensions`, `signTx`, `submitTx`, `signData`.
 - The `cip95` namespace: `getPubDRepKey`, `getRegisteredPubStakeKeys`, `getUnregisteredPubStakeKeys`, `signData`.
 - A Playwright fixture: `test.use({ walletOptions })` configures the wallet, `wallet` in the test reads the journal and flips quirks at runtime.
 - `expectSignedBy(txHex, wallet, { roles? })`: proves the transaction your dApp submitted really carries the wallet's signature (payment by default, optionally stake and DRep) over its body hash. Recording `submitTx` alone proves nothing.
@@ -32,7 +32,7 @@ Coding agents start with [AGENTS.md](AGENTS.md).
 
 ## Not in the box yet
 
-This release is a CIP-30 subset for transaction tests plus CIP-95, including governance transactions. Missing on purpose, tracked for later milestones: `getCollateral`, native assets in balances and UTxOs, script inputs, script credentials in certificates and votes, guardrail scripts in proposals, and every transaction form outside the supported set below. `submitTx` is simulated: it records the transaction and returns its id, it never talks to a node. Fees, validity and script execution are not checked.
+This release is a CIP-30 subset for transaction tests plus CIP-95, including governance transactions. Missing on purpose, tracked for later milestones: script inputs, script credentials in certificates and votes, guardrail scripts in proposals, and every transaction form outside the supported set below. `submitTx` is simulated: it records the transaction and returns its id, it never talks to a node. Fees, validity and script execution are not checked.
 
 ## Quick start
 
@@ -181,9 +181,11 @@ The wallet's extended private keys are serialised into the page's init script by
 
 Errors are plain `{ code, info }` objects, as CIP-30 requires, never `Error` instances. Code that reads `err.message` shows up immediately. `getUtxos()` returns `[]` for an empty wallet and `null` when the requested amount cannot be reached. Addresses are hex CBOR bytes. A test that is green with the defaults already tells you something.
 
+One compatibility exception: `getCollateral()` without an argument means 5 ADA. CIP-30 calls that form possible but not specified, Mesh calls it this way and Lace answers it this way. An amount of 0 or above 5 ADA is InvalidRequest. Collateral comes from pure ADA UTxOs without datum or reference script, at most three: first in configuration order, then the largest ones if that is not enough. `null` when even that does not cover the amount.
+
 ## Supported transaction forms
 
-The wallet decides what to sign for these body fields: inputs at key addresses, `required_signers`, withdrawals, certificates, voting procedures, proposal procedures, treasury value and donation, plus outputs, fee, ttl, validity start, auxiliary data hash and network id. A requirement it does not own must already be covered by a valid witness in the transaction (multi-party flows), otherwise `signTx` refuses with `TxSignError` ProofGeneration. Anything else (script inputs, script credentials anywhere, guardrail scripts, mint, collateral, unknown keys) raises a harness diagnosis `ChwError` with code `CHW_UNSUPPORTED_TX_FORM` at `partialSign: false`. A harness diagnosis is never disguised as a wallet error. An input the mock ledger does not know raises `CHW_UNRESOLVED_INPUT` with a hint to add it to `utxos` or `foreignUtxos`.
+The wallet decides what to sign for these body fields: inputs at key addresses, `required_signers`, withdrawals, certificates, voting procedures, proposal procedures, treasury value and donation, collateral inputs, collateral return and total collateral, plus outputs, fee, ttl, validity start, auxiliary data hash and network id. A requirement it does not own must already be covered by a valid witness in the transaction (multi-party flows), otherwise `signTx` refuses with `TxSignError` ProofGeneration. Anything else (script inputs, script credentials anywhere, guardrail scripts, mint, unknown keys) raises a harness diagnosis `ChwError` with code `CHW_UNSUPPORTED_TX_FORM` at `partialSign: false`. A harness diagnosis is never disguised as a wallet error. An input the mock ledger does not know raises `CHW_UNRESOLVED_INPUT` with a hint to add it to `utxos` or `foreignUtxos`.
 
 Evolution SDK always calls `signTx(cbor, true)`, so with Evolution the form check above never refuses. The wallet signs only its own share and logs a `console.warn` naming every skipped form instead.
 

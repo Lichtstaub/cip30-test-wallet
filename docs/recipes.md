@@ -310,6 +310,26 @@ test('a DRep vote is signed with the payment and the DRep key', async ({ page, w
 
 A dApp that checks the DRep on chain needs a testnet wallet registered as DRep. Pass its mnemonic through an environment variable and skip the test when it is missing, as in [Pages behind a wallet login](../README.md#pages-behind-a-wallet-login). For a vote delegation use `{ roles: ['payment', 'stake'] }`.
 
+## A wallet that holds a token
+
+Give the wallet a UTxO with a token and read it back through the demo's Balance button. The unit is the policy id hex followed by the asset name hex.
+
+```ts
+const POLICY = 'ab'.repeat(28);
+
+test.use({ walletOptions: { utxos: [{ lovelace: 10_000_000, assets: { [POLICY + '41']: 1 } }] } });
+
+test('the wallet holds one token kind', async ({ page }) => {
+  await page.goto('/strict/');
+  await page.locator('#connect').click();
+  await expect(page.locator('#connect-result')).toHaveText('network 0');
+  await page.locator('#balance').click();
+  await expect(page.locator('#balance-result')).toHaveText('10000000 lovelace, 1 token kind');
+});
+```
+
+A page that gates content on a token checks the address on chain, the synthetic UTxOs do not count there. See [Pages behind a wallet login](../README.md#pages-behind-a-wallet-login).
+
 ## Reading the journal
 
 `wallet.calls()` lists every CIP-30 call of the current page in order, with arguments and result or error. It answers questions a screenshot cannot: did the dApp check the network before building, did it ask for a partial signature, did it retry.
