@@ -2,6 +2,9 @@ import { concat } from '../bytes.js';
 import { Tagged, type CborValue } from './decode.js';
 
 function header(major: number, arg: bigint): Uint8Array {
+  // CBOR integers carry at most a 64 bit argument. Writing only the low bits would
+  // turn 2^64 into 0 without any error, so anything larger is refused.
+  if (arg > 0xffffffffffffffffn) throw new Error('cbor: integer out of range');
   const m = major << 5;
   if (arg < 24n) return Uint8Array.of(m | Number(arg));
   if (arg < 0x100n) return Uint8Array.of(m | 24, Number(arg));
