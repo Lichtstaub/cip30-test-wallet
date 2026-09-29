@@ -38,7 +38,18 @@ describe('parser: certificates, voters, proposals', () => {
     }
   });
 
-  it('reads a transaction CSL built with Conway certificates, a vote and a proposal', () => {
+  it('reads the guardrail of a parameter change, null guardrails, and rejects a guardrail that is neither null nor bytes', () => {
+    const anchor = ['https://example.com/a.json', new Uint8Array(32)];
+    const reward = hexToBytes('e0' + '01'.repeat(28));
+    const proposalsOf = (action: unknown[]) =>
+      parse(buildTx({ inputs: [input], outputs: out, fee: 1n, extraBodyEntries: new Map([[20n, [[100n, reward, action, anchor]]]]) })).proposals;
+    expect(proposalsOf([0n, null, new Map(), hash28(7)])).toEqual([{ actionIndex: 0n, guardrail: hash28(7) }]);
+    expect(proposalsOf([2n, new Map([[reward, 5n]]), null])).toEqual([{ actionIndex: 2n }]);
+    expect(() => proposalsOf([2n, new Map([[reward, 5n]]), 'text'])).toThrow(/malformed governance action/);
+    expect(() => proposalsOf([0n, null, new Map(), 'text'])).toThrow(/malformed governance action/);
+  });
+
+  it('reads a transaction CSL built with Conway certificates and a vote', () => {
     const stake = CSL.Credential.from_keyhash(CSL.Ed25519KeyHash.from_bytes(hash28(1)));
     const drep = CSL.Credential.from_keyhash(CSL.Ed25519KeyHash.from_bytes(hash28(2)));
     const inputs = CSL.TransactionInputs.new();

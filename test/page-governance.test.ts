@@ -69,6 +69,19 @@ describe('page signTx with governance forms', () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('with a script credential'));
   });
 
+  it('a malformed governance field is InvalidRequest before signHangs or signRejected, at both partialSign values', async () => {
+    for (const quirk of ['signHangs', 'signRejected']) {
+      const w = prepared({ [quirk]: true });
+      const { api: a } = await api(w);
+      const tx = voteTx(w, [[4n, [[9n, [0n, new Uint8Array(27)], [0n, hexToBytes(w.drepKeyHashHex)]]]]]);
+      for (const partial of [false, true]) {
+        const caught = await a.signTx(tx, partial).catch((e: unknown) => e);
+        expect(caught).not.toBeInstanceOf(Error);
+        expect(caught).toEqual(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
+      }
+    }
+  });
+
   it('a malformed certificate reaches the dApp as InvalidRequest at both partialSign values', async () => {
     const w = prepared();
     const { api: a } = await api(w);

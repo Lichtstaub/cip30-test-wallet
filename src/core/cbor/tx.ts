@@ -117,7 +117,9 @@ function parseBodyMap(body: Map<CborValue, CborValue>): ParsedBody {
     // The action's own field count is not checked, only where the guardrail sits.
     // treasury_withdrawals_action = (2, withdrawals, guardrail / nil)
     const last = action[action.length - 1];
-    if ((actionIndex === 0n || actionIndex === 2n) && last instanceof Uint8Array) {
+    if (actionIndex === 0n || actionIndex === 2n) {
+      if (last === null) return { actionIndex };
+      if (!(last instanceof Uint8Array)) throw new Error('malformed governance action');
       return { actionIndex, guardrail: asBytes(last, 'guardrail script hash') };
     }
     return { actionIndex };
