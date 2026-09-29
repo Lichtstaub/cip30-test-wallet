@@ -19,6 +19,6 @@ No switch without a note. A quirk nobody can trace is the stale wallet profile t
 | `coseAddress` | reported | [cose-address.md](cose-address.md) |
 | `noCollateral` | confirmed | [no-collateral.md](no-collateral.md) |
 | walletOptions.utxos[].scriptRef (an option, not a quirks entry) | reported | [utxo-with-script-ref.md](utxo-with-script-ref.md) |
-| walletOptions.utxos[].datumHash (an option, not a quirks entry) | reported | [utxo-with-datum-hash.md](utxo-with-datum-hash.md) |
+| walletOptions.utxos[].datumHash (an option, not a quirks entry, crash unconfirmed) | reported | [utxo-with-datum-hash.md](utxo-with-datum-hash.md) |
 
 Found one we do not have? Open an issue with wallet name, version and platform, the CIP-30 method, what the spec expects, what the wallet does, and a minimal reproduction. Never include keys, mnemonics or funded addresses.

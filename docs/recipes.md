@@ -300,6 +300,7 @@ A vote is signed with the DRep key, so the test proves the payment and the DRep 
 ```ts
 test('a DRep vote is signed with the payment and the DRep key', async ({ page, wallet }) => {
   await page.goto('/strict/');
+  await expect(page.locator('#wallets')).toHaveText('chw');
   await page.locator('#connect').click();
   await expect(page.locator('#connect-result')).toHaveText('network 0');
   await page.locator('#vote').click();
@@ -321,6 +322,7 @@ test.use({ walletOptions: { utxos: [{ lovelace: 10_000_000, assets: { [POLICY + 
 
 test('the wallet holds one token kind', async ({ page }) => {
   await page.goto('/strict/');
+  await expect(page.locator('#wallets')).toHaveText('chw');
   await page.locator('#connect').click();
   await expect(page.locator('#connect-result')).toHaveText('network 0');
   await page.locator('#balance').click();
