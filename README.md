@@ -1,3 +1,5 @@
+<img src="https://raw.githubusercontent.com/Lichtstaub/cip30-test-wallet/main/media/logo.svg" width="96" height="96" alt="cip30-test-wallet logo: a wallet between code braces">
+
 # cip30-test-wallet
 
 [![CI](https://github.com/Lichtstaub/cip30-test-wallet/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Lichtstaub/cip30-test-wallet/actions/workflows/ci.yml)

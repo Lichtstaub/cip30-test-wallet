@@ -10,8 +10,8 @@ import type { PageConfig, QuirkConfig } from '../page/config.js';
 /** Public test vector from the CSL documentation. Holds no funds, safe to ship. */
 export const DEFAULT_MNEMONIC = 'test walk nut penalty hip pave soap entry language right filter choice';
 
-/** A tiny inline SVG, so a dApp rendering <img src> does not re-request the document. */
-export const DEFAULT_ICON = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" rx="3" fill="%230033ad"/></svg>';
+/** The project logo as an inline SVG (media/logo.svg), so a dApp rendering <img src> does not re-request the document. */
+export const DEFAULT_ICON = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="%230033ad"/><path d="M17 16c-4 0-5 2-5 5v6c0 3-1 5-4 5 3 0 4 2 4 5v6c0 3 1 5 5 5M47 16c4 0 5 2 5 5v6c0 3 1 5 4 5-3 0-4 2-4 5v6c0 3-1 5-5 5" fill="none" stroke="%23fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/><rect x="21" y="24" width="22" height="16" rx="3" fill="%23fff"/><circle cx="37" cy="32" r="2.5" fill="%230033ad"/></svg>';
 
 export interface WalletOptions {
   name?: string;
