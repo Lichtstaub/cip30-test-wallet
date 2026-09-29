@@ -293,6 +293,25 @@ test.describe('the user never answers the wallet', () => {
 });
 ```
 
+## Vote as a DRep
+
+A vote is signed with the DRep key, so the test needs the mnemonic of a wallet that is registered as DRep on the dApp's network. Pass it through an environment variable, never commit it.
+
+```ts
+test.describe('a DRep votes', () => {
+  test.use({ walletOptions: { mnemonic: process.env.E2E_DREP_MNEMONIC } });
+
+  test('the vote is signed with the payment and the DRep key', async ({ page, wallet }) => {
+    await page.goto('/governance');
+    await page.getByRole('button', { name: 'Vote' }).click();
+    const tx = await wallet.lastSubmittedTx();
+    expectSignedBy(tx!, wallet, { roles: ['payment', 'drep'] });
+  });
+});
+```
+
+For a vote delegation use `{ roles: ['payment', 'stake'] }`.
+
 ## Reading the journal
 
 `wallet.calls()` lists every CIP-30 call of the current page in order, with arguments and result or error. It answers questions a screenshot cannot: did the dApp check the network before building, did it ask for a partial signature, did it retry.

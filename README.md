@@ -12,7 +12,7 @@ It injects a CIP-30 test wallet into the page under test. The wallet holds real 
 
 A Playwright test in the trace viewer. The wallet is detected, connects on preprod and signs the commit transaction without a popup, and `expectSignedBy` proves the submitted transaction carries its signature.
 
-**Status: 0.x.** The signing core, the Playwright fixture and the `doctor` command are covered by unit tests and by browser tests in Chromium, Firefox and WebKit, and they run in the end-to-end suites of real dApps. Until 1.0 a minor release can still change the API, the notes of each GitHub release say what changed. Not yet supported: `getCollateral`, native assets, governance transactions.
+**Status: 0.x.** The signing core, the Playwright fixture and the `doctor` command are covered by unit tests and by browser tests in Chromium, Firefox and WebKit, and they run in the end-to-end suites of real dApps. Until 1.0 a minor release can still change the API, the notes of each GitHub release say what changed. Not yet supported: `getCollateral`, native assets.
 
 Coding agents start with [AGENTS.md](AGENTS.md).
 
@@ -26,11 +26,11 @@ Coding agents start with [AGENTS.md](AGENTS.md).
 - The quirk catalogue in [`quirks/`](quirks/README.md), a provenance note for every switch.
 - `doctor`: a command line check of a deployed dApp for the secure-context and content-security-policy traps, with a browser mode that measures wallet detection.
 
-`signData` follows CIP-30 and CIP-8 byte for byte with Emurgo's message-signing library: payment key for base, pointer and enterprise addresses, stake key for reward addresses. CIP-95 is announced by default: `getPubDRepKey`, the registered and unregistered stake keys, and `cip95.signData` with the bare DRep ID or a type 6 address. Governance transactions (certificates, votes, proposals) are not signed yet.
+`signData` follows CIP-30 and CIP-8 byte for byte with Emurgo's message-signing library: payment key for base, pointer and enterprise addresses, stake key for reward addresses. CIP-95 is announced by default: `getPubDRepKey`, the registered and unregistered stake keys, and `cip95.signData` with the bare DRep ID or a type 6 address. `signTx` signs Conway governance transactions: stake and vote delegation certificates with the stake key, DRep registration, update and retirement and DRep votes with the DRep key. Pool and committee certificates are never witnessed by the wallet, as CIP-95 requires. Pre-Conway certificates are refused with `TxSignError` `DeprecatedCertificate` (3).
 
 ## Not in the box yet
 
-This release is a CIP-30 subset for transaction tests plus the first half of CIP-95. Missing on purpose, tracked for later milestones: `getCollateral`, native assets in balances and UTxOs, script inputs, certificates, and every transaction form outside the supported set below. `submitTx` is simulated: it records the transaction and returns its id, it never talks to a node. Fees, validity and script execution are not checked.
+This release is a CIP-30 subset for transaction tests plus the first half of CIP-95. Missing on purpose, tracked for later milestones: `getCollateral`, native assets in balances and UTxOs, script inputs, script credentials in certificates, votes and proposals, and every transaction form outside the supported set below. `submitTx` is simulated: it records the transaction and returns its id, it never talks to a node. Fees, validity and script execution are not checked.
 
 ## Quick start
 
@@ -166,7 +166,7 @@ What decides whether a login works:
 
 - **Roles without chain state** work with any mnemonic, the default one included, for example a plain account login with the reward address.
 - **Roles the dApp checks on chain** need a wallet that really has that role on the dApp's network, for example a DRep registered on preprod. Pass its mnemonic through an environment variable, never commit it. Its keys end up in traces like any other, so use a testnet wallet only.
-- **Reading works, most governance actions do not yet.** The wallet signs messages and plain transactions. Votes, certificates and proposals are not signed yet, so pages whose main action is one of those can be opened and checked, but the action itself cannot complete.
+- **Governance actions are signed.** Votes, vote delegation and DRep updates are signed with the right keys. `submitTx` still only records the transaction, so a vote never reaches the chain from a test.
 - **Token-gated pages** check real holdings on chain. The wallet's synthetic UTxOs do not count there, the address itself has to hold the tokens.
 
 The fixture injects into any URL, so this also works against a deployed site, not only a local dev server. The wallet's network has to match the site's. Against a mainnet site only flows that cost nothing make sense, such as a message-signing login, and only with a mnemonic that holds nothing. Remember that a production login creates real accounts and sessions on that site.
@@ -181,7 +181,7 @@ Errors are plain `{ code, info }` objects, as CIP-30 requires, never `Error` ins
 
 ## Supported transaction forms
 
-The wallet decides what to sign for these body fields: inputs at key addresses, `required_signers`, withdrawals, plus outputs, fee, ttl, validity start, auxiliary data hash and network id. A requirement it does not own must already be covered by a valid witness in the transaction (multi-party flows), otherwise `signTx` refuses with `TxSignError` ProofGeneration. Anything else (script inputs, certificates, mint, collateral, governance fields, unknown keys) raises a harness diagnosis `ChwError` with code `CHW_UNSUPPORTED_TX_FORM` at `partialSign: false`. A harness diagnosis is never disguised as a wallet error. An input the mock ledger does not know raises `CHW_UNRESOLVED_INPUT` with a hint to add it to `utxos` or `foreignUtxos`.
+The wallet decides what to sign for these body fields: inputs at key addresses, `required_signers`, withdrawals, certificates, voting procedures, proposal procedures, treasury value and donation, plus outputs, fee, ttl, validity start, auxiliary data hash and network id. A requirement it does not own must already be covered by a valid witness in the transaction (multi-party flows), otherwise `signTx` refuses with `TxSignError` ProofGeneration. Anything else (script inputs, script credentials anywhere, guardrail scripts, mint, collateral, unknown keys) raises a harness diagnosis `ChwError` with code `CHW_UNSUPPORTED_TX_FORM` at `partialSign: false`. A harness diagnosis is never disguised as a wallet error. An input the mock ledger does not know raises `CHW_UNRESOLVED_INPUT` with a hint to add it to `utxos` or `foreignUtxos`.
 
 Evolution SDK always calls `signTx(cbor, true)`, so with Evolution the form check above never refuses. The wallet signs only its own share and logs a `console.warn` naming every skipped form instead.
 
@@ -191,7 +191,7 @@ A consumer SDK expecting real-wallet behaviour can still misbehave against a spe
 
 ## The demo dApp
 
-`examples/minimal-dapp` is a framework-free page served under a strict and a permissive Content Security Policy. It scans `window.cardano`, connects, checks the network, signs and submits a fixed transaction, signs a message with the stake key, and runs a DRep login that tries the bare DRep ID and the type 6 address in turn. `npm run serve:demo` starts it on port 4173, `npm run test:browser` runs the browser suite against it in Chromium, Firefox and WebKit. `npm run doctor:demo` runs `doctor --deep` against its strict, permissive and hashed variants in one go, arguments after `--` go to every run, for example `npm run doctor:demo -- --browser webkit`.
+`examples/minimal-dapp` is a framework-free page served under a strict and a permissive Content Security Policy. It scans `window.cardano`, connects, checks the network, signs and submits a fixed transaction, casts a DRep vote, delegates its vote to its own DRep, signs a message with the stake key, and runs a DRep login that tries the bare DRep ID and the type 6 address in turn. `npm run serve:demo` starts it on port 4173, `npm run test:browser` runs the browser suite against it in Chromium, Firefox and WebKit. `npm run doctor:demo` runs `doctor --deep` against its strict, permissive and hashed variants in one go, arguments after `--` go to every run, for example `npm run doctor:demo -- --browser webkit`.
 
 ## doctor
 
