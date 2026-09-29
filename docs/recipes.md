@@ -330,7 +330,7 @@ test('the wallet holds one token kind', async ({ page }) => {
 });
 ```
 
-A page that gates content on a token checks the address on chain, the synthetic UTxOs do not count there. See [Pages behind a wallet login](../README.md#pages-behind-a-wallet-login).
+A page that checks token ownership on chain, through an indexer or its backend, does not see the synthetic UTxOs. A page that reads `getBalance` or `getUtxos` in the browser does. See [Pages behind a wallet login](../README.md#pages-behind-a-wallet-login).
 
 ## Reading the journal
 

@@ -169,7 +169,7 @@ What decides whether a login works:
 - **Roles without chain state** work with any mnemonic, the default one included, for example a plain account login with the reward address.
 - **Roles the dApp checks on chain** need a wallet that really has that role on the dApp's network, for example a DRep registered on preprod. Pass its mnemonic through an environment variable, never commit it. Its keys end up in traces like any other, so use a testnet wallet only.
 - **Governance actions are signed.** Votes, vote delegation and DRep updates are signed with the right keys. `submitTx` still only records the transaction, so a vote never reaches the chain from a test.
-- **Token-gated pages** check real holdings on chain. The wallet's synthetic UTxOs do not count there, the address itself has to hold the tokens.
+- **Token-gated pages** that check ownership on chain, through an indexer or their backend, do not see the synthetic UTxOs, the address itself has to hold the tokens. Pages that read `getBalance` or `getUtxos` in the browser do see them.
 
 The fixture injects into any URL, so this also works against a deployed site, not only a local dev server. The wallet's network has to match the site's. Against a mainnet site only flows that cost nothing make sense, such as a message-signing login, and only with a mnemonic that holds nothing. Remember that a production login creates real accounts and sessions on that site.
 

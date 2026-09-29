@@ -53,3 +53,15 @@ Connect through Evolution's `cip30Wallet` helper against any wallet installed by
 **Workaround.** Merge the witness set with CSL. Evolution's own builder is expected to emit the plain array form, which is untested here.
 
 **Status.** Reported upstream: not yet.
+
+## Mesh 2.0 beta: getCollateral throws when the wallet returns null
+
+**What CIP-30 says.** `getCollateral` is typed `TransactionUnspentOutput[] | null`. A wallet that cannot cover the requested collateral returns `null`.
+
+**What Mesh does.** `@meshsdk/wallet` 2.0.0-beta.11, `CardanoBrowserWallet.getCollateral`, calls `api.getCollateral()` without an argument and without a fallback, and `getCollateralMesh` maps over the result without a null guard. A `null` answer becomes a TypeError. Mesh core 1.9.1 guards the same result with `?? []`.
+
+**How to reproduce with this wallet.** This wallet returns `null` when its pure ADA UTxOs cannot cover 5 ADA. Configure a wallet whose UTxOs all hold tokens, or `utxos: [{ lovelace: 1_000_000 }]`, then call getCollateral through Mesh 2.0 beta. Measured 2026-09-29 by reading the package source, not by running it.
+
+**Workaround.** Configure at least one pure ADA UTxO of 5 ADA or more, or use Mesh core 1.9.1.
+
+**Status.** Reported upstream: not yet.
