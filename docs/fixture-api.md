@@ -8,7 +8,7 @@
 |---|---|---|
 | `name` | `'chw'` | Key under `window.cardano` |
 | `displayName` | `'Test Wallet'` | CIP-30 `name` |
-| `icon` | a small SVG data URI | CIP-30 `icon` |
+| `icon` | the project logo as an SVG data URI | CIP-30 `icon` |
 | `networkId` | `0` | `0` testnets, `1` mainnet. Addresses follow it |
 | `mnemonic` | public CSL test vector | CIP-1852 account source. Never use a funded mnemonic, the keys end up in the page and in Playwright traces |
 | `accountIndex` | `0` | CIP-1852 account, 0 to 2^31 - 1 |
