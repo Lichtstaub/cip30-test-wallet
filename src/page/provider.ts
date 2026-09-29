@@ -8,6 +8,8 @@ import { encodeUtxo, type MemoryLedger } from '../core/ledger.js';
 import { parseAddressArg, parseHexArg, resolveDataSigner } from '../core/sign-data.js';
 import { requirements } from '../core/requirements.js';
 import { parseTxHex, refuseDeprecatedCertificate, resolveInputs, signTx as coreSignTx, unsupportedForms } from '../core/sign-tx.js';
+import { selectForAmount } from '../core/select.js';
+import { addAssets, valueCbor, type MultiAsset } from '../core/value.js';
 import type { Control } from './control.js';
 import type { PageConfig } from './config.js';
 
@@ -121,26 +123,21 @@ export function buildApi(ctx: WalletContext, extensions: { cip: number }[] = [])
       control.record('getUtxos', [amount, paginate], async () => {
         let utxos = await ledger.getWalletUtxos();
         if (amount !== undefined) {
-          const { coin: target, hasAssets } = parseValue(amount);
-          // The wallet holds lovelace only, so any positive asset demand is unsatisfiable.
-          if (hasAssets) return null;
-          const picked = [];
-          let sum = 0n;
-          for (const u of utxos) {
-            if (sum >= target) break;
-            picked.push(u);
-            sum += u.lovelace;
-          }
-          if (sum < target) return null;
-          utxos = picked;
+          const { coin, assets } = parseValue(amount);
+          const selected = selectForAmount(utxos, coin, assets);
+          if (selected === null) return null;
+          utxos = selected;
         }
         if (paginate !== undefined) utxos = paginateList(utxos, paginate);
         return utxos.map((u) => bytesToHex(encodeUtxo(u)));
       }),
     getBalance: () =>
       control.record('getBalance', [], async () => {
-        const total = (await ledger.getWalletUtxos()).reduce((sum, u) => sum + u.lovelace, 0n);
-        return bytesToHex(encode(total));
+        const utxos = await ledger.getWalletUtxos();
+        const coin = utxos.reduce((sum, u) => sum + u.lovelace, 0n);
+        const assets: MultiAsset = new Map();
+        for (const u of utxos) addAssets(assets, u.assets);
+        return bytesToHex(encode(valueCbor(coin, assets)));
       }),
     signTx: (tx, partialSign = false) =>
       control.record('signTx', [tx, partialSign], async () => {
@@ -222,31 +219,34 @@ export async function signDataWith(ctx: WalletContext, addr: unknown, payload: u
 /**
  * cbor<value> is either a uint (coin) or [coin, multiasset] with
  * multiasset = { policy_id => { asset_name => quantity } }. The structure is
- * validated. Asset quantities are only summarised, because this wallet
- * cannot hold assets yet, so a positive demand can never be covered. The
- * bounds below are enforced only so malformed input is caught early, assets
- * themselves are otherwise unsupported in this release.
+ * validated. Positive asset quantities are returned keyed by hex policy
+ * and asset name, to be matched against the wallet's UTxOs.
  */
-function parseValue(hex: string): { coin: bigint; hasAssets: boolean } {
+function parseValue(hex: string): { coin: bigint; assets: MultiAsset } {
   let value: unknown;
   try {
     value = decode(hexToBytes(hex));
   } catch {
     throw apiError(APIErrorCode.InvalidRequest, 'amount is not valid cbor');
   }
-  if (typeof value === 'bigint' && value >= 0n) return { coin: value, hasAssets: false };
+  if (typeof value === 'bigint' && value >= 0n) return { coin: value, assets: new Map() };
   if (Array.isArray(value) && value.length === 2 && typeof value[0] === 'bigint' && value[0] >= 0n && value[1] instanceof Map) {
-    let hasAssets = false;
+    const parsed: MultiAsset = new Map();
     for (const [policy, assets] of value[1]) {
       if (!(policy instanceof Uint8Array) || policy.length !== 28) throw apiError(APIErrorCode.InvalidRequest, 'amount policy ids must be 28 bytes');
       if (!(assets instanceof Map)) throw apiError(APIErrorCode.InvalidRequest, 'amount multiasset must map policies to asset maps');
       for (const [name, quantity] of assets) {
         if (!(name instanceof Uint8Array) || name.length > 32) throw apiError(APIErrorCode.InvalidRequest, 'amount asset names must be at most 32 bytes');
         if (typeof quantity !== 'bigint' || quantity < 0n) throw apiError(APIErrorCode.InvalidRequest, 'amount asset quantities must be non-negative integers');
-        if (quantity > 0n) hasAssets = true;
+        if (quantity > 0n) {
+          const key = bytesToHex(policy);
+          const names = parsed.get(key) ?? new Map<string, bigint>();
+          names.set(bytesToHex(name), (names.get(bytesToHex(name)) ?? 0n) + quantity);
+          parsed.set(key, names);
+        }
       }
     }
-    return { coin: value[0], hasAssets };
+    return { coin: value[0], assets: parsed };
   }
   throw apiError(APIErrorCode.InvalidRequest, 'amount must be a cbor value');
 }

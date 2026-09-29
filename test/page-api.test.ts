@@ -106,12 +106,28 @@ describe('getUtxos', () => {
     const { api } = await setup();
     await expect(api.getUtxos('zz')).rejects.toEqual(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
   });
+
+  it('returns the UTxOs that cover an asset demand, and null when the asset is short', async () => {
+    const P = 'ab'.repeat(28);
+    const { api } = await setup({ utxos: [{ lovelace: '2000000', assets: { [P + '41']: '3' } }, { lovelace: '5000000' }] });
+    const want = (qty: bigint) => bytesToHex(encode([1_000_000n, new Map([[hexToBytes(P), new Map([[hexToBytes('41'), qty]])]])] as never));
+    expect(await api.getUtxos(want(3n))).toHaveLength(1);
+    expect(await api.getUtxos(want(4n))).toBeNull();
+  });
 });
 
 describe('getBalance', () => {
   it('sums the owned lovelace as a cbor uint', async () => {
     const { api } = await setup();
     expect(decode(hexToBytes(await api.getBalance()))).toBe(14_500_000n);
+  });
+
+  it('reports assets as [coin, multiasset] summed across UTxOs', async () => {
+    const P = 'ab'.repeat(28);
+    const { api } = await setup({ utxos: [{ lovelace: '2000000', assets: { [P + '41']: '3' } }, { lovelace: '1000000', assets: { [P + '41']: '4' } }] });
+    const balance = decode(hexToBytes(await api.getBalance())) as [bigint, Map<Uint8Array, Map<Uint8Array, bigint>>];
+    expect(balance[0]).toBe(3_000_000n);
+    expect([...[...balance[1].values()][0]!.values()]).toEqual([7n]);
   });
 });
 
