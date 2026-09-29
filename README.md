@@ -16,7 +16,7 @@ A Playwright test in the trace viewer. The wallet is detected, connects on prepr
 
 **Status: 0.x.** The signing core, the Playwright fixture and the `doctor` command are covered by unit tests and by browser tests in Chromium, Firefox and WebKit, and they run in the end-to-end suites of real dApps. Until 1.0 a minor release can still change the API, the notes of each GitHub release say what changed. Not yet supported: `getCollateral`, native assets, governance transactions.
 
-Coding agents start with [AGENTS.md](AGENTS.md).
+Coding agents start with [AGENTS.md](https://github.com/Lichtstaub/cip30-test-wallet/blob/main/AGENTS.md).
 
 ## What is in the box
 
