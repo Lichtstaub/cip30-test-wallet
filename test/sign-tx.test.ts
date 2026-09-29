@@ -170,8 +170,8 @@ describe('supported transaction forms are an allowlist, checked before ownership
     expect(witnessCount(await signTx(tx, true, ctx()))).toBe(1);
   });
 
-  it('refuses an unsupported body key (voting procedures, 19) the same way', async () => {
-    const tx = pay([mine.input], { extraBodyEntries: new Map([[19n, new Map()]]) });
+  it('refuses an unsupported body key (reference inputs, 18) the same way', async () => {
+    const tx = pay([mine.input], { extraBodyEntries: new Map([[18n, new Tagged(258n, [[theirs.input.txId, theirs.input.index]])]]) });
     await expect(signTx(tx, false, ctx())).rejects.toBeInstanceOf(ChwError);
     await expect(signTx(tx, false, ctx())).rejects.toThrow(/CHW_UNSUPPORTED_TX_FORM/);
     expect(witnessCount(await signTx(tx, true, ctx()))).toBe(1);
