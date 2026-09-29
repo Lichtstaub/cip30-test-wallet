@@ -8,6 +8,8 @@ import { encodeUtxo, type MemoryLedger } from '../core/ledger.js';
 import { parseAddressArg, parseHexArg, resolveDataSigner } from '../core/sign-data.js';
 import { requirements } from '../core/requirements.js';
 import { parseTxHex, refuseDeprecatedCertificate, resolveInputs, signTx as coreSignTx, unsupportedForms } from '../core/sign-tx.js';
+import { selectCollateral, selectForAmount } from '../core/select.js';
+import { addAsset, addAssets, valueCbor, type MultiAsset } from '../core/value.js';
 import type { Control } from './control.js';
 import type { PageConfig } from './config.js';
 
@@ -50,6 +52,8 @@ export interface Cip30Api {
   signTx(tx: string, partialSign?: boolean): Promise<string>;
   submitTx(tx: string): Promise<string>;
   signData(addr: string, payload: string): Promise<DataSignature>;
+  getCollateral?(params?: { amount?: string | number | bigint }): Promise<string[] | null>;
+  experimental?: { getCollateral(params?: { amount?: string | number | bigint }): Promise<string[] | null> };
   cip95?: Cip95Api;
 }
 
@@ -100,6 +104,41 @@ export function buildProvider(ctx: WalletContext): Cip30Provider {
   };
 }
 
+/** CIP-30 caps collateral at about 5 ADA ("something like 5 ADA"), Lace uses exactly this. */
+const MAX_COLLATERAL = 5_000_000n;
+
+/**
+ * getCollateral({ amount }). No argument or no amount means 5 ADA, the way
+ * Mesh calls it and Lace answers it. amount is CBOR hex of a coin (a string
+ * is always CBOR, never a decimal), or a number or bigint. A bare value
+ * instead of the object, anything else, or more than 5 ADA is InvalidRequest.
+ */
+function collateralAmount(params: unknown): bigint {
+  if (params === undefined) return MAX_COLLATERAL;
+  if (typeof params !== 'object' || params === null || Array.isArray(params)) {
+    throw apiError(APIErrorCode.InvalidRequest, 'getCollateral takes an object { amount }');
+  }
+  const amount = (params as { amount?: unknown }).amount;
+  if (amount === undefined) return MAX_COLLATERAL;
+  let value: bigint;
+  if (typeof amount === 'bigint') value = amount;
+  else if (typeof amount === 'number' && Number.isSafeInteger(amount)) value = BigInt(amount);
+  else if (typeof amount === 'string') {
+    let decoded: unknown;
+    try {
+      decoded = decode(hexToBytes(amount));
+    } catch {
+      throw apiError(APIErrorCode.InvalidRequest, 'amount is not valid cbor');
+    }
+    if (typeof decoded !== 'bigint') throw apiError(APIErrorCode.InvalidRequest, 'amount must be the cbor of a coin');
+    value = decoded;
+  } else throw apiError(APIErrorCode.InvalidRequest, 'amount must be cbor hex, a number or a bigint');
+  // CIP-30 returns "one or more UTXOs", a zero amount would ask for none.
+  if (value <= 0n) throw apiError(APIErrorCode.InvalidRequest, 'amount must be positive');
+  if (value > MAX_COLLATERAL) throw apiError(APIErrorCode.InvalidRequest, 'amount is above the 5 ADA collateral limit');
+  return value;
+}
+
 export function buildApi(ctx: WalletContext, extensions: { cip: number }[] = []): Cip30Api {
   const { control, config, ledger } = ctx;
   const baseHex = bytesToHex(ctx.baseAddress);
@@ -121,26 +160,21 @@ export function buildApi(ctx: WalletContext, extensions: { cip: number }[] = [])
       control.record('getUtxos', [amount, paginate], async () => {
         let utxos = await ledger.getWalletUtxos();
         if (amount !== undefined) {
-          const { coin: target, hasAssets } = parseValue(amount);
-          // The wallet holds lovelace only, so any positive asset demand is unsatisfiable.
-          if (hasAssets) return null;
-          const picked = [];
-          let sum = 0n;
-          for (const u of utxos) {
-            if (sum >= target) break;
-            picked.push(u);
-            sum += u.lovelace;
-          }
-          if (sum < target) return null;
-          utxos = picked;
+          const { coin, assets } = parseValue(amount);
+          const selected = selectForAmount(utxos, coin, assets);
+          if (selected === null) return null;
+          utxos = selected;
         }
         if (paginate !== undefined) utxos = paginateList(utxos, paginate);
         return utxos.map((u) => bytesToHex(encodeUtxo(u)));
       }),
     getBalance: () =>
       control.record('getBalance', [], async () => {
-        const total = (await ledger.getWalletUtxos()).reduce((sum, u) => sum + u.lovelace, 0n);
-        return bytesToHex(encode(total));
+        const utxos = await ledger.getWalletUtxos();
+        const coin = utxos.reduce((sum, u) => sum + u.lovelace, 0n);
+        const assets: MultiAsset = new Map();
+        for (const u of utxos) addAssets(assets, u.assets);
+        return bytesToHex(encode(valueCbor(coin, assets)));
       }),
     signTx: (tx, partialSign = false) =>
       control.record('signTx', [tx, partialSign], async () => {
@@ -177,6 +211,16 @@ export function buildApi(ctx: WalletContext, extensions: { cip: number }[] = [])
     signData: (addr, payload) => control.record('signData', [addr, payload], () => signDataWith(ctx, addr, payload, 'cip30')),
   };
   if (extensions.some((e) => e.cip === CIP95) && !control.quirks.cip95NamespaceMissing) api.cip95 = buildCip95Api(ctx);
+  if (!control.quirks.noCollateral) {
+    const collateral = (method: string) => (params?: unknown) =>
+      control.record(method, [params], async () => {
+        const amount = collateralAmount(params);
+        const selected = selectCollateral(await ledger.getWalletUtxos(), amount);
+        return selected === null ? null : selected.map((u) => bytesToHex(encodeUtxo(u)));
+      });
+    api.getCollateral = collateral('getCollateral');
+    api.experimental = { getCollateral: collateral('experimental.getCollateral') };
+  }
   return api;
 }
 
@@ -222,31 +266,30 @@ export async function signDataWith(ctx: WalletContext, addr: unknown, payload: u
 /**
  * cbor<value> is either a uint (coin) or [coin, multiasset] with
  * multiasset = { policy_id => { asset_name => quantity } }. The structure is
- * validated. Asset quantities are only summarised, because this wallet
- * cannot hold assets yet, so a positive demand can never be covered. The
- * bounds below are enforced only so malformed input is caught early, assets
- * themselves are otherwise unsupported in this release.
+ * validated. Positive asset quantities are returned keyed by hex policy
+ * and asset name, to be matched against the wallet's UTxOs.
  */
-function parseValue(hex: string): { coin: bigint; hasAssets: boolean } {
+function parseValue(hex: string): { coin: bigint; assets: MultiAsset } {
   let value: unknown;
   try {
     value = decode(hexToBytes(hex));
   } catch {
     throw apiError(APIErrorCode.InvalidRequest, 'amount is not valid cbor');
   }
-  if (typeof value === 'bigint' && value >= 0n) return { coin: value, hasAssets: false };
+  if (typeof value === 'bigint' && value >= 0n) return { coin: value, assets: new Map() };
   if (Array.isArray(value) && value.length === 2 && typeof value[0] === 'bigint' && value[0] >= 0n && value[1] instanceof Map) {
-    let hasAssets = false;
+    const parsed: MultiAsset = new Map();
     for (const [policy, assets] of value[1]) {
       if (!(policy instanceof Uint8Array) || policy.length !== 28) throw apiError(APIErrorCode.InvalidRequest, 'amount policy ids must be 28 bytes');
       if (!(assets instanceof Map)) throw apiError(APIErrorCode.InvalidRequest, 'amount multiasset must map policies to asset maps');
+      const policyHex = bytesToHex(policy);
       for (const [name, quantity] of assets) {
         if (!(name instanceof Uint8Array) || name.length > 32) throw apiError(APIErrorCode.InvalidRequest, 'amount asset names must be at most 32 bytes');
         if (typeof quantity !== 'bigint' || quantity < 0n) throw apiError(APIErrorCode.InvalidRequest, 'amount asset quantities must be non-negative integers');
-        if (quantity > 0n) hasAssets = true;
+        if (quantity > 0n) addAsset(parsed, policyHex, bytesToHex(name), quantity);
       }
     }
-    return { coin: value[0], hasAssets };
+    return { coin: value[0], assets: parsed };
   }
   throw apiError(APIErrorCode.InvalidRequest, 'amount must be a cbor value');
 }

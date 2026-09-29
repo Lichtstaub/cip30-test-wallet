@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import CSL from '@emurgo/cardano-serialization-lib-nodejs';
-import { readFileSync } from 'node:fs';
 import { Address, Anchor, Assets, Credential, DRep, KeyHash, Transaction, TransactionHash, Url, UTxO, VotingProcedures, GovernanceAction } from '@evolution-sdk/evolution';
-import { makeTxBuilder } from '@evolution-sdk/evolution/sdk/builders/TransactionBuilder';
-import { preprod } from '@evolution-sdk/evolution/sdk/client/Chain';
-import type { ProtocolParameters } from '@evolution-sdk/evolution/sdk/provider/Provider';
 import { parseAddressArg } from '../src/core/sign-data.js';
 import { bytesToHex, hexToBytes } from '../src/core/bytes.js';
 import { prepareWallet } from '../src/host/config.js';
@@ -12,9 +8,10 @@ import { installWallet, syntheticOwnedUtxo, type InstallTarget } from '../src/pa
 import { deriveAccount } from '../src/derive/index.js';
 import { signWithKeys } from '../src/core/sign-tx.js';
 import { keyHash, publicKey } from '../src/core/keys.js';
-import { cslGovernanceTx, cslVerifiedKeys, cslVerifiedKeysOfTx, cslWitnessCount, mergeWitnessSets, type CslCert } from './helpers/csl-governance.js';
+import { cslGovernanceTx, cslTxId, cslVerifiedKeys, cslVerifiedKeysOfTx, cslWitnessCount, mergeWitnessSets, type CslCert } from './helpers/csl-governance.js';
 import { spliceWitnessSet } from './helpers/build-tx.js';
 import { enableChw } from './helpers/page.js';
+import { evolutionBuild } from './helpers/evolution-build.js';
 import { MNEMONIC } from './fixtures/vectors.js';
 
 const w = prepareWallet();
@@ -55,7 +52,6 @@ async function walletApi() {
   return enableChw(target);
 }
 
-const idOf = (hex: string) => CSL.FixedTransaction.from_hex(hex).transaction_hash().to_hex();
 
 /**
  * The full check of exit criterion 1: the wallet's witnesses verify with CSL,
@@ -67,7 +63,7 @@ async function signMergeAndCheck(tx: string, expectedKeys: string[], foreignKeys
   expect(cslVerifiedKeys(tx, ws).sort()).toEqual([...expectedKeys].sort());
   // Our splice replaces the witness set, so it must carry the foreign witnesses already in tx as well.
   const merged = merger === 'evolution' ? Transaction.addVKeyWitnessesHex(tx, ws) : spliceWitnessSet(tx, mergeWitnessSets(tx, ws));
-  expect(idOf(merged)).toBe(idOf(tx));
+  expect(cslTxId(merged)).toBe(cslTxId(tx));
   const all = [...expectedKeys, ...foreignKeys].sort();
   expect(cslVerifiedKeysOfTx(merged).sort()).toEqual(all);
   expect(cslWitnessCount(merged)).toBe(all.length);
@@ -135,55 +131,14 @@ describe('governance signing agrees with CSL and survives an Evolution merge', (
   });
 });
 
-// Recorded once from Koios preprod (see docs/recipes.md, "Protocol parameters offline"), so the builder runs without a network.
-interface KoiosEpochParams {
-  min_fee_a: number; min_fee_b: number; max_tx_size: number; max_val_size: number;
-  key_deposit: string; pool_deposit: string; drep_deposit: string; gov_action_deposit: string;
-  price_mem: number; price_step: number; max_tx_ex_mem: number; max_tx_ex_steps: number;
-  coins_per_utxo_size: string; collateral_percent: number; max_collateral_inputs: number;
-  min_fee_ref_script_cost_per_byte: number; cost_models: Record<'PlutusV1' | 'PlutusV2' | 'PlutusV3', number[]>;
-}
-
-/** Koios epoch_params field names to Evolution's Provider.ProtocolParameters. */
-function toEvolutionParams(k: KoiosEpochParams): ProtocolParameters {
-  const model = (costs: number[]) => Object.fromEntries(costs.map((c, i) => [String(i), c]));
-  return {
-    minFeeA: k.min_fee_a, minFeeB: k.min_fee_b, maxTxSize: k.max_tx_size, maxValSize: k.max_val_size,
-    keyDeposit: BigInt(k.key_deposit), poolDeposit: BigInt(k.pool_deposit), drepDeposit: BigInt(k.drep_deposit), govActionDeposit: BigInt(k.gov_action_deposit),
-    priceMem: k.price_mem, priceStep: k.price_step, maxTxExMem: BigInt(k.max_tx_ex_mem), maxTxExSteps: BigInt(k.max_tx_ex_steps),
-    coinsPerUtxoByte: BigInt(k.coins_per_utxo_size), collateralPercentage: k.collateral_percent, maxCollateralInputs: k.max_collateral_inputs,
-    minFeeRefScriptCostPerByte: k.min_fee_ref_script_cost_per_byte,
-    costModels: { PlutusV1: model(k.cost_models.PlutusV1), PlutusV2: model(k.cost_models.PlutusV2), PlutusV3: model(k.cost_models.PlutusV3) },
-  };
-}
-
-const koios = (JSON.parse(readFileSync(new URL('./fixtures/koios-epoch-params-preprod.json', import.meta.url), 'utf8')) as KoiosEpochParams[])[0]!;
-
-async function evolutionBuild(configure: (b: ReturnType<typeof makeTxBuilder>) => void): Promise<string> {
-  const builder = makeTxBuilder({ chain: preprod });
-  configure(builder);
-  const built = await builder.build({
-    changeAddress: Address.fromBytes(address),
-    availableUtxos: [
-      new UTxO.UTxO({
-        transactionId: TransactionHash.fromBytes(utxo.input.txId),
-        index: 0n,
-        address: Address.fromBytes(address),
-        assets: Assets.fromLovelace(utxo.lovelace),
-      }),
-    ],
-    fullProtocolParameters: toEvolutionParams(koios),
-  });
-  return Transaction.toCBORHex(await built.toTransaction());
-}
-
 describe('Evolution-built governance transactions', () => {
+  const availableUtxos = [new UTxO.UTxO({ transactionId: TransactionHash.fromBytes(utxo.input.txId), index: 0n, address: Address.fromBytes(address), assets: Assets.fromLovelace(utxo.lovelace) })];
   const stake = Credential.makeKeyHash(hexToBytes(rewardHex).slice(1));
   const drepHash = KeyHash.fromHex(w.drepKeyHashHex);
   const drepCredential = Credential.makeKeyHash(hexToBytes(w.drepKeyHashHex));
 
   it('delegateToDRep', async () => {
-    const tx = await evolutionBuild((b) => b.delegateToDRep({ stakeCredential: stake, drep: DRep.fromKeyHash(drepHash) }));
+    const tx = await evolutionBuild((b) => b.delegateToDRep({ stakeCredential: stake, drep: DRep.fromKeyHash(drepHash) }), address, availableUtxos);
     await signMergeAndCheck(tx, [roleKey.payment, roleKey.stake]);
   });
 
@@ -195,14 +150,14 @@ describe('Evolution-built governance transactions', () => {
           new GovernanceAction.GovActionId({ transactionId: TransactionHash.fromBytes(new Uint8Array(32).fill(3)), govActionIndex: 0n }),
           new VotingProcedures.VotingProcedure({ vote: VotingProcedures.yes(), anchor: null }),
         ),
-      }),
+      }), address, availableUtxos,
     );
     await signMergeAndCheck(tx, [roleKey.payment, roleKey.drep]);
   });
 
   it('updateDRep', async () => {
     const anchor = new Anchor.Anchor({ anchorUrl: new Url.Url({ href: 'https://example.com/d.json' }), anchorDataHash: new Uint8Array(32) });
-    const tx = await evolutionBuild((b) => b.updateDRep({ drepCredential, anchor }));
+    const tx = await evolutionBuild((b) => b.updateDRep({ drepCredential, anchor }), address, availableUtxos);
     await signMergeAndCheck(tx, [roleKey.payment, roleKey.drep]);
   });
 });

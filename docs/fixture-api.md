@@ -13,8 +13,8 @@
 | `mnemonic` | public CSL test vector | CIP-1852 account source. Never use a funded mnemonic, the keys end up in the page and in Playwright traces |
 | `accountIndex` | `0` | CIP-1852 account, 0 to 2^31 - 1 |
 | `install` | `true` | Set `false` to skip injecting the provider. `name`, `addresses`, `paymentPublicKeyHex` and `stakePublicKeyHex` still work, every other handle member rejects |
-| `utxos` | `[{ lovelace: 10_000_000 }]` | Owned outputs, in order. Ids are deterministic per name and position |
-| `foreignUtxos` | `[]` | Outputs the ledger knows but does not own, for multi-party transactions |
+| `utxos` | `[{ lovelace: 10_000_000 }]` | Owned outputs, in order. Each is `{ lovelace, assets?, datumHash?, inlineDatum?, scriptRef? }`. `assets` maps units (policy id hex plus asset name hex) to quantities up to 2^64 - 1. Ids are deterministic per name and position |
+| `foreignUtxos` | `[]` | Outputs the ledger knows but does not own, for multi-party transactions. Same shape as `utxos` |
 | `quirks` | `{}` | See the quirk catalogue |
 | `stakeRegistered` | `false` | CIP-95: report the stake key as registered. Defaults to a fresh, unregistered wallet |
 

@@ -22,8 +22,18 @@ export interface ParsedProposal {
   guardrail?: Uint8Array;
 }
 
+/** Every input the transaction spends or puts at risk, body inputs first and then collateral inputs. The one source of that order. */
+export function spentInputs(body: ParsedBody): Array<{ input: TxInput; label: 'input' | 'collateral input' }> {
+  return [
+    ...body.inputs.map((input) => ({ input, label: 'input' as const })),
+    ...body.collateralInputs.map((input) => ({ input, label: 'collateral input' as const })),
+  ];
+}
+
 export interface ParsedBody {
   inputs: TxInput[];
+  /** Collateral inputs (body key 13), spent only when a script fails. */
+  collateralInputs: TxInput[];
   requiredSigners: Uint8Array[];
   /** One entry per withdrawal, in map order. hash is the 28 byte stake credential. */
   withdrawals: { hash: Uint8Array; isScript: boolean }[];
@@ -37,6 +47,9 @@ export interface ParsedBody {
 }
 
 const BODY_INPUTS = 0n;
+const BODY_COLLATERAL_INPUTS = 13n;
+const BODY_COLLATERAL_RETURN = 16n;
+const BODY_TOTAL_COLLATERAL = 17n;
 const BODY_CERTIFICATES = 4n;
 const BODY_WITHDRAWALS = 5n;
 const BODY_REQUIRED_SIGNERS = 14n;
@@ -63,13 +76,27 @@ function asBytes(value: CborValue, what: string): Uint8Array {
   return value;
 }
 
-function parseBodyMap(body: Map<CborValue, CborValue>): ParsedBody {
-  const inputs = unwrapSet(mapGet(body, BODY_INPUTS)).map((item) => {
+function parseInputs(value: CborValue | undefined): TxInput[] {
+  return unwrapSet(value).map((item) => {
     if (!Array.isArray(item) || item.length !== 2) throw new Error('malformed transaction input');
     const [txId, index] = item;
     if (typeof index !== 'bigint') throw new Error('malformed input index');
     return { txId: asBytes(txId, 'input tx id'), index };
   });
+}
+
+function parseBodyMap(body: Map<CborValue, CborValue>): ParsedBody {
+  const inputs = parseInputs(mapGet(body, BODY_INPUTS));
+
+  // nonempty_set<transaction_input>
+  const rawCollateral = mapGet(body, BODY_COLLATERAL_INPUTS);
+  const collateralInputs = parseInputs(rawCollateral);
+  if (rawCollateral !== undefined && collateralInputs.length === 0) throw new Error('collateral inputs must not be empty');
+  // The collateral return is an output without a witness requirement, so only its shape is checked.
+  const rawReturn = mapGet(body, BODY_COLLATERAL_RETURN);
+  if (rawReturn !== undefined && !Array.isArray(rawReturn) && !(rawReturn instanceof Map)) throw new Error('malformed collateral return');
+  const rawTotal = mapGet(body, BODY_TOTAL_COLLATERAL);
+  if (rawTotal !== undefined && (typeof rawTotal !== 'bigint' || rawTotal < 0n)) throw new Error('malformed total collateral');
 
   const requiredSigners = unwrapSet(mapGet(body, BODY_REQUIRED_SIGNERS)).map((k) => asBytes(k, 'required signer'));
 
@@ -127,6 +154,7 @@ function parseBodyMap(body: Map<CborValue, CborValue>): ParsedBody {
 
   return {
     inputs,
+    collateralInputs,
     requiredSigners,
     withdrawals,
     bodyKeys: [...body.keys()].map((k) => {

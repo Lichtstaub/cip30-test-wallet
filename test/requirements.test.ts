@@ -140,8 +140,8 @@ describe('requirements: the witness table of the spec, row by row', () => {
     expect(reqs.keys).toHaveLength(1);
   });
 
-  it('still reports the body keys M4 does not cover (collateral inputs, 13)', () => {
-    expect(reqsOf([[13n, new Tagged(258n, [[utxo.input.txId, 0n]])]]).unsupported).toEqual(['body key 13 (collateral inputs)']);
+  it('still reports the body keys M4 does not cover (mint, 9)', () => {
+    expect(reqsOf([[9n, new Map([[new Uint8Array(28), new Map([[new Uint8Array(0), 1n]])]])]]).unsupported).toEqual(['body key 9 (mint)']);
   });
 
   it('exports code 3 for deprecated certificates', () => {

@@ -1,7 +1,7 @@
 import { isByronAddress, isScriptPayment, paymentHash } from './addresses.js';
 import { bytesToHex } from './bytes.js';
 import type { CborValue } from './cbor/decode.js';
-import { unwrapSet, type ParsedBody } from './cbor/tx.js';
+import { spentInputs, unwrapSet, type ParsedBody } from './cbor/tx.js';
 import { apiError, APIErrorCode } from './errors.js';
 import type { Utxo } from './ledger.js';
 
@@ -34,15 +34,12 @@ export interface Requirements {
   unsupported: string[];
 }
 
-const SUPPORTED_BODY_KEYS = new Set<bigint>([0n, 1n, 2n, 3n, 4n, 5n, 7n, 8n, 14n, 15n, 19n, 20n, 21n, 22n]);
+const SUPPORTED_BODY_KEYS = new Set<bigint>([0n, 1n, 2n, 3n, 4n, 5n, 7n, 8n, 13n, 14n, 15n, 16n, 17n, 19n, 20n, 21n, 22n]);
 
 const BODY_KEY_NAMES: Record<string, string> = {
   '6': 'update',
   '9': 'mint',
   '11': 'script data hash',
-  '13': 'collateral inputs',
-  '16': 'collateral return',
-  '17': 'total collateral',
   '18': 'reference inputs',
 };
 
@@ -163,9 +160,10 @@ function addCertificate(cert: CborValue[], out: Requirements): void {
 }
 
 /**
- * Every requirement the body creates, in body order: inputs, required
- * signers, withdrawals, certificates, votes, proposals. An unresolved input
- * is skipped here, signTx raises CHW_UNRESOLVED_INPUT for it.
+ * Every requirement the body creates, in body order: inputs, collateral
+ * inputs, required signers, withdrawals, certificates, votes, proposals. An unresolved input
+ * is skipped here, signTx raises CHW_UNRESOLVED_INPUT for it. The resolved
+ * list covers body.inputs first, then body.collateralInputs.
  */
 export function requirements(body: ParsedBody, resolvedInputs: ReadonlyArray<Utxo | undefined>): Requirements {
   const out: Requirements = { keys: [], scripts: [], unsupported: [] };
@@ -177,10 +175,10 @@ export function requirements(body: ParsedBody, resolvedInputs: ReadonlyArray<Utx
     }
   }
 
-  for (const [i, input] of body.inputs.entries()) {
+  for (const [i, { input, label }] of spentInputs(body).entries()) {
     const utxo = resolvedInputs[i];
     if (!utxo) continue;
-    const where = `input ${bytesToHex(input.txId)}#${input.index}`;
+    const where = `${label} ${bytesToHex(input.txId)}#${input.index}`;
     if (isByronAddress(utxo.address)) out.unsupported.push('an input at a Byron address');
     else if (isScriptPayment(utxo.address)) out.scripts.push({ scriptHash: paymentHash(utxo.address), source: 'an input at a script address' });
     else out.keys.push({ keyHash: paymentHash(utxo.address), source: where, foreignOnly: false });

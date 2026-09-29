@@ -163,4 +163,59 @@
       out.textContent = 'error ' + (e && e.code);
     });
   });
+
+  // Reads the CBOR header at offset i of a byte array: major type, argument, next offset.
+  // Enough for value = coin / [coin, multiasset], no library needed.
+  // Numbers instead of BigInt, fine for the demo amounts (below 2^53).
+  function cborHead(bytes, i) {
+    var first = bytes[i];
+    var major = first >> 5;
+    var info = first & 31;
+    if (info < 24) return { major: major, arg: info, next: i + 1 };
+    var size = { 24: 1, 25: 2, 26: 4, 27: 8 }[info];
+    var arg = 0;
+    for (var k = 1; k <= size; k++) arg = arg * 256 + bytes[i + k];
+    return { major: major, arg: arg, next: i + 1 + size };
+  }
+
+  function bytesOf(hex) {
+    var out = [];
+    for (var i = 0; i < hex.length; i += 2) out.push(parseInt(hex.substr(i, 2), 16));
+    return out;
+  }
+
+  document.getElementById('balance').addEventListener('click', function () {
+    var out = document.getElementById('balance-result');
+    if (!connectedApi) {
+      out.textContent = 'not connected';
+      return;
+    }
+    connectedApi.getBalance().then(function (hex) {
+      var bytes = bytesOf(hex);
+      var head = cborHead(bytes, 0);
+      var coin;
+      var kinds = 0;
+      if (head.major === 0) coin = head.arg;
+      else {
+        var coinHead = cborHead(bytes, head.next);
+        coin = coinHead.arg;
+        var policies = cborHead(bytes, coinHead.next);
+        var p = policies.next;
+        for (var j = 0; j < policies.arg; j++) {
+          var policy = cborHead(bytes, p);
+          var names = cborHead(bytes, policy.next + policy.arg);
+          kinds += names.arg;
+          p = names.next;
+          for (var n = 0; n < names.arg; n++) {
+            var name = cborHead(bytes, p);
+            var quantity = cborHead(bytes, name.next + name.arg);
+            p = quantity.next;
+          }
+        }
+      }
+      out.textContent = coin + ' lovelace, ' + kinds + (kinds === 1 ? ' token kind' : ' token kinds');
+    }).catch(function (e) {
+      out.textContent = 'error ' + (e && e.code);
+    });
+  });
 })();
