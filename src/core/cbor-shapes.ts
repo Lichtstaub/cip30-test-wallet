@@ -1,4 +1,4 @@
-import { Tagged, type CborValue } from '../core/cbor/decode.js';
+import { Tagged, type CborValue } from './cbor/decode.js';
 
 // Shape checks for configuration input, following the Conway CDDL. They reject
 // CBOR that parses but that no ledger or CSL would accept as that type.

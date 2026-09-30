@@ -8,7 +8,7 @@ import { publicKey } from '../core/keys.js';
 import { deriveAccount, type DerivedAccount } from '../derive/index.js';
 import { MAX_UINT64, parseAssetUnits } from '../core/value.js';
 import type { OwnedUtxoConfig, PageConfig, QuirkConfig, UtxoExtras } from '../page/config.js';
-import { isPlutusData } from './cbor-shapes.js';
+import { isPlutusData } from '../core/cbor-shapes.js';
 import { scriptFromRef } from '../core/scripts.js';
 
 /** Public test vector from the CSL documentation. Holds no funds, safe to ship. */

@@ -1,5 +1,5 @@
 import { bytesToHex, hexToBytes } from '../core/bytes.js';
-import { decode } from '../core/cbor/decode.js';
+import { decode, type CborValue } from '../core/cbor/decode.js';
 import { encode } from '../core/cbor/encode.js';
 import { signCose } from '../core/cose.js';
 import { APIErrorCode, apiError, DataSignErrorCode, dataSignError, TxSignErrorCode, txSignError } from '../core/errors.js';
@@ -9,7 +9,7 @@ import { parseAddressArg, parseHexArg, resolveDataSigner } from '../core/sign-da
 import { requirements } from '../core/requirements.js';
 import { parseTxHex, refuseDeprecatedCertificate, resolveInputs, signTx as coreSignTx } from '../core/sign-tx.js';
 import { selectCollateral, selectForAmount } from '../core/select.js';
-import { addAsset, addAssets, valueCbor, type MultiAsset } from '../core/value.js';
+import { addAssets, valueCbor, valueFromCbor, type MultiAsset } from '../core/value.js';
 import type { Control } from './control.js';
 import type { PageConfig } from './config.js';
 
@@ -276,22 +276,11 @@ function parseValue(hex: string): { coin: bigint; assets: MultiAsset } {
   } catch {
     throw apiError(APIErrorCode.InvalidRequest, 'amount is not valid cbor');
   }
-  if (typeof value === 'bigint' && value >= 0n) return { coin: value, assets: new Map() };
-  if (Array.isArray(value) && value.length === 2 && typeof value[0] === 'bigint' && value[0] >= 0n && value[1] instanceof Map) {
-    const parsed: MultiAsset = new Map();
-    for (const [policy, assets] of value[1]) {
-      if (!(policy instanceof Uint8Array) || policy.length !== 28) throw apiError(APIErrorCode.InvalidRequest, 'amount policy ids must be 28 bytes');
-      if (!(assets instanceof Map)) throw apiError(APIErrorCode.InvalidRequest, 'amount multiasset must map policies to asset maps');
-      const policyHex = bytesToHex(policy);
-      for (const [name, quantity] of assets) {
-        if (!(name instanceof Uint8Array) || name.length > 32) throw apiError(APIErrorCode.InvalidRequest, 'amount asset names must be at most 32 bytes');
-        if (typeof quantity !== 'bigint' || quantity < 0n) throw apiError(APIErrorCode.InvalidRequest, 'amount asset quantities must be non-negative integers');
-        if (quantity > 0n) addAsset(parsed, policyHex, bytesToHex(name), quantity);
-      }
-    }
-    return { coin: value[0], assets: parsed };
+  try {
+    return valueFromCbor(value as CborValue, 'amount');
+  } catch (error) {
+    throw apiError(APIErrorCode.InvalidRequest, error instanceof Error ? error.message : 'amount must be a cbor value');
   }
-  throw apiError(APIErrorCode.InvalidRequest, 'amount must be a cbor value');
 }
 
 /**
