@@ -19,7 +19,7 @@ In an installed project these files are under `node_modules/cip30-test-wallet/`.
 ## Rules that save a debugging round
 
 - Import `test`, `expect`, `expectSignedBy` and `expectSignedData` from `cip30-test-wallet/playwright`, not from `@playwright/test`.
-- The wallet's UTxOs exist only in the wallet. Build transactions from CIP-30 `getUtxos()` and read it again after every `submitTx`, the outputs change. Never build them from a chain lookup of the address. Protocol parameters still come from the network, serve them from a recorded file for offline runs.
+- The wallet's UTxOs exist only in the wallet. Build transactions from CIP-30 `getUtxos()` and read it again after every `submitTx`, the outputs change. Never build transactions from a chain lookup of the address. Protocol parameters still come from the network, serve them from a recorded file for offline runs.
 - Nothing reaches a chain. The wallet's `submitTx` records the transaction, applies it to the wallet's UTxOs and returns the id. `wallet.utxos()` reads the resulting outputs from the test process. A provider or backend that submits must be intercepted with `page.route`, then prove the transaction with `expectSignedBy`.
 - A call count proves no signature. Prove it with `expectSignedBy(tx, wallet)` for transactions and `expectSignedData(result, { payload, address })` for messages.
 - Wallet errors are plain `{ code, info }` objects as CIP-30 requires. Code that reads `err.message` is a dApp bug the test just found.

@@ -1,7 +1,8 @@
 import { test as base, expect, type Page } from '@playwright/test';
 import { initScript } from '../host/bundle.js';
 import { prepareWallet, type WalletOptions } from '../host/config.js';
-import { LEDGER_BINDING, ledgerBinding, utxoToConfig, walletLedger, type LedgerUtxo } from '../host/ledger.js';
+import { LEDGER_BINDING, ledgerBinding, walletLedger } from '../host/ledger.js';
+import { utxoToConfig, type LedgerUtxo } from '../page/utxo-config.js';
 import type { MemoryLedger } from '../core/ledger.js';
 import type { JournalEntry, QuirkConfig, QuirkName } from '../page/config.js';
 import type { Control } from '../page/control.js';
@@ -9,7 +10,7 @@ import type { Control } from '../page/control.js';
 export { expectSignedBy, expectSignedData } from '../host/assert.js';
 export type { SignedDataExpectation, SignerRole } from '../host/assert.js';
 export type { WalletOptions } from '../host/config.js';
-export type { LedgerUtxo } from '../host/ledger.js';
+export type { LedgerUtxo } from '../page/utxo-config.js';
 export { expect };
 
 export interface WalletHandle {

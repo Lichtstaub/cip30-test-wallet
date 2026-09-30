@@ -1,4 +1,4 @@
-import { Tagged, type CborValue } from './cbor/decode.js';
+import { Tagged, decode, type CborValue } from './cbor/decode.js';
 
 // Shape checks for configuration input, following the Conway CDDL. They reject
 // CBOR that parses but that no ledger or CSL would accept as that type.
@@ -22,4 +22,13 @@ export function isPlutusData(value: CborValue, depth = 0): boolean {
     if (tag === 102n) return Array.isArray(inner) && inner.length === 2 && typeof inner[0] === 'bigint' && inner[0] >= 0n && Array.isArray(inner[1]) && all(inner[1]);
   }
   return false;
+}
+
+/** Exactly one CBOR item that is plutus_data, as an inline datum carries it. */
+export function isPlutusDataBytes(bytes: Uint8Array): boolean {
+  try {
+    return isPlutusData(decode(bytes));
+  } catch {
+    return false;
+  }
 }

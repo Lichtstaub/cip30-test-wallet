@@ -2,8 +2,8 @@ import { blake2b } from '@noble/hashes/blake2.js';
 import { Tagged, arrayItemRanges, decode, decodeItem, mapValueOffsets, readHeader, type CborValue } from './decode.js';
 import { encode } from './encode.js';
 import type { Utxo } from '../ledger.js';
-import { isPlutusData } from '../cbor-shapes.js';
-import { providedScript, scriptFromRef, type ProvidedScript, type ScriptLanguage } from '../scripts.js';
+import { isPlutusDataBytes } from '../cbor-shapes.js';
+import { isScriptRef, providedScript, type ProvidedScript, type ScriptLanguage } from '../scripts.js';
 import { MAX_INT64, MIN_INT64, valueFromCbor } from '../value.js';
 
 // A Cardano transaction is [body, witness_set, is_valid, auxiliary_data].
@@ -149,15 +149,6 @@ function parseMint(value: CborValue | undefined): Uint8Array[] {
   return policies;
 }
 
-/** Exactly one CBOR item that is plutus_data. */
-function isPlutusDataBytes(bytes: Uint8Array): boolean {
-  try {
-    return isPlutusData(decode(bytes));
-  } catch {
-    return false;
-  }
-}
-
 // transaction_output = [address, value, ? datum_hash] / {0: address, 1: value, ? 2: datum_option, ? 3: script_ref}
 function parseOutput(output: CborValue, where: string): TxOutput {
   let address: CborValue | undefined;
@@ -195,11 +186,7 @@ function parseOutput(output: CborValue, where: string): TxOutput {
   if (scriptRef !== undefined) {
     // script_ref = #6.24(bytes .cbor script)
     if (!(scriptRef instanceof Tagged) || scriptRef.tag !== 24n || !(scriptRef.value instanceof Uint8Array)) throw new Error(`malformed script ref in ${where}`);
-    try {
-      scriptFromRef(scriptRef.value);
-    } catch {
-      throw new Error(`malformed script ref in ${where}`);
-    }
+    if (!isScriptRef(scriptRef.value)) throw new Error(`malformed script ref in ${where}`);
     out.scriptRef = scriptRef.value;
   }
   return out;

@@ -7,11 +7,11 @@ import { APIErrorCode } from '../src/core/errors.js';
 import { parseTxHex } from '../src/core/sign-tx.js';
 import { valueFromCbor } from '../src/core/value.js';
 import { installWallet, type InstallTarget } from '../src/page/install.js';
-import { buildTx } from './helpers/build-tx.js';
+import { buildTx, TEST_ADDRESS } from './helpers/build-tx.js';
 import { enableChw, testConfig } from './helpers/page.js';
 import { hash28 as h, PLUTUS_V3, syntheticInput } from './helpers/synthetic.js';
 
-const ADDRESS = '00' + '11'.repeat(28) + '22'.repeat(28);
+const ADDRESS = bytesToHex(TEST_ADDRESS);
 const input = syntheticInput('tx-outputs', 0n);
 const refusal = (hex: string): unknown => {
   try {

@@ -1,15 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import CSL from '@emurgo/cardano-serialization-lib-nodejs';
-import { bytesToHex } from '../src/core/bytes.js';
-import { parseTransaction } from '../src/core/cbor/tx.js';
+import { bytesToHex, hexToBytes } from '../src/core/bytes.js';
+import { txHash } from '../src/core/cbor/tx.js';
 import { parseAddressArg } from '../src/core/sign-data.js';
 import { prepareWallet } from '../src/host/config.js';
-import { LEDGER_BINDING, ledgerBinding, utxoToConfig, walletLedger } from '../src/host/ledger.js';
-import { installWallet, syntheticOwnedUtxo, utxoFromConfig, type InstallTarget } from '../src/page/install.js';
-import { buildTx, spliceWitnessSet } from './helpers/build-tx.js';
+import { LEDGER_BINDING, ledgerBinding, walletLedger } from '../src/host/ledger.js';
+import { installWallet, syntheticOwnedUtxo, type InstallTarget } from '../src/page/install.js';
+import { utxoFromConfig, utxoToConfig } from '../src/page/utxo-config.js';
+import { buildTx, spliceWitnessSet, TEST_ADDRESS } from './helpers/build-tx.js';
 import { enableChw } from './helpers/page.js';
 import { hash28 as h, syntheticInput } from './helpers/synthetic.js';
-import { hexToBytes } from '../src/core/bytes.js';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -25,7 +25,7 @@ describe('JSON shape of ledger UTxOs', () => {
     const utxo = utxoFromConfig({
       txId: 'aa'.repeat(32),
       index: 3,
-      addressHex: '00' + '11'.repeat(28) + '22'.repeat(28),
+      addressHex: bytesToHex(TEST_ADDRESS),
       lovelace: '18446744073709551615',
       assets: { [bytesToHex(h(9)) + '41']: '1152921504606846976' },
       inlineDatum: 'd87980',
@@ -33,7 +33,7 @@ describe('JSON shape of ledger UTxOs', () => {
     });
     expect(utxoFromConfig(utxoToConfig(utxo))).toEqual(utxo);
     expect(utxoToConfig(utxo).assets).toEqual({ [bytesToHex(h(9)) + '41']: '1152921504606846976' });
-    const hashed = utxoFromConfig({ txId: 'bb'.repeat(32), index: 0, addressHex: '00' + '11'.repeat(28) + '22'.repeat(28), lovelace: '1', datumHash: '07'.repeat(32) });
+    const hashed = utxoFromConfig({ txId: 'bb'.repeat(32), index: 0, addressHex: bytesToHex(TEST_ADDRESS), lovelace: '1', datumHash: '07'.repeat(32) });
     expect(utxoFromConfig(utxoToConfig(hashed))).toEqual(hashed);
   });
 });
@@ -63,7 +63,7 @@ describe('a page wallet on a host ledger', () => {
     const tx = buildTx({ inputs: [utxo0.input], outputs: [{ address, lovelace: 9_800_000n }], fee: 200_000n });
     const signed = spliceWitnessSet(tx, await api.signTx(tx, false));
     const id = await api.submitTx(signed);
-    expect(id).toBe(bytesToHex(parseTransaction(hexToBytes(signed)).hash));
+    expect(id).toBe(bytesToHex(txHash(hexToBytes(signed))));
 
     // The host ledger holds the new state, a reloaded page reads it from there.
     expect((await node.getWalletUtxos()).map((u) => bytesToHex(u.input.txId))).toEqual([id]);

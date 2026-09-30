@@ -272,16 +272,17 @@ export async function signDataWith(ctx: WalletContext, addr: unknown, payload: u
  * and asset name, to be matched against the wallet's UTxOs.
  */
 function parseValue(hex: string): { coin: bigint; assets: MultiAsset } {
-  let value: unknown;
+  let value: CborValue;
   try {
     value = decode(hexToBytes(hex));
   } catch {
     throw apiError(APIErrorCode.InvalidRequest, 'amount is not valid cbor');
   }
   try {
-    return valueFromCbor(value as CborValue, 'amount');
+    return valueFromCbor(value, 'amount');
   } catch (error) {
-    throw apiError(APIErrorCode.InvalidRequest, error instanceof Error ? error.message : 'amount must be a cbor value');
+    // valueFromCbor throws plain Errors only.
+    throw apiError(APIErrorCode.InvalidRequest, (error as Error).message);
   }
 }
 

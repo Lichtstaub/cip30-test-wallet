@@ -1,4 +1,4 @@
-import { isByronAddress, isRewardAddress, isScriptPayment, networkTag, paymentHash } from './addresses.js';
+import { isScriptPayment, networkTag, paymentHash } from './addresses.js';
 import { bytesEqual, bytesToHex } from './bytes.js';
 import { Tagged, type CborValue } from './cbor/decode.js';
 import { encode } from './cbor/encode.js';
@@ -46,6 +46,9 @@ export interface WalletCredentials {
   networkId: 0 | 1;
 }
 
+/** What building a wallet ledger needs: the base address for configured UTxOs and the key hashes, the network comes from the configuration. */
+export type LedgerWallet = { baseAddress: Uint8Array } & Omit<WalletCredentials, 'networkId'>;
+
 export interface LedgerState {
   owned: Utxo[];
   foreign: Utxo[];
@@ -54,13 +57,21 @@ export interface LedgerState {
   stakeRegistered: boolean;
 }
 
-// Certificates whose second field is the stake credential they register or unregister (Conway CDDL).
-const REGISTERS = new Set<bigint>([0n, 7n, 11n, 12n, 13n]);
-const UNREGISTERS = new Set<bigint>([1n, 8n]);
+// Certificates whose second field is the stake credential they register (true) or unregister (false), Conway CDDL.
+const STAKE_EFFECT = new Map<bigint, boolean>([
+  [0n, true],
+  [7n, true],
+  [11n, true],
+  [12n, true],
+  [13n, true],
+  [1n, false],
+  [8n, false],
+]);
 
 /** A base, pointer or enterprise address on this network whose payment credential is this key hash. Script and Byron addresses never are. */
 export function paysTo(address: Uint8Array, keyHash: Uint8Array, networkId: 0 | 1): boolean {
-  if (address.length < 29 || address[0]! >> 4 > 7 || isByronAddress(address) || isRewardAddress(address) || isScriptPayment(address)) return false;
+  // Header types 0 to 7 are base, pointer and enterprise addresses. Byron (8) and reward (14, 15) are above.
+  if (address.length < 29 || address[0]! >> 4 > 7 || isScriptPayment(address)) return false;
   return networkTag(address) === networkId && bytesEqual(paymentHash(address), keyHash);
 }
 
@@ -88,9 +99,8 @@ export function applyTransaction(state: LedgerState, tx: ParsedTransaction, wall
     for (const certificate of body.certificates) {
       const credential = certificate[1];
       const ownKey = Array.isArray(credential) && credential[0] === 0n && credential[1] instanceof Uint8Array && bytesEqual(credential[1], wallet.stakeKeyHash);
-      if (!ownKey) continue;
-      if (REGISTERS.has(certificate[0] as bigint)) stakeRegistered = true;
-      else if (UNREGISTERS.has(certificate[0] as bigint)) stakeRegistered = false;
+      const effect = ownKey ? STAKE_EFFECT.get(certificate[0] as bigint) : undefined;
+      if (effect !== undefined) stakeRegistered = effect;
     }
   }
 

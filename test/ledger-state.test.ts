@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { baseAddressBytes, enterpriseAddressBytes } from '../src/core/addresses.js';
 import { bytesToHex, concat, hexToBytes } from '../src/core/bytes.js';
 import { Tagged } from '../src/core/cbor/decode.js';
-import { parseTransaction } from '../src/core/cbor/tx.js';
+import { txHash } from '../src/core/cbor/tx.js';
 import { keyHash, publicKey } from '../src/core/keys.js';
 import { MemoryLedger, paysTo, type Utxo, type WalletCredentials } from '../src/core/ledger.js';
 import { deriveAccount } from '../src/derive/index.js';
@@ -23,7 +23,7 @@ const myAddress = baseAddressBytes(0, myPay, myStake);
 const otherAddress = baseAddressBytes(0, keyHash(publicKey(other.payment)), myStake);
 const mine = (seed: string, lovelace = 10_000_000n): Utxo => ({ input: syntheticInput(seed, 0n), address: myAddress, lovelace });
 const outpoints = (...utxos: Utxo[]) => new Tagged(258n, utxos.map((u) => [u.input.txId, u.input.index]));
-const idOf = (tx: string) => parseTransaction(hexToBytes(tx)).hash;
+const idOf = (tx: string) => txHash(hexToBytes(tx));
 const keys = (utxos: Utxo[]) => utxos.map((u) => `${bytesToHex(u.input.txId)}#${u.input.index}`);
 
 describe('state after submit', () => {

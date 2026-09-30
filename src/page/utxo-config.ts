@@ -1,4 +1,4 @@
-import { hexToBytes } from '../core/bytes.js';
+import { bytesToHex, hexToBytes } from '../core/bytes.js';
 import { APIErrorCode, apiError } from '../core/errors.js';
 import type { Utxo } from '../core/ledger.js';
 import { parseAssetUnits } from '../core/value.js';
@@ -22,4 +22,21 @@ export function parseUtxoExtras(c: UtxoExtras): Pick<Utxo, 'assets' | 'datum' | 
 /** A UTxO in the JSON shape of walletOptions.foreignUtxos, as the ledger holds it. */
 export function utxoFromConfig(f: ForeignUtxoConfig): Utxo {
   return { input: { txId: hexToBytes(f.txId), index: BigInt(f.index) }, address: hexToBytes(f.addressHex), lovelace: BigInt(f.lovelace), ...parseUtxoExtras(f) };
+}
+
+/** A ledger UTxO in the JSON shape of walletOptions.foreignUtxos. */
+export type LedgerUtxo = ForeignUtxoConfig;
+
+/** The other direction of utxoFromConfig, for the binding and for wallet.utxos(). */
+export function utxoToConfig(u: Utxo): LedgerUtxo {
+  const out: LedgerUtxo = { txId: bytesToHex(u.input.txId), index: Number(u.input.index), addressHex: bytesToHex(u.address), lovelace: u.lovelace.toString() };
+  if (u.assets && u.assets.size > 0) {
+    const units: Record<string, string> = {};
+    for (const [policy, names] of u.assets) for (const [name, quantity] of names) units[policy + name] = quantity.toString();
+    out.assets = units;
+  }
+  if (u.datum?.kind === 'hash') out.datumHash = bytesToHex(u.datum.hash);
+  if (u.datum?.kind === 'inline') out.inlineDatum = bytesToHex(u.datum.cbor);
+  if (u.scriptRef) out.scriptRef = bytesToHex(u.scriptRef);
+  return out;
 }

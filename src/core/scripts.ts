@@ -149,6 +149,16 @@ export function scriptFromRef(ref: Uint8Array): ProvidedScript {
   return providedScript(Number(language) as ScriptLanguage, ref.slice(scriptStart, scriptEnd));
 }
 
+/** Whether these bytes are a script reference the wallet can read, the check a configured or created UTxO must pass. */
+export function isScriptRef(ref: Uint8Array): boolean {
+  try {
+    scriptFromRef(ref);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * The scripts the ledger finds for a transaction: the witness set, then the
  * reference scripts of body inputs and reference inputs, in the order given.

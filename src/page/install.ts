@@ -4,14 +4,13 @@ import { hexToBytes } from '../core/bytes.js';
 import { APIErrorCode, apiError } from '../core/errors.js';
 import { keyHash } from '../core/hash.js';
 import { publicKey, type SigningKey } from '../core/keys.js';
-import { MemoryLedger, type Ledger, type Utxo, type WalletCredentials } from '../core/ledger.js';
+import { MemoryLedger, type Ledger, type LedgerWallet, type Utxo } from '../core/ledger.js';
 import { BindingLedger, type LedgerBinding } from './binding-ledger.js';
 import type { KeyConfig, PageConfig } from './config.js';
 import { Control } from './control.js';
 import { buildProvider, type WalletContext } from './provider.js';
 import { parseUtxoExtras, utxoFromConfig } from './utxo-config.js';
 
-export { parseUtxoExtras, utxoFromConfig } from './utxo-config.js';
 
 export interface InstallTarget {
   cardano?: Record<string, unknown>;
@@ -40,7 +39,7 @@ export function syntheticOwnedUtxo(name: string, index: number, address: Uint8Ar
   return { input: { txId, index: 0n }, address, lovelace };
 }
 
-export function buildLedger(config: PageConfig, wallet: { baseAddress: Uint8Array } & Omit<WalletCredentials, 'networkId'>): MemoryLedger {
+export function buildLedger(config: PageConfig, wallet: LedgerWallet): MemoryLedger {
   const owned = config.utxos.map((u, i) => ({ ...syntheticOwnedUtxo(config.name, i, wallet.baseAddress, BigInt(u.lovelace)), ...parseUtxoExtras(u) }));
   return new MemoryLedger({
     owned,
@@ -52,7 +51,7 @@ export function buildLedger(config: PageConfig, wallet: { baseAddress: Uint8Arra
 }
 
 /** The ledger the provider talks to: the host's through a binding when the host announced one, otherwise one in the page. */
-function pageLedger(config: PageConfig, target: InstallTarget, wallet: { baseAddress: Uint8Array } & Omit<WalletCredentials, 'networkId'>): Ledger {
+function pageLedger(config: PageConfig, target: InstallTarget, wallet: LedgerWallet): Ledger {
   const name = config.ledger?.binding;
   if (name) {
     const call = (target as Record<string, unknown>)[name];
