@@ -17,6 +17,11 @@ export const TxSignErrorCode = {
   DeprecatedCertificate: 3,
 } as const;
 
+export const TxSendErrorCode = {
+  Refused: 1,
+  Failure: 2,
+} as const;
+
 export const DataSignErrorCode = {
   ProofGeneration: 1,
   AddressNotPK: 2,
@@ -36,8 +41,19 @@ export function txSignError(code: (typeof TxSignErrorCode)[keyof typeof TxSignEr
   return { code, info };
 }
 
+export function txSendError(code: (typeof TxSendErrorCode)[keyof typeof TxSendErrorCode], info: string): Cip30Error {
+  return { code, info };
+}
+
 export function dataSignError(code: (typeof DataSignErrorCode)[keyof typeof DataSignErrorCode], info: string): Cip30Error {
   return { code, info };
+}
+
+/** A plain CIP-30 error object: numeric code, string info, not an Error instance. */
+export function isCip30Error(value: unknown): value is Cip30Error {
+  if (typeof value !== 'object' || value === null || value instanceof Error) return false;
+  const { code, info } = value as { code?: unknown; info?: unknown };
+  return typeof code === 'number' && typeof info === 'string';
 }
 
 export type ChwErrorCode = 'CHW_UNRESOLVED_INPUT' | 'CHW_UNRESOLVED_SCRIPT' | 'CHW_UNSUPPORTED_TX_FORM';

@@ -273,6 +273,7 @@ Each quirk reproduces one thing a real user or wallet does. The wallet answers w
 | declines the signature | `quirks: { signRejected: true }` | `signTx` rejects with `{ code: 2 }` (TxSignError UserDeclined) |
 | declines to sign a message | `quirks: { signDataRejected: true }` | `signData` rejects with `{ code: 3 }` (DataSignError UserDeclined) |
 | never answers the signature prompt | `quirks: { signHangs: true }` | `signTx` stays pending until the test calls `wallet.release('signTx')` or `wallet.reject('signTx')` |
+| sends a transaction the node rejects | `quirks: { submitRejected: 'ConwayApplyTxError [ConwayUtxowFailure (UtxoFailure (FeeTooSmallUTxO (Mismatch (RelGTEQ) {supplied: Coin 150000, expected: Coin 170000})))]' }` | `submitTx` rejects with `{ code: 2 }` (TxSendError Failure), `info` is the configured string |
 | has the wallet on the other network | `networkId: 1` (dApp on a testnet) | `getNetworkId()` returns 1, addresses are mainnet addresses |
 | has a wallet that injects late | `quirks: { lateInjection: 1500 }` | `window.cardano[name]` appears after 1.5 seconds |
 | has a wallet without CIP-95 | `quirks: { noCip95: true }` | `supportedExtensions` is empty, `enable({ extensions: [{ cip: 95 }] })` grants nothing |

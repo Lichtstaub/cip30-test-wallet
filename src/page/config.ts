@@ -42,6 +42,7 @@ export const QUIRK_NAMES = [
   'cip95SignData',
   'coseAddress',
   'noCollateral',
+  'submitRejected',
 ] as const;
 
 export type QuirkName = (typeof QUIRK_NAMES)[number];
@@ -72,6 +73,12 @@ export interface QuirkConfig {
   coseAddress?: 'bareKeyHash';
   /** The api has neither getCollateral nor experimental.getCollateral, which the CIP-30 deprecation allows. Read at enable(). */
   noCollateral?: boolean;
+  /**
+   * submitTx() throws TxSendError Failure with this string as info, like a node
+   * refusing the transaction. The ledger never sees the transaction, so its
+   * state stays as it was. A malformed transaction is still InvalidRequest.
+   */
+  submitRejected?: string;
 }
 
 export type HangableMethod = 'signTx';

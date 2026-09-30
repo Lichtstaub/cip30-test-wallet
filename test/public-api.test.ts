@@ -12,6 +12,7 @@ describe('public API', () => {
       'DEFAULT_MNEMONIC',
       'DataSignErrorCode',
       'QUIRK_NAMES',
+      'TxSendErrorCode',
       'TxSignErrorCode',
       'expectSignedBy',
       'expectSignedData',

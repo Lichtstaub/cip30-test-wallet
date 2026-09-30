@@ -1,0 +1,7 @@
+# submitRejected
+
+**Status:** confirmed
+**Observed:** every wallet, by design. CIP-30 defines TxSendError Failure for a transaction the wallet could not send, and a node refuses transactions for many reasons, among them a spent input, a fee below the minimum or an expired validity interval. The behaviour is defined by the spec itself and there is nothing wallet-specific to reproduce. The text of `info` differs between wallets and the backends they submit through, so the switch takes it as a string.
+**What the wallet does:** `submitTx()` rejects with TxSendError `{ code: 2, info }` (Failure), a plain object whose `info` is the configured string. The transaction never reaches the wallet's ledger, so UTxOs and registration stay as they were. A malformed transaction is still APIError InvalidRequest.
+**What breaks:** flows that treat a sent signature as a sent transaction and show success, and flows that map code 2 without the call it came from and tell the user they declined (see [sign-rejected.md](sign-rejected.md)). The right reaction is to say the network refused the transaction and keep the form for another attempt.
+**How to use:** `test.use({ walletOptions: { quirks: { submitRejected: 'ConwayApplyTxError [ConwayUtxowFailure (UtxoFailure (FeeTooSmallUTxO (Mismatch (RelGTEQ) {supplied: Coin 150000, expected: Coin 170000})))]' } } })`, or flip it after connecting with `await wallet.setQuirk('submitRejected', '...')` and back with `await wallet.setQuirk('submitRejected', undefined)`.

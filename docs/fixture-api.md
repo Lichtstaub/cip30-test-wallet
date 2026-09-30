@@ -76,6 +76,6 @@ expectSignedData(call!.result as { signature: string; key: string }, {
 
 ## Errors
 
-CIP-30 errors are plain objects: `APIError` `{ code: -1 | -2 | -3 | -4, info }`, `TxSignError` `{ code: 1 | 2 | 3, info }`, `DataSignError` `{ code: 1 | 2 | 3, info }` (`ProofGeneration`, `AddressNotPK`, `UserDeclined`), `PaginateError` `{ maxSize }`. Harness diagnoses are `ChwError` instances with `code` `CHW_UNRESOLVED_INPUT`, `CHW_UNRESOLVED_SCRIPT` or `CHW_UNSUPPORTED_TX_FORM`. Decoding failures become `APIError` InvalidRequest. Code 3, `DeprecatedCertificate` (CIP-95), comes for a pre-Conway certificate at both `partialSign` values and before any prompt quirk such as `signHangs`.
+CIP-30 errors are plain objects: `APIError` `{ code: -1 | -2 | -3 | -4, info }`, `TxSignError` `{ code: 1 | 2 | 3, info }`, `DataSignError` `{ code: 1 | 2 | 3, info }` (`ProofGeneration`, `AddressNotPK`, `UserDeclined`), `TxSendError` `{ code: 1 | 2, info }` (`Refused`, `Failure`) from `submitTx`, `PaginateError` `{ maxSize }`. Harness diagnoses are `ChwError` instances with `code` `CHW_UNRESOLVED_INPUT`, `CHW_UNRESOLVED_SCRIPT` or `CHW_UNSUPPORTED_TX_FORM`. Decoding failures become `APIError` InvalidRequest. Code 3, `DeprecatedCertificate` (CIP-95), comes for a pre-Conway certificate at both `partialSign` values and before any prompt quirk such as `signHangs`.
 
 The deployed-site check lives in [doctor.md](doctor.md).

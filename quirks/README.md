@@ -18,6 +18,7 @@ No switch without a note. A quirk nobody can trace is the stale wallet profile t
 | `cip95SignData` | reported | [cip95-sign-data.md](cip95-sign-data.md) |
 | `coseAddress` | reported | [cose-address.md](cose-address.md) |
 | `noCollateral` | confirmed | [no-collateral.md](no-collateral.md) |
+| `submitRejected` | confirmed | [submit-rejected.md](submit-rejected.md) |
 | walletOptions.utxos[].scriptRef (an option, not a quirks entry) | reported | [utxo-with-script-ref.md](utxo-with-script-ref.md) |
 | walletOptions.utxos[].datumHash (an option, not a quirks entry, crash unconfirmed) | reported | [utxo-with-datum-hash.md](utxo-with-datum-hash.md) |
 
