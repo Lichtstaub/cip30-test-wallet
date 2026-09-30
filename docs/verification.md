@@ -10,7 +10,7 @@ The two tables below record the milestone 1 and 1b spikes the package is built o
 | 2 | Witness set accepted by Evolution, signature verifies | `test/witness.test.ts` | pass |
 | 3 | Mnemonic restore matches CSL, Evolution and the documented vector, signatures byte identical | `test/keys.test.ts`, `test/derive.test.ts` | pass |
 | 4 | Evolution merges our witness set without losing foreign witnesses, and a party that already signed counts as coverage | `test/witness.test.ts`, `test/sign-tx.test.ts` | pass |
-| 5 | Supported forms only: own key signs, uncovered foreign key refuses, script inputs, script credentials, guardrail scripts and unknown inputs raise a harness diagnosis | `test/sign-tx.test.ts`, `test/sign-tx-governance.test.ts` | pass |
+| 5 | At milestone 1, supported forms only: own key signs, uncovered foreign key refuses, script inputs, script credentials, guardrail scripts and unknown inputs raise a harness diagnosis. Since 0.7.0 script forms are signed, see Milestone 6. | `test/sign-tx.test.ts`, `test/sign-tx-governance.test.ts` | pass |
 | 6 | submitTx returns the transaction id Evolution computes | `test/submit.test.ts` | pass |
 
 Typecheck (`npm run typecheck`): pass, no errors. All 52 tests pass.
@@ -38,3 +38,7 @@ Consequence for the fixture: the fixture does not reproduce the CSP trap (row 3)
 ## Milestone 5: values and collateral
 
 UTxOs with native assets, datum hash, inline datum and reference script encode like Lace, coin-only UTxOs stay byte identical. Asset values and a token spend built with Evolution are checked against CSL in `test/utxo-values.test.ts` and `test/values-oracle.test.ts`.
+
+## Milestone 6: scripts
+
+Script hashes match CSL for native scripts and Plutus V1 to V3, from the witness set and from reference scripts. A native script is hashed over the bytes it arrived in, like the ledger. Native scripts are evaluated after the ledger's evalTimelock, with its boundaries. Plutus spends with collateral, native multisig with a co-signer, native mint, a reference script, script withdrawals and a guardrail proposal, built by Evolution and CSL, are signed and verified with CSL in `test/scripts.test.ts`, `test/tx-scripts.test.ts`, `test/sign-tx-scripts.test.ts` and `test/scripts-oracle.test.ts`. A native mint is signed in the page in Chromium, Firefox and WebKit (`test-browser/scripts.spec.ts`).

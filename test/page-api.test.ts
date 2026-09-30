@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { Transaction, TransactionWitnessSet } from '@evolution-sdk/evolution';
 import { bytesToHex, hexToBytes } from '../src/core/bytes.js';
-import { decode, Tagged } from '../src/core/cbor/decode.js';
+import { decode } from '../src/core/cbor/decode.js';
 import { encode } from '../src/core/cbor/encode.js';
 import { txHash } from '../src/core/cbor/tx.js';
 import { decodeCoseKey, decodeCoseSign1 } from '../src/core/cose.js';
@@ -11,7 +11,7 @@ import { keyHash } from '../src/core/hash.js';
 import { installWallet, syntheticOwnedUtxo, type InstallTarget } from '../src/page/install.js';
 import { buildTx, standardUnsignedTx, TEST_ADDRESS } from './helpers/build-tx.js';
 import { oracleSignedData } from './helpers/cose-oracle.js';
-import { POLICY, syntheticInput } from './helpers/synthetic.js';
+import { POLICY } from './helpers/synthetic.js';
 import { chwProvider, enableChw, testConfig } from './helpers/page.js';
 
 const setup = async (overrides = {}) => {
@@ -195,23 +195,23 @@ describe('signTx and submitTx', () => {
     expect(failed.every((e) => e.error !== undefined && e.result === undefined)).toBe(true);
   });
 
-// Reference inputs (18) stay unsupported until M6, a stable stand-in for "some form this release refuses".
-const withReferenceInput = (utxo: ReturnType<typeof syntheticOwnedUtxo>) =>
+// Body key 6 (update) is gone from the Conway CDDL, a stable stand-in for "some form this release refuses".
+const withUpdateField = (utxo: ReturnType<typeof syntheticOwnedUtxo>) =>
   buildTx({
     inputs: [utxo.input],
     outputs: [{ address: TEST_ADDRESS, lovelace: 9_800_000n }],
     fee: 200_000n,
-    extraBodyEntries: new Map([[18n, new Tagged(258n, [[syntheticInput('ref', 0n).txId, 0n]])]]),
+    extraBodyEntries: new Map([[6n, [new Map(), 0n]]]),
   });
 
   it('warns once naming the skipped form when partialSign signs around an unsupported form', async () => {
     const { api, target } = await setup();
-    const tx = withReferenceInput(syntheticOwnedUtxo(config.name, 0, TEST_ADDRESS, 10_000_000n));
+    const tx = withUpdateField(syntheticOwnedUtxo(config.name, 0, TEST_ADDRESS, 10_000_000n));
     expect(target.cardano).toBeDefined();
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     await api.signTx(tx, true);
     expect(warn).toHaveBeenCalledTimes(1);
-    expect(warn.mock.calls[0]![0]).toContain('reference inputs');
+    expect(warn.mock.calls[0]![0]).toContain('body key 6 (update)');
     warn.mockRestore();
   });
 
@@ -248,7 +248,7 @@ const withReferenceInput = (utxo: ReturnType<typeof syntheticOwnedUtxo>) =>
   it('rejects a partialSign that is not a boolean, so "false" cannot switch the form check off', async () => {
     const { api } = await setup();
     const utxo = syntheticOwnedUtxo(config.name, 0, TEST_ADDRESS, 10_000_000n);
-    const withCert = withReferenceInput(utxo);
+    const withCert = withUpdateField(utxo);
     const signTx = api.signTx as unknown as (tx: string, partial: unknown) => Promise<string>;
     for (const value of ['false', 'true', 0, 1, null]) {
       await expect(signTx(withCert, value)).rejects.toEqual(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));

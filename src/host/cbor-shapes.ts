@@ -23,30 +23,3 @@ export function isPlutusData(value: CborValue, depth = 0): boolean {
   }
   return false;
 }
-
-/** native_script = [0, hash28] / [1, [* native_script]] / [2, [* native_script]] / [3, int, [* native_script]] / [4, uint] / [5, uint] */
-export function isNativeScript(value: CborValue, depth = 0): boolean {
-  if (depth > 256 || !Array.isArray(value) || typeof value[0] !== 'bigint') return false;
-  const list = (items: CborValue) => Array.isArray(items) && items.every((item) => isNativeScript(item, depth + 1));
-  switch (value[0]) {
-    case 0n:
-      return value.length === 2 && value[1] instanceof Uint8Array && value[1].length === 28;
-    case 1n:
-    case 2n:
-      return value.length === 2 && list(value[1]);
-    case 3n:
-      return value.length === 3 && typeof value[1] === 'bigint' && list(value[2]);
-    case 4n:
-    case 5n:
-      return value.length === 2 && typeof value[1] === 'bigint' && value[1] >= 0n;
-    default:
-      return false;
-  }
-}
-
-/** script = [0, native_script] / [1, plutus_v1_script] / [2, plutus_v2_script] / [3, plutus_v3_script] */
-export function isScript(value: CborValue): boolean {
-  if (!Array.isArray(value) || value.length !== 2) return false;
-  if (value[0] === 0n) return isNativeScript(value[1]);
-  return (value[0] === 1n || value[0] === 2n || value[0] === 3n) && value[1] instanceof Uint8Array && value[1].length > 0;
-}

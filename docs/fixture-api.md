@@ -14,7 +14,7 @@
 | `accountIndex` | `0` | CIP-1852 account, 0 to 2^31 - 1 |
 | `install` | `true` | Set `false` to skip injecting the provider. `name`, `addresses`, `paymentPublicKeyHex` and `stakePublicKeyHex` still work, every other handle member rejects |
 | `utxos` | `[{ lovelace: 10_000_000 }]` | Owned outputs, in order. Each is `{ lovelace, assets?, datumHash?, inlineDatum?, scriptRef? }`. `assets` maps units (policy id hex plus asset name hex) to quantities up to 2^64 - 1. Ids are deterministic per name and position |
-| `foreignUtxos` | `[]` | Outputs the ledger knows but does not own, for multi-party transactions. Same shape as `utxos` |
+| `foreignUtxos` | `[]` | Outputs the ledger knows but does not own, for multi-party transactions. Same shape as `utxos`. A `scriptRef` here provides a reference script for script transactions, the way a UTxO holding a validator does on chain |
 | `quirks` | `{}` | See the quirk catalogue |
 | `stakeRegistered` | `false` | CIP-95: report the stake key as registered. Defaults to a fresh, unregistered wallet |
 
@@ -70,6 +70,6 @@ expectSignedData(call!.result as { signature: string; key: string }, {
 
 ## Errors
 
-CIP-30 errors are plain objects: `APIError` `{ code: -1 | -2 | -3 | -4, info }`, `TxSignError` `{ code: 1 | 2 | 3, info }`, `DataSignError` `{ code: 1 | 2 | 3, info }` (`ProofGeneration`, `AddressNotPK`, `UserDeclined`), `PaginateError` `{ maxSize }`. Harness diagnoses are `ChwError` instances with `code` `CHW_UNRESOLVED_INPUT` or `CHW_UNSUPPORTED_TX_FORM`. Decoding failures become `APIError` InvalidRequest. Code 3, `DeprecatedCertificate` (CIP-95), comes for a pre-Conway certificate at both `partialSign` values and before any prompt quirk such as `signHangs`.
+CIP-30 errors are plain objects: `APIError` `{ code: -1 | -2 | -3 | -4, info }`, `TxSignError` `{ code: 1 | 2 | 3, info }`, `DataSignError` `{ code: 1 | 2 | 3, info }` (`ProofGeneration`, `AddressNotPK`, `UserDeclined`), `PaginateError` `{ maxSize }`. Harness diagnoses are `ChwError` instances with `code` `CHW_UNRESOLVED_INPUT`, `CHW_UNRESOLVED_SCRIPT` or `CHW_UNSUPPORTED_TX_FORM`. Decoding failures become `APIError` InvalidRequest. Code 3, `DeprecatedCertificate` (CIP-95), comes for a pre-Conway certificate at both `partialSign` values and before any prompt quirk such as `signHangs`.
 
 The deployed-site check lives in [doctor.md](doctor.md).

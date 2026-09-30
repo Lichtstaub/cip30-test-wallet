@@ -332,6 +332,26 @@ test('the wallet holds one token kind', async ({ page }) => {
 
 A page that checks token ownership on chain, through an indexer or its backend, does not see the synthetic UTxOs. A page that reads `getBalance` or `getUtxos` in the browser does. See [Pages behind a wallet login](../README.md#pages-behind-a-wallet-login).
 
+## A dApp that spends from a script
+
+A dApp that spends from a contract builds the transaction from chain data. The wallet has to know every input it cannot find in its own UTxOs: the UTxO the contract locks and, when the validator is used as a reference script, the UTxO holding it. Without them `signTx` raises `CHW_UNRESOLVED_INPUT`. A dApp that attaches the validator to the transaction itself needs only the locked UTxO.
+
+```ts
+// The validator 4601000022499d is Plutus V3, its hash f219ee...48d1bc makes the script address.
+test.use({
+  walletOptions: {
+    foreignUtxos: [
+      { txId: 'aa'.repeat(32), index: 0, addressHex: '70f219eeced46ac39519d0542b1ed39fd0b563eac2a1d6a1b60b48d1bc', lovelace: 5_000_000, inlineDatum: 'd87980' },
+      { txId: 'bb'.repeat(32), index: 0, addressHex: '70f219eeced46ac39519d0542b1ed39fd0b563eac2a1d6a1b60b48d1bc', lovelace: 20_000_000, scriptRef: '8203474601000022499d' },
+    ],
+  },
+});
+```
+
+This fragment only configures the wallet. A unit test checks that it is accepted and that the reference script hash matches the script address.
+
+The wallet signs for the collateral and every key the transaction needs from it. It never runs the validator: a redeemer or budget that a node would reject passes here.
+
 ## Reading the journal
 
 `wallet.calls()` lists every CIP-30 call of the current page in order, with arguments and result or error. It answers questions a screenshot cannot: did the dApp check the network before building, did it ask for a partial signature, did it retry.

@@ -28,6 +28,8 @@ export interface BuildTxOptions {
   extraBodyEntries?: Map<bigint, unknown>;
   /** Skip the tag 258 wrapping for inputs and required signers, emitting plain CDDL arrays instead. */
   plainArraySets?: boolean;
+  /** Witness set map of the unsigned transaction, empty when left out. */
+  witnessSet?: Map<bigint, unknown>;
 }
 
 export function buildTx(opts: BuildTxOptions): string {
@@ -49,7 +51,7 @@ export function buildTx(opts: BuildTxOptions): string {
   if (opts.extraBodyEntries) {
     for (const [key, value] of opts.extraBodyEntries) body.set(key, value);
   }
-  const tx = [body, new Map(), true, null];
+  const tx = [body, opts.witnessSet ?? new Map(), true, null];
   return bytesToHex(encode(tx as never));
 }
 

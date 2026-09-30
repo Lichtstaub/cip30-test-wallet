@@ -14,6 +14,10 @@ export type MultiAsset = Map<string, Map<string, bigint>>;
 /** Conway positive_coin and coin top out at 2^64 - 1, the largest CBOR uint. */
 export const MAX_UINT64 = 18446744073709551615n;
 
+/** Conway int64, the range of mint quantities and of n in a native n_of_k script. */
+export const MIN_INT64 = -9223372036854775808n;
+export const MAX_INT64 = 9223372036854775807n;
+
 /**
  * Units as Blockfrost and Mesh write them: policy id hex (56 characters)
  * followed by the asset name hex (0 to 64 characters). Quantities are

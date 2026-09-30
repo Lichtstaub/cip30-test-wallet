@@ -23,7 +23,7 @@ In an installed project these files are under `node_modules/cip30-test-wallet/`.
 - Nothing reaches a chain. The wallet's `submitTx` records and returns the id. A provider or backend that submits must be intercepted with `page.route`, then prove the transaction with `expectSignedBy`.
 - A call count proves no signature. Prove it with `expectSignedBy(tx, wallet)` for transactions and `expectSignedData(result, { payload, address })` for messages.
 - Wallet errors are plain `{ code, info }` objects as CIP-30 requires. Code that reads `err.message` is a dApp bug the test just found.
-- A `ChwError` with code `CHW_UNSUPPORTED_TX_FORM` or `CHW_UNRESOLVED_INPUT` is a harness diagnosis about the test setup, not wallet behaviour. Follow its hint (add the input to `utxos` or `foreignUtxos`, or sign with `partialSign: true`) instead of changing the dApp.
+- A `ChwError` with code `CHW_UNSUPPORTED_TX_FORM`, `CHW_UNRESOLVED_INPUT` or `CHW_UNRESOLVED_SCRIPT` is a harness diagnosis about the test setup, not wallet behaviour. Follow its hint (add the input to `utxos` or `foreignUtxos`, attach the script or add the UTxO holding it as `scriptRef`, or, for `CHW_UNSUPPORTED_TX_FORM` only, sign with `partialSign: true`) instead of changing the dApp.
 - A click does not wait for the wallet. Wait for what the app shows afterwards before you read the journal or `lastSubmittedTx()`.
 - The journal (`wallet.calls()`) starts empty after every navigation. Read it before the dApp navigates away, see the login recipe.
 - Reproduce user-side failures with `walletOptions.quirks`, never with a real wallet. Use only the default mnemonic or a throwaway testnet mnemonic, the keys end up in traces.

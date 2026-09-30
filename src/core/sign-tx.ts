@@ -1,9 +1,10 @@
 import { bytesEqual, bytesToHex, hexToBytes } from './bytes.js';
-import { encodeWitnessSet, parseTransaction, spentInputs, txHash, type ParsedBody, type ParsedTransaction } from './cbor/tx.js';
+import { encodeWitnessSet, lookupInputs, parseTransaction, txHash, type ParsedBody, type ParsedTransaction } from './cbor/tx.js';
 import { apiError, APIErrorCode, ChwError, TxSignErrorCode, txSignError } from './errors.js';
 import { keyHash, publicKey, sign, verifiesOver, type SigningKey } from './keys.js';
 import type { Ledger, Utxo } from './ledger.js';
-import { deprecatedCertificate, formsOutOfScope, requirements, type Role } from './requirements.js';
+import { deprecatedCertificate, requirements, type Role } from './requirements.js';
+import { evaluateNativeScript, nativeKeyHashes, scriptsProvided } from './scripts.js';
 import { parseHexArg } from './sign-data.js';
 
 /**
@@ -21,17 +22,9 @@ export function parseTxHex(tx: unknown): { bytes: Uint8Array; parsed: ParsedTran
   }
 }
 
-/** Resolves every input and then every collateral input once, in body order, so callers never look an input up twice. */
+/** Resolves every input the ledger must know once, in lookupInputs order, so callers never look an input up twice. */
 export async function resolveInputs(body: ParsedBody, ledger: Ledger): Promise<Array<Utxo | undefined>> {
-  return Promise.all(spentInputs(body).map(({ input }) => ledger.resolveInput(input)));
-}
-
-/**
- * Every item signTx refuses at partialSign: false, for the page's
- * partialSign: true warning. Same order as the error signTx would raise.
- */
-export function unsupportedForms(body: ParsedBody, resolvedInputs: ReadonlyArray<Utxo | undefined>): string[] {
-  return formsOutOfScope(requirements(body, resolvedInputs));
+  return Promise.all(lookupInputs(body).map(({ input }) => ledger.resolveInput(input)));
 }
 
 /**
@@ -67,17 +60,19 @@ export interface SignContext {
  * CIP-30 signTx for a single-account wallet over the forms requirements.ts
  * understands. Returns only the witnesses this call created.
  *
- * A pre-Conway certificate raises TxSignError DeprecatedCertificate first, at
- * both partialSign values.
- * partialSign false: every requirement must be ours or already covered by
- * a valid witness in the transaction, otherwise TxSignError ProofGeneration.
- * Any unsupported transaction form raises CHW_UNSUPPORTED_TX_FORM before the
- * ownership decision runs at all, a harness diagnosis, never a fake wallet
- * error.
+ * In this order:
+ * A pre-Conway certificate raises TxSignError DeprecatedCertificate, at both
+ * partialSign values.
+ * partialSign false: an unsupported transaction form raises
+ * CHW_UNSUPPORTED_TX_FORM, a harness diagnosis, never a fake wallet error.
+ * An input, collateral input or reference input the ledger does not know
+ * raises CHW_UNRESOLVED_INPUT, a script the transaction needs but does not
+ * provide CHW_UNRESOLVED_SCRIPT, both in both modes.
+ * partialSign false: every key requirement must be ours or already covered
+ * by a valid witness, and every native script must hold with our keys plus
+ * those witnesses, otherwise TxSignError ProofGeneration.
  * partialSign true: sign what is ours, ignore the rest, including
- * unsupported forms.
- * An input the ledger does not know raises CHW_UNRESOLVED_INPUT in both
- * modes.
+ * unsupported forms and native scripts that do not hold yet.
  *
  * The transaction arrives parsed, parseTxHex has already turned any
  * decoding failure into InvalidRequest.
@@ -87,23 +82,39 @@ export async function signTx(parsed: ParsedTransaction, partialSign: boolean, ct
   // CIP-95: a pre-Conway certificate is refused regardless of consent and of partialSign.
   refuseDeprecatedCertificate(body);
 
+  const lookup = lookupInputs(body);
   const resolvedInputs = await resolveInputs(body, ctx.ledger);
   const reqs = requirements(body, resolvedInputs);
   if (!partialSign) {
-    const [first] = formsOutOfScope(reqs);
+    const [first] = reqs.unsupported;
     if (first) {
       throw new ChwError('CHW_UNSUPPORTED_TX_FORM', `${first} is not supported by this release, use partialSign: true to sign only the wallet's own share`);
     }
   }
 
-  for (const [i, { input, label }] of spentInputs(body).entries()) {
-    if (!resolvedInputs[i]) {
+  const missing = lookup.find((_, i) => !resolvedInputs[i]);
+  if (missing) {
+    throw new ChwError(
+      'CHW_UNRESOLVED_INPUT',
+      `${missing.label} ${bytesToHex(missing.input.txId)}#${missing.input.index} is unknown to the mock ledger, add it to utxos or foreignUtxos`,
+    );
+  }
+
+  const { scripts, unreadable } = scriptsProvided(
+    parsed.scripts,
+    lookup.map(({ label }, i) => ({ label, utxo: resolvedInputs[i]! })),
+  );
+  const neededScripts = reqs.scripts.map((req) => {
+    const script = scripts.find((s) => bytesEqual(s.hash, req.scriptHash));
+    if (!script) {
+      const unread = unreadable.length > 0 ? ` (the scriptRef of ${unreadable.join(', ')} could not be read)` : '';
       throw new ChwError(
-        'CHW_UNRESOLVED_INPUT',
-        `${label} ${bytesToHex(input.txId)}#${input.index} is unknown to the mock ledger, add it to utxos or foreignUtxos`,
+        'CHW_UNRESOLVED_SCRIPT',
+        `${req.source} needs script ${bytesToHex(req.scriptHash)}, which is neither in the witness set nor a reference script of an input or reference input${unread}. Attach it to the transaction, or add the UTxO holding it as scriptRef to utxos or foreignUtxos`,
       );
     }
-  }
+    return { req, script };
+  });
 
   const roles = new Map<Role, { key: SigningKey; hash: Uint8Array }>();
   const addRole = (role: Role, key: SigningKey) => roles.set(role, { key, hash: keyHash(publicKey(key)) });
@@ -126,6 +137,29 @@ export async function signTx(parsed: ParsedTransaction, partialSign: boolean, ct
     if (role) needed.add(role);
     else if (!partialSign && !isCovered(req.keyHash)) {
       throw txSignError(TxSignErrorCode.ProofGeneration, `wallet cannot sign for ${req.source}`);
+    }
+  }
+
+  // A native script holds for the key hashes the ledger sees among the witnesses. The wallet
+  // contributes every own role the script names, like a real wallet in a multisig. At
+  // partialSign false the script must hold with those roles plus the valid witnesses already
+  // in the transaction. A Plutus script needs no wallet witness, the ledger runs it.
+  for (const { req, script } of neededScripts) {
+    if (!script.native) continue;
+    // A committee credential is never the wallet's to witness, whatever keys its script names.
+    // Such a script is evaluated with the existing witnesses only, so a committee script naming a
+    // wallet key is refused at partialSign false even when the wallet signs that key for another requirement.
+    const own = req.foreignOnly
+      ? []
+      : nativeKeyHashes(script.native)
+          .map(roleOf)
+          .filter((role): role is Role => role !== undefined);
+    for (const role of own) needed.add(role);
+    if (!partialSign) {
+      const witnesses = [...covered, ...own.map((role) => roles.get(role)!.hash)];
+      if (!evaluateNativeScript(script.native, witnesses, body.validityStart, body.ttl)) {
+        throw txSignError(TxSignErrorCode.ProofGeneration, `wallet cannot satisfy native script ${bytesToHex(script.hash)} for ${req.source}`);
+      }
     }
   }
 
