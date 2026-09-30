@@ -10,6 +10,7 @@ import { MAX_UINT64, parseAssetUnits } from '../core/value.js';
 import type { OwnedUtxoConfig, PageConfig, QuirkConfig, UtxoExtras } from '../page/config.js';
 import { isPlutusDataBytes } from '../core/cbor-shapes.js';
 import { isScriptRef } from '../core/scripts.js';
+import { resolveProtocolParams, type ProtocolParams, type ProtocolParamsInput } from './protocol-params.js';
 
 /** Public test vector from the CSL documentation. Holds no funds, safe to ship. */
 export const DEFAULT_MNEMONIC = 'test walk nut penalty hip pave soap entry language right filter choice';
@@ -34,8 +35,23 @@ export interface WalletOptions {
   quirks?: QuirkConfig;
   /** CIP-95: report the stake key as registered. Defaults to false, a fresh wallet. */
   stakeRegistered?: boolean;
-  /** state: apply every submitted transaction to the wallet's UTxOs and registration (default true). */
-  ledger?: { state?: boolean };
+  /**
+   * state: apply every submitted transaction to the wallet's UTxOs and registration (default true).
+   * checks: submitTx refuses what a Conway node refuses, with TxSendError Failure. Needs state and
+   * the ledger in Node of the Playwright fixture or attachWallet (default false).
+   * With checks only: protocolParams replaces single parameters of the network's defaults,
+   * currentSlot is the slot the validity interval is checked against (no validity check without it),
+   * drepRegistered counts the wallet's DRep as registered with drepDeposit (default false).
+   */
+  ledger?: { state?: boolean; checks?: boolean; protocolParams?: ProtocolParamsInput; currentSlot?: number | bigint; drepRegistered?: boolean };
+}
+
+/** What the ledger checks need beyond the page config, resolved and validated in Node. */
+export interface LedgerChecksConfig {
+  params: ProtocolParams;
+  /** Undefined means no validity interval check. */
+  currentSlot: bigint | undefined;
+  drepRegistered: boolean;
 }
 
 export interface PreparedWallet {
@@ -46,6 +62,8 @@ export interface PreparedWallet {
   drepPublicKeyHex: string;
   drepKeyHashHex: string;
   drepId: string;
+  /** Set exactly when walletOptions.ledger.checks is true. */
+  ledgerChecks?: LedgerChecksConfig;
 }
 
 function lovelaceString(v: number | bigint | string): string {
@@ -146,6 +164,39 @@ function foreignUtxo(f: ForeignUtxoInput, i: number) {
   };
 }
 
+const LEDGER_OPTIONS = ['state', 'checks', 'protocolParams', 'currentSlot', 'drepRegistered'] as const;
+const CHECKS_ONLY_OPTIONS = ['protocolParams', 'currentSlot', 'drepRegistered'] as const;
+
+/** Checked in Node, so a typo fails here instead of switching a check off without a word. */
+function ledgerOptions(ledger: unknown, networkId: 0 | 1): { state: boolean; checks: LedgerChecksConfig | undefined } {
+  if (ledger === undefined) return { state: true, checks: undefined };
+  if (typeof ledger !== 'object' || ledger === null || Array.isArray(ledger)) throw new Error(`ledger must be an object, got ${String(ledger)}`);
+  const options = ledger as NonNullable<WalletOptions['ledger']>;
+  for (const key of Object.keys(options)) {
+    if (!(LEDGER_OPTIONS as readonly string[]).includes(key)) throw new Error(`ledger.${key} is not a ledger option, known: ${LEDGER_OPTIONS.join(', ')}`);
+  }
+  // Only undefined takes the default. null fails the boolean check below instead of switching a check off.
+  const state = options.state === undefined ? true : options.state;
+  if (typeof state !== 'boolean') throw new Error(`ledger.state must be a boolean, got ${String(state)}`);
+  const checks = options.checks === undefined ? false : options.checks;
+  if (typeof checks !== 'boolean') throw new Error(`ledger.checks must be a boolean, got ${String(checks)}`);
+  if (!checks) {
+    const stray = CHECKS_ONLY_OPTIONS.find((key) => options[key] !== undefined);
+    if (stray) throw new Error(`ledger.${stray} only applies with ledger.checks: true`);
+    return { state, checks: undefined };
+  }
+  if (!state) throw new Error('ledger.checks: true needs ledger.state: true, the checks judge each transaction against the state the ones before it left');
+  const slot = options.currentSlot;
+  const slotOk = (typeof slot === 'number' && Number.isSafeInteger(slot) && slot >= 0) || (typeof slot === 'bigint' && slot >= 0n);
+  if (slot !== undefined && !slotOk) throw new Error(`ledger.currentSlot must be a non-negative integer slot number as number or bigint, got ${String(slot)}`);
+  const drepRegistered = options.drepRegistered === undefined ? false : options.drepRegistered;
+  if (typeof drepRegistered !== 'boolean') throw new Error(`ledger.drepRegistered must be a boolean, got ${String(drepRegistered)}`);
+  return {
+    state,
+    checks: { params: resolveProtocolParams(networkId, options.protocolParams), currentSlot: slot === undefined ? undefined : BigInt(slot), drepRegistered },
+  };
+}
+
 function validateNetworkId(v: number): void {
   if (v !== 0 && v !== 1) throw new Error(`networkId must be 0 or 1, got ${v}`);
 }
@@ -175,8 +226,7 @@ export function prepareWallet(options: WalletOptions = {}): PreparedWallet {
 
   const utxos = (options.utxos ?? [{ lovelace: 10_000_000 }]).map((u, i) => ({ lovelace: lovelaceString(u.lovelace), ...validateUtxoExtras(u, `utxos[${i}]`) }));
   checkOwnedSums(utxos);
-  const state = options.ledger?.state ?? true;
-  if (typeof state !== 'boolean') throw new Error(`ledger.state must be a boolean, got ${String(state)}`);
+  const ledger = ledgerOptions(options.ledger, networkId);
 
   const config: PageConfig = {
     name: options.name ?? 'chw',
@@ -192,7 +242,8 @@ export function prepareWallet(options: WalletOptions = {}): PreparedWallet {
     foreignUtxos: (options.foreignUtxos ?? []).map(foreignUtxo),
     quirks: { ...(options.quirks ?? {}) },
     stakeRegistered: options.stakeRegistered ?? false,
-    ledger: { state },
+    // checks only reaches the page when set, so the page can warn when it has no host ledger.
+    ledger: ledger.checks ? { state: ledger.state, checks: true } : { state: ledger.state },
   };
 
   return {
@@ -203,5 +254,6 @@ export function prepareWallet(options: WalletOptions = {}): PreparedWallet {
     drepPublicKeyHex: bytesToHex(drepPub),
     drepKeyHashHex: bytesToHex(drepHash),
     drepId: cip129DRepId(drepHash),
+    ...(ledger.checks ? { ledgerChecks: ledger.checks } : {}),
   };
 }

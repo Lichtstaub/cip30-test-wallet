@@ -26,7 +26,16 @@ export function bundleWith(code: string): string {
   return `${pageBundle()}\n;${code}`;
 }
 
-/** The complete init script: bundle plus the call that installs this config. */
+/**
+ * The complete init script: bundle plus the call that installs this config.
+ * Refuses ledger.checks unless the config names a host binding: the checks run
+ * in Node, a page on its own keeps a ledger that checks nothing.
+ */
 export function initScript(config: PageConfig): string {
+  if (config.ledger?.checks && !config.ledger.binding) {
+    throw new Error(
+      'ledger.checks needs the ledger in Node of the Playwright fixture or of attachWallet from cip30-test-wallet/playwright, an init script keeps the ledger in the page where no checks run',
+    );
+  }
   return bundleWith(`globalThis.__chwInit(${JSON.stringify(config)});`);
 }

@@ -53,12 +53,12 @@ export function buildLedger(config: PageConfig, wallet: LedgerWallet): MemoryLed
 /** The ledger the provider talks to: the host's through a binding when the host announced one, otherwise one in the page. */
 function pageLedger(config: PageConfig, target: InstallTarget, wallet: LedgerWallet): Ledger {
   const name = config.ledger?.binding;
-  if (name) {
-    const call = (target as Record<string, unknown>)[name];
-    if (typeof call === 'function') return new BindingLedger(call as LedgerBinding);
-    // A safety net: the fixture's binding and init script both reach every frame of the page.
-    console.warn(`[cip30-test-wallet] ledger binding ${name} is missing on this page, the wallet keeps its own ledger until the next load and wallet.utxos() will not see it`);
-  }
+  const call = name ? (target as Record<string, unknown>)[name] : undefined;
+  if (typeof call === 'function') return new BindingLedger(call as LedgerBinding);
+  // A safety net: the fixture's binding and init script both reach every frame of the page.
+  const checks = config.ledger?.checks ? ', and submitTx runs no ledger checks, they need the ledger in Node' : '';
+  if (name) console.warn(`[cip30-test-wallet] ledger binding ${name} is missing on this page, the wallet keeps its own ledger until the next load and wallet.utxos() will not see it${checks}`);
+  else if (checks) console.warn(`[cip30-test-wallet] ledger.checks is set but this page has no ledger binding${checks}`);
   return buildLedger(config, wallet);
 }
 
