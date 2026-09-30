@@ -6,7 +6,7 @@ This package injects a CIP-30 Cardano wallet into a page under Playwright. It co
 
 | Task | File |
 |---|---|
-| Overview, quick start, logins with `signData` | [README.md](README.md) |
+| Adding the wallet to an existing dApp step by step, logins with `signData` | [README.md](README.md#getting-started) |
 | Every `walletOptions` field and `wallet` handle member | [docs/fixture-api.md](docs/fixture-api.md) |
 | Building and submitting transactions with Evolution SDK, Mesh or Lucid Evolution, backends that submit, offline protocol parameters, user-side failures, the journal | [docs/recipes.md](docs/recipes.md) |
 | Reproducing a specific wallet or user behaviour | [quirks/README.md](quirks/README.md) |
