@@ -74,7 +74,7 @@ function expectSigned(tx: string, witnessSet: string, expected: string[], coSign
 // Evolution 0.5.13 recognises a native script input only when the script is attached before
 // collectFrom, otherwise it asks for a redeemer. It builds no native script withdrawal at all
 // (it demands a redeemer for every script credential), so that one is built by CSL.
-describe('M6 exit criteria: script transactions built by Evolution and CSL', () => {
+describe('script transactions built by Evolution and CSL', () => {
   it('a Plutus V3 spend with collateral: only the payment key, for the fee input and the collateral', async () => {
     const locked = lockedBy(plutusHash, 'oracle-plutus');
     const tx = await evolutionBuild(
@@ -86,6 +86,7 @@ describe('M6 exit criteria: script transactions built by Evolution and CSL', () 
     const body = CSL.Transaction.from_hex(tx).body();
     expect(body.collateral()?.len()).toBeGreaterThan(0);
     expect(body.script_data_hash()).toBeDefined();
+    expect(CSL.Transaction.from_hex(tx).witness_set().redeemers()?.len()).toBe(1);
     expectSigned(tx, await (await walletApi([locked.config])).signTx(tx, false), [w.paymentPublicKeyHex]);
   });
 
@@ -114,6 +115,7 @@ describe('M6 exit criteria: script transactions built by Evolution and CSL', () 
     const policy = NativeScripts.makeScriptAll([pk(stakeHash)]);
     const policyId = ScriptHash.toHex(ScriptHash.fromScript(policy));
     const tx = await evolutionBuild((b) => b.attachScript({ script: policy }).mintAssets({ assets: Assets.fromHexStrings(policyId, '41', 5n) }), address, ownEvo);
+    expect(CSL.Transaction.from_hex(tx).body().mint()?.len()).toBe(1);
     expectSigned(tx, await (await walletApi()).signTx(tx, false), [w.paymentPublicKeyHex, w.stakePublicKeyHex]);
   });
 
@@ -127,6 +129,8 @@ describe('M6 exit criteria: script transactions built by Evolution and CSL', () 
       { evaluator: fixedBudgetEvaluator },
     );
     expect(CSL.Transaction.from_hex(tx).witness_set().plutus_scripts()).toBeUndefined();
+    expect(CSL.Transaction.from_hex(tx).body().reference_inputs()?.len()).toBe(1);
+    expect(CSL.Transaction.from_hex(tx).witness_set().redeemers()?.len()).toBe(1);
     expectSigned(tx, await (await walletApi([locked.config, holder.config])).signTx(tx, false), [w.paymentPublicKeyHex]);
     await expect((await walletApi([locked.config])).signTx(tx, false)).rejects.toThrow(/CHW_UNRESOLVED_INPUT: reference input/);
   });
@@ -144,6 +148,8 @@ describe('M6 exit criteria: script transactions built by Evolution and CSL', () 
       ownEvo,
       { evaluator: fixedBudgetEvaluator },
     );
+    expect(CSL.Transaction.from_hex(plutusWithdrawal).body().withdrawals()?.len()).toBe(1);
+    expect(CSL.Transaction.from_hex(plutusWithdrawal).witness_set().redeemers()?.len()).toBe(1);
     expectSigned(plutusWithdrawal, await (await walletApi()).signTx(plutusWithdrawal, false), [w.paymentPublicKeyHex]);
   });
 

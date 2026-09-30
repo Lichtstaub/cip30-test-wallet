@@ -348,6 +348,8 @@ test.use({
 });
 ```
 
+This fragment only configures the wallet. A unit test checks that it is accepted and that the reference script hash matches the script address.
+
 The wallet signs for the collateral and every key the transaction needs from it. It never runs the validator: a redeemer or budget that a node would reject passes here.
 
 ## Reading the journal

@@ -59,7 +59,7 @@ describe('script hashes against CSL', () => {
   it('hashes a native script over the bytes it arrived in, never re-encoded', () => {
     // all[pubkey 11..11, invalid_before 100], once canonical and once with an indefinite list.
     // CSL re-encodes on parse and reports the canonical hash for both, the ledger keeps the
-    // original bytes (MemoBytes, cardano-ledger Allegra/Scripts.hs), see the M6 research note.
+    // original bytes (MemoBytes, cardano-ledger Allegra/Scripts.hs).
     const canonical = hexToBytes('8201828200581c' + '11'.repeat(28) + '82041864');
     const indefinite = hexToBytes('82019f8200581c' + '11'.repeat(28) + '82041864ff');
     expect(bytesToHex(providedScript(0, canonical).hash)).toBe(CSL.NativeScript.from_bytes(canonical).hash().to_hex());

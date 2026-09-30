@@ -28,7 +28,7 @@ export interface ProvidedScript {
   native?: NativeScript;
 }
 
-// The same bound isNativeScript in host/cbor-shapes.ts used before M6.
+// Nesting bound of native scripts, 256 levels.
 const MAX_DEPTH = 256;
 
 export function scriptHash(language: ScriptLanguage, bytes: Uint8Array): Uint8Array {
@@ -158,7 +158,7 @@ export function scriptFromRef(ref: Uint8Array): ProvidedScript {
  * does not parse provides nothing and is named in unreadable, as
  * "input <id>#<index>" or "reference input <id>#<index>": fixture configuration
  * is checked in Node, only a hand-written PageConfig can carry one.
- * The offline ledger of M7 resolves scripts through this same function.
+ * Exported so a ledger-side witness check can reuse the same source rule.
  */
 export function scriptsProvided(
   witnessScripts: ReadonlyArray<ProvidedScript>,

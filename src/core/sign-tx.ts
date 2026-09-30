@@ -170,6 +170,8 @@ export async function signTx(parsed: ParsedTransaction, partialSign: boolean, ct
   for (const { req, script } of neededScripts) {
     if (!script.native) continue;
     // A committee credential is never the wallet's to witness, whatever keys its script names.
+    // Such a script is evaluated with the existing witnesses only, so a committee script naming a
+    // wallet key is refused at partialSign false even when the wallet signs that key for another requirement.
     const own = req.foreignOnly
       ? []
       : nativeKeyHashes(script.native)

@@ -102,7 +102,7 @@ describe('script related body fields', () => {
     ['a quantity above int64', mint([[h(1), [[new Uint8Array(0), 2n ** 63n]]]])],
     ['a 33 byte asset name', mint([[h(1), [[new Uint8Array(33), 1n]]]])],
   ])('%s is InvalidRequest', (_name, value) => {
-    expect(refusal(txWith([[9n, value]]))).toEqual(expect.objectContaining({ code: APIErrorCode.InvalidRequest }))
+    expect(refusal(txWith([[9n, value]]))).toEqual(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
   });
 
   it('reads reference inputs, an empty set is InvalidRequest', () => {
