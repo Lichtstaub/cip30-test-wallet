@@ -8,7 +8,7 @@ const CORE_BUNDLE_MAX_BYTES = 120 * 1024;
 
 const result = await build({
   ...PAGE_BUNDLE_OPTIONS,
-  entryPoints: ['src/core/sign-tx.ts', 'src/core/requirements.ts', 'src/core/ledger.ts', 'src/core/addresses.ts', 'src/core/cose.ts', 'src/core/sign-data.ts', 'src/core/value.ts', 'src/core/select.ts', PAGE_ENTRY],
+  entryPoints: ['src/core/sign-tx.ts', 'src/core/requirements.ts', 'src/core/ledger.ts', 'src/core/addresses.ts', 'src/core/cose.ts', 'src/core/sign-data.ts', 'src/core/value.ts', 'src/core/select.ts', 'src/core/scripts.ts', PAGE_ENTRY],
   format: 'esm',
   write: false,
   outdir: 'dist',

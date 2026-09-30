@@ -151,3 +151,29 @@ export function decode(bytes: Uint8Array): CborValue {
   if (next !== bytes.length) throw new Error('cbor: trailing bytes after item');
   return value;
 }
+
+/**
+ * Byte ranges of the items of the CBOR array at offset, definite or
+ * indefinite. With allowSetTag a tag 258 around the array is skipped, the
+ * Conway set form. For callers that must hash an item in the bytes it
+ * arrived in.
+ */
+export function arrayItemRanges(bytes: Uint8Array, offset: number, allowSetTag: boolean): { ranges: Array<[number, number]>; next: number } {
+  let h = readHeader(bytes, offset);
+  if (allowSetTag && h.major === 6 && h.arg === 258n) h = readHeader(bytes, h.next);
+  if (h.major !== 4) throw new Error('cbor: expected an array');
+  const ranges: Array<[number, number]> = [];
+  let p = h.next;
+  const take = () => {
+    const end = decodeItem(bytes, p).next;
+    ranges.push([p, end]);
+    p = end;
+  };
+  if (h.indefinite) {
+    while (bytes[p] !== BREAK) take();
+    p += 1;
+  } else {
+    for (let i = 0n; i < h.arg; i++) take();
+  }
+  return { ranges, next: p };
+}
