@@ -42,3 +42,7 @@ UTxOs with native assets, datum hash, inline datum and reference script encode l
 ## Milestone 6: scripts
 
 Script hashes match CSL for native scripts and Plutus V1 to V3, from the witness set and from reference scripts. A native script is hashed over the bytes it arrived in, like the ledger. Native scripts are evaluated after the ledger's evalTimelock, with its boundaries. Plutus spends with collateral, native multisig with a co-signer, native mint, a reference script, script withdrawals and a guardrail proposal, built by Evolution and CSL, are signed and verified with CSL in `test/scripts.test.ts`, `test/tx-scripts.test.ts`, `test/sign-tx-scripts.test.ts` and `test/scripts-oracle.test.ts`. A native mint is signed in the page in Chromium, Firefox and WebKit (`test-browser/scripts.spec.ts`).
+
+## Ledger in Node
+
+A submitted transaction spends its inputs and creates its outputs after the ledger's UTXO rule, a phase 2 invalid one spends only its collateral and creates the collateral return at the index after the outputs. Stake registration follows certificates 0, 7, 11, 12, 13 and 1, 8. `test/tx-outputs.test.ts`, `test/ledger-state.test.ts`, `test/ledger-binding.test.ts`, `test/init-script-ledger.test.ts`, and in three engines `test-browser/ledger.spec.ts`, including a second transaction across a reload and an origin change.

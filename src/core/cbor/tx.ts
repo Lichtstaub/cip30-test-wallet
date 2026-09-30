@@ -1,8 +1,10 @@
 import { blake2b } from '@noble/hashes/blake2.js';
 import { Tagged, arrayItemRanges, decode, decodeItem, mapValueOffsets, readHeader, type CborValue } from './decode.js';
 import { encode } from './encode.js';
-import { providedScript, type ProvidedScript, type ScriptLanguage } from '../scripts.js';
-import { MAX_INT64, MIN_INT64 } from '../value.js';
+import type { Utxo } from '../ledger.js';
+import { isPlutusDataBytes } from '../cbor-shapes.js';
+import { isScriptRef, providedScript, type ProvidedScript, type ScriptLanguage } from '../scripts.js';
+import { MAX_INT64, MIN_INT64, valueFromCbor } from '../value.js';
 
 // A Cardano transaction is [body, witness_set, is_valid, auxiliary_data].
 // The body is never re-encoded here. Hash and signature run over the exact
@@ -39,10 +41,17 @@ export function lookupInputs(body: ParsedBody): Array<{ input: TxInput; label: I
   return [...spentInputs(body), ...body.referenceInputs.map((input) => ({ input, label: 'reference input' as const }))];
 }
 
+/** A transaction output as the ledger will hold it, before it has an outpoint. */
+export type TxOutput = Omit<Utxo, 'input'>;
+
 export interface ParsedBody {
   inputs: TxInput[];
   /** Collateral inputs (body key 13), spent only when a script fails. */
   collateralInputs: TxInput[];
+  /** Transaction outputs (body key 1), in order. Output i becomes txId#i. */
+  outputs: TxOutput[];
+  /** Collateral return (body key 16), created at txId#outputs.length when the transaction fails phase 2. */
+  collateralReturn: TxOutput | undefined;
   requiredSigners: Uint8Array[];
   /** One entry per withdrawal, in map order. hash is the 28 byte stake credential. */
   withdrawals: { hash: Uint8Array; isScript: boolean }[];
@@ -64,6 +73,7 @@ export interface ParsedBody {
 }
 
 const BODY_INPUTS = 0n;
+const BODY_OUTPUTS = 1n;
 const BODY_COLLATERAL_INPUTS = 13n;
 const BODY_COLLATERAL_RETURN = 16n;
 const BODY_TOTAL_COLLATERAL = 17n;
@@ -139,6 +149,49 @@ function parseMint(value: CborValue | undefined): Uint8Array[] {
   return policies;
 }
 
+// transaction_output = [address, value, ? datum_hash] / {0: address, 1: value, ? 2: datum_option, ? 3: script_ref}
+function parseOutput(output: CborValue, where: string): TxOutput {
+  let address: CborValue | undefined;
+  let value: CborValue | undefined;
+  let datumHash: CborValue | undefined;
+  let datumOption: CborValue | undefined;
+  let scriptRef: CborValue | undefined;
+  if (Array.isArray(output) && (output.length === 2 || output.length === 3)) {
+    [address, value, datumHash] = output;
+  } else if (output instanceof Map) {
+    address = output.get(0n);
+    value = output.get(1n);
+    datumOption = output.get(2n);
+    scriptRef = output.get(3n);
+  } else {
+    throw new Error(`malformed ${where}`);
+  }
+  if (!(address instanceof Uint8Array) || address.length === 0) throw new Error(`malformed address in ${where}`);
+  if (value === undefined) throw new Error(`${where} has no value`);
+  const { coin, assets } = valueFromCbor(value, `value in ${where}`, true);
+  const out: TxOutput = { address, lovelace: coin };
+  if (assets.size > 0) out.assets = assets;
+  if (datumHash !== undefined) {
+    if (!(datumHash instanceof Uint8Array) || datumHash.length !== 32) throw new Error(`malformed datum hash in ${where}`);
+    out.datum = { kind: 'hash', hash: datumHash };
+  }
+  if (datumOption !== undefined) {
+    // datum_option = [0, hash32] / [1, #6.24(bytes .cbor plutus_data)]
+    const [kind, content] = Array.isArray(datumOption) && datumOption.length === 2 ? datumOption : [];
+    if (kind === 0n && content instanceof Uint8Array && content.length === 32) out.datum = { kind: 'hash', hash: content };
+    else if (kind === 1n && content instanceof Tagged && content.tag === 24n && content.value instanceof Uint8Array && isPlutusDataBytes(content.value)) {
+      out.datum = { kind: 'inline', cbor: content.value };
+    } else throw new Error(`malformed datum option in ${where}`);
+  }
+  if (scriptRef !== undefined) {
+    // script_ref = #6.24(bytes .cbor script)
+    if (!(scriptRef instanceof Tagged) || scriptRef.tag !== 24n || !(scriptRef.value instanceof Uint8Array)) throw new Error(`malformed script ref in ${where}`);
+    if (!isScriptRef(scriptRef.value)) throw new Error(`malformed script ref in ${where}`);
+    out.scriptRef = scriptRef.value;
+  }
+  return out;
+}
+
 function parseBodyMap(body: Map<CborValue, CborValue>): ParsedBody {
   // The decoder turns CBOR undefined (0xf7) into undefined, which mapGet cannot tell from a missing key.
   for (const [key, value] of body) {
@@ -147,10 +200,13 @@ function parseBodyMap(body: Map<CborValue, CborValue>): ParsedBody {
 
   const inputs = parseInputs(mapGet(body, BODY_INPUTS));
 
+  const rawOutputs = mapGet(body, BODY_OUTPUTS) ?? [];
+  if (!Array.isArray(rawOutputs)) throw new Error('outputs must be an array');
+  const outputs = rawOutputs.map((output, i) => parseOutput(output, `output ${i}`));
+
   const collateralInputs = parseNonEmptyInputs(mapGet(body, BODY_COLLATERAL_INPUTS), 'collateral inputs');
-  // The collateral return is an output without a witness requirement, so only its shape is checked.
   const rawReturn = mapGet(body, BODY_COLLATERAL_RETURN);
-  if (rawReturn !== undefined && !Array.isArray(rawReturn) && !(rawReturn instanceof Map)) throw new Error('malformed collateral return');
+  const collateralReturn = rawReturn === undefined ? undefined : parseOutput(rawReturn, 'collateral return');
   parseSlot(mapGet(body, BODY_TOTAL_COLLATERAL), 'total collateral');
 
   // nonempty_set<transaction_input>
@@ -216,6 +272,8 @@ function parseBodyMap(body: Map<CborValue, CborValue>): ParsedBody {
   return {
     inputs,
     collateralInputs,
+    outputs,
+    collateralReturn,
     requiredSigners,
     withdrawals,
     bodyKeys: [...body.keys()].map((k) => {
@@ -272,6 +330,8 @@ function witnessScripts(tx: Uint8Array, witnessSetOffset: number): ProvidedScrip
 export interface ParsedTransaction {
   /** The body exactly as the builder encoded it, never re-encoded. */
   bodyBytes: Uint8Array;
+  /** The is_valid flag: false means phase 2 failed and only the collateral is spent. */
+  isValid: boolean;
   /** Blake2b-256 of bodyBytes, the transaction id and what every witness signs. */
   hash: Uint8Array;
   body: ParsedBody;
@@ -308,6 +368,7 @@ export function parseTransaction(tx: Uint8Array): ParsedTransaction {
   const bodyBytes = tx.slice(start, bodyEnd);
   return {
     bodyBytes,
+    isValid,
     hash: blake2b(bodyBytes, { dkLen: 32 }),
     body: parseBodyMap(body),
     vkeyWitnesses: vkeyWitnessesOf(witnessSet),

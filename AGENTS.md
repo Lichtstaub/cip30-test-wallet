@@ -19,13 +19,13 @@ In an installed project these files are under `node_modules/cip30-test-wallet/`.
 ## Rules that save a debugging round
 
 - Import `test`, `expect`, `expectSignedBy` and `expectSignedData` from `cip30-test-wallet/playwright`, not from `@playwright/test`.
-- The wallet's UTxOs exist only in the wallet. Build transactions from CIP-30 `getUtxos()`, never from a chain lookup of the address. Protocol parameters still come from the network, serve them from a recorded file for offline runs.
-- Nothing reaches a chain. The wallet's `submitTx` records and returns the id. A provider or backend that submits must be intercepted with `page.route`, then prove the transaction with `expectSignedBy`.
+- The wallet's UTxOs exist only in the wallet. Build transactions from CIP-30 `getUtxos()` and read it again after every `submitTx`, the outputs change. Never build transactions from a chain lookup of the address. Protocol parameters still come from the network, serve them from a recorded file for offline runs.
+- Nothing reaches a chain. The wallet's `submitTx` records the transaction, applies it to the wallet's UTxOs and returns the id. `wallet.utxos()` reads the resulting outputs from the test process. A provider or backend that submits must be intercepted with `page.route`, then prove the transaction with `expectSignedBy`.
 - A call count proves no signature. Prove it with `expectSignedBy(tx, wallet)` for transactions and `expectSignedData(result, { payload, address })` for messages.
 - Wallet errors are plain `{ code, info }` objects as CIP-30 requires. Code that reads `err.message` is a dApp bug the test just found.
 - A `ChwError` with code `CHW_UNSUPPORTED_TX_FORM`, `CHW_UNRESOLVED_INPUT` or `CHW_UNRESOLVED_SCRIPT` is a harness diagnosis about the test setup, not wallet behaviour. Follow its hint (add the input to `utxos` or `foreignUtxos`, attach the script or add the UTxO holding it as `scriptRef`, or, for `CHW_UNSUPPORTED_TX_FORM` only, sign with `partialSign: true`) instead of changing the dApp.
 - A click does not wait for the wallet. Wait for what the app shows afterwards before you read the journal or `lastSubmittedTx()`.
-- The journal (`wallet.calls()`) starts empty after every navigation. Read it before the dApp navigates away, see the login recipe.
+- The journal (`wallet.calls()`) starts empty after every navigation. Read it before the dApp navigates away, see the login recipe. The ledger behind `wallet.utxos()` lives for the whole test and is not reset by a navigation.
 - Reproduce user-side failures with `walletOptions.quirks`, never with a real wallet. Use only the default mnemonic or a throwaway testnet mnemonic, the keys end up in traces.
 
 ## Minimal test

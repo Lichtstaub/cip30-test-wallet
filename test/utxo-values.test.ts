@@ -58,7 +58,7 @@ describe('walletOptions.utxos with assets, datum and script ref', () => {
       ],
     });
     expect(w.config.utxos[0]).toEqual({ lovelace: '3000000', assets: { [P + '41']: '7' } });
-    const ledger = buildLedger(w.config, address);
+    const ledger = buildLedger(w.config, { baseAddress: address, paymentKeyHash: new Uint8Array(28), stakeKeyHash: new Uint8Array(28) });
     const [first, second] = await ledger.getWalletUtxos();
     expect(first!.assets!.get(P)!.get('41')).toBe(7n);
     expect(second!.datum).toEqual({ kind: 'hash', hash: hexToBytes(datumHash) });
@@ -68,7 +68,7 @@ describe('walletOptions.utxos with assets, datum and script ref', () => {
   it('accepts a native script as reference script, CSL reads it back', async () => {
     const native = bytesToHex(encode([0n, [0n, new Uint8Array(28).fill(7)]]));
     const w = prepareWallet({ utxos: [{ lovelace: 2_000_000, scriptRef: native }] });
-    const [utxo] = await buildLedger(w.config, address).getWalletUtxos();
+    const [utxo] = await buildLedger(w.config, { baseAddress: address, paymentKeyHash: new Uint8Array(28), stakeKeyHash: new Uint8Array(28) }).getWalletUtxos();
     expect(CSL.TransactionUnspentOutput.from_hex(bytesToHex(encodeUtxo(utxo!))).output().script_ref()!.is_native_script()).toBe(true);
   });
 

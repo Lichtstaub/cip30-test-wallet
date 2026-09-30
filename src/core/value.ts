@@ -1,4 +1,4 @@
-import { hexToBytes, isHex } from './bytes.js';
+import { bytesToHex, hexToBytes, isHex } from './bytes.js';
 import type { CborValue } from './cbor/decode.js';
 
 // Native assets as the wallet holds them. Keys are lower case hex so two
@@ -63,6 +63,31 @@ export function addAsset(into: MultiAsset, policy: string, name: string, quantit
 export function addAssets(into: MultiAsset, add: MultiAsset | undefined): void {
   if (!add) return;
   for (const [policy, names] of add) for (const [name, quantity] of names) addAsset(into, policy, name, quantity);
+}
+
+/**
+ * value = coin / [coin, multiasset<uint>], as a dApp or a transaction output
+ * writes it. Quantities of 0 are dropped, so the MultiAsset invariant holds,
+ * unless positiveAssets asks for multiasset<positive_coin> as in an output.
+ * Throws a plain Error whose message starts with what.
+ */
+export function valueFromCbor(value: CborValue, what: string, positiveAssets = false): { coin: bigint; assets: MultiAsset } {
+  if (typeof value === 'bigint' && value >= 0n) return { coin: value, assets: new Map() };
+  if (Array.isArray(value) && value.length === 2 && typeof value[0] === 'bigint' && value[0] >= 0n && value[1] instanceof Map) {
+    const parsed: MultiAsset = new Map();
+    for (const [policy, assets] of value[1]) {
+      if (!(policy instanceof Uint8Array) || policy.length !== 28) throw new Error(`${what} policy ids must be 28 bytes`);
+      if (!(assets instanceof Map)) throw new Error(`${what} multiasset must map policies to asset maps`);
+      for (const [name, quantity] of assets) {
+        if (!(name instanceof Uint8Array) || name.length > 32) throw new Error(`${what} asset names must be at most 32 bytes`);
+        if (typeof quantity !== 'bigint' || quantity < 0n) throw new Error(`${what} asset quantities must be non-negative integers`);
+        if (positiveAssets && quantity === 0n) throw new Error(`${what} asset quantities must be positive`);
+        if (quantity > 0n) addAsset(parsed, bytesToHex(policy), bytesToHex(name), quantity);
+      }
+    }
+    return { coin: value[0], assets: parsed };
+  }
+  throw new Error(`${what} must be a cbor value`);
 }
 
 // Canonical CBOR map order, the order CSL emits: shorter key first, then

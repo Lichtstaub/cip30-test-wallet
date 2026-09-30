@@ -30,6 +30,8 @@ export interface BuildTxOptions {
   plainArraySets?: boolean;
   /** Witness set map of the unsigned transaction, empty when left out. */
   witnessSet?: Map<bigint, unknown>;
+  /** The is_valid flag of the transaction, true when left out. */
+  isValid?: boolean;
 }
 
 export function buildTx(opts: BuildTxOptions): string {
@@ -51,7 +53,7 @@ export function buildTx(opts: BuildTxOptions): string {
   if (opts.extraBodyEntries) {
     for (const [key, value] of opts.extraBodyEntries) body.set(key, value);
   }
-  const tx = [body, opts.witnessSet ?? new Map(), true, null];
+  const tx = [body, opts.witnessSet ?? new Map(), opts.isValid ?? true, null];
   return bytesToHex(encode(tx as never));
 }
 

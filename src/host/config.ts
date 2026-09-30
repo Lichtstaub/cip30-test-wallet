@@ -8,8 +8,8 @@ import { publicKey } from '../core/keys.js';
 import { deriveAccount, type DerivedAccount } from '../derive/index.js';
 import { MAX_UINT64, parseAssetUnits } from '../core/value.js';
 import type { OwnedUtxoConfig, PageConfig, QuirkConfig, UtxoExtras } from '../page/config.js';
-import { isPlutusData } from './cbor-shapes.js';
-import { scriptFromRef } from '../core/scripts.js';
+import { isPlutusDataBytes } from '../core/cbor-shapes.js';
+import { isScriptRef } from '../core/scripts.js';
 
 /** Public test vector from the CSL documentation. Holds no funds, safe to ship. */
 export const DEFAULT_MNEMONIC = 'test walk nut penalty hip pave soap entry language right filter choice';
@@ -34,6 +34,8 @@ export interface WalletOptions {
   quirks?: QuirkConfig;
   /** CIP-95: report the stake key as registered. Defaults to false, a fresh wallet. */
   stakeRegistered?: boolean;
+  /** state: apply every submitted transaction to the wallet's UTxOs and registration (default true). */
+  ledger?: { state?: boolean };
 }
 
 export interface PreparedWallet {
@@ -90,15 +92,13 @@ function validateUtxoExtras(u: UtxoExtrasInput, where: string): UtxoExtras {
   }
   if (u.inlineDatum !== undefined) {
     const hex = oneCborItem(u.inlineDatum, `${where}.inlineDatum`);
-    if (!isPlutusData(decode(hexToBytes(hex)))) throw new Error(`${where}.inlineDatum must be the CBOR of plutus_data`);
+    if (!isPlutusDataBytes(hexToBytes(hex))) throw new Error(`${where}.inlineDatum must be the CBOR of plutus_data`);
     out.inlineDatum = hex;
   }
   if (u.scriptRef !== undefined) {
     const hex = oneCborItem(u.scriptRef, `${where}.scriptRef`);
     // The same reader signTx uses, so a script reference the wallet accepts here always resolves there.
-    try {
-      scriptFromRef(hexToBytes(hex));
-    } catch {
+    if (!isScriptRef(hexToBytes(hex))) {
       throw new Error(`${where}.scriptRef must be the CBOR of script = [0, native_script] / [1 to 3, plutus script bytes]`);
     }
     out.scriptRef = hex;
@@ -175,6 +175,8 @@ export function prepareWallet(options: WalletOptions = {}): PreparedWallet {
 
   const utxos = (options.utxos ?? [{ lovelace: 10_000_000 }]).map((u, i) => ({ lovelace: lovelaceString(u.lovelace), ...validateUtxoExtras(u, `utxos[${i}]`) }));
   checkOwnedSums(utxos);
+  const state = options.ledger?.state ?? true;
+  if (typeof state !== 'boolean') throw new Error(`ledger.state must be a boolean, got ${String(state)}`);
 
   const config: PageConfig = {
     name: options.name ?? 'chw',
@@ -190,6 +192,7 @@ export function prepareWallet(options: WalletOptions = {}): PreparedWallet {
     foreignUtxos: (options.foreignUtxos ?? []).map(foreignUtxo),
     quirks: { ...(options.quirks ?? {}) },
     stakeRegistered: options.stakeRegistered ?? false,
+    ledger: { state },
   };
 
   return {

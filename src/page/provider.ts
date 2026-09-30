@@ -1,15 +1,15 @@
 import { bytesToHex, hexToBytes } from '../core/bytes.js';
-import { decode } from '../core/cbor/decode.js';
+import { decode, type CborValue } from '../core/cbor/decode.js';
 import { encode } from '../core/cbor/encode.js';
 import { signCose } from '../core/cose.js';
 import { APIErrorCode, apiError, DataSignErrorCode, dataSignError, TxSignErrorCode, txSignError } from '../core/errors.js';
 import type { SigningKey } from '../core/keys.js';
-import { encodeUtxo, type MemoryLedger } from '../core/ledger.js';
+import { encodeUtxo, type Ledger } from '../core/ledger.js';
 import { parseAddressArg, parseHexArg, resolveDataSigner } from '../core/sign-data.js';
 import { requirements } from '../core/requirements.js';
 import { parseTxHex, refuseDeprecatedCertificate, resolveInputs, signTx as coreSignTx } from '../core/sign-tx.js';
 import { selectCollateral, selectForAmount } from '../core/select.js';
-import { addAsset, addAssets, valueCbor, type MultiAsset } from '../core/value.js';
+import { addAssets, valueCbor, valueFromCbor, type MultiAsset } from '../core/value.js';
 import type { Control } from './control.js';
 import type { PageConfig } from './config.js';
 
@@ -26,7 +26,7 @@ export interface WalletKeys {
 export interface WalletContext {
   config: PageConfig;
   control: Control;
-  ledger: MemoryLedger;
+  ledger: Ledger;
   payment: SigningKey;
   stake: SigningKey;
   drep: SigningKey;
@@ -143,16 +143,18 @@ export function buildApi(ctx: WalletContext, extensions: { cip: number }[] = [])
   const { control, config, ledger } = ctx;
   const baseHex = bytesToHex(ctx.baseAddress);
   const rewardHex = bytesToHex(ctx.rewardAddress);
-  const hasFunds = async () => (await ledger.getWalletUtxos()).length > 0;
+  // CIP-30 "used" means the address appeared in a transaction. A configured UTxO counts, and so
+  // does any output the ledger holds now, so spending everything never turns the address unused.
+  const isUsed = async () => config.utxos.length > 0 || (await ledger.getWalletUtxos()).length > 0;
 
   const api: Cip30Api = {
     getNetworkId: () => control.record('getNetworkId', [], async () => config.networkId),
     getUsedAddresses: (paginate) =>
       control.record('getUsedAddresses', [paginate], async () => {
-        const used = (await hasFunds()) ? [baseHex] : [];
+        const used = (await isUsed()) ? [baseHex] : [];
         return paginate === undefined ? used : paginateList(used, paginate);
       }),
-    getUnusedAddresses: () => control.record('getUnusedAddresses', [], async () => ((await hasFunds()) ? [] : [baseHex])),
+    getUnusedAddresses: () => control.record('getUnusedAddresses', [], async () => ((await isUsed()) ? [] : [baseHex])),
     getChangeAddress: () => control.record('getChangeAddress', [], async () => baseHex),
     getRewardAddresses: () => control.record('getRewardAddresses', [], async () => [rewardHex]),
     getExtensions: () => control.record('getExtensions', [], async () => extensions.map((e) => ({ ...e }))),
@@ -225,7 +227,7 @@ export function buildApi(ctx: WalletContext, extensions: { cip: number }[] = [])
 }
 
 function buildCip95Api(ctx: WalletContext): Cip95Api {
-  const { control, config } = ctx;
+  const { control } = ctx;
   const stakeHex = bytesToHex(ctx.keys.stakePub);
   // CIP-95: these endpoints take no parameters, passing one is InvalidRequest.
   // An explicit undefined counts as absent, wrappers often forward optional
@@ -239,8 +241,8 @@ function buildCip95Api(ctx: WalletContext): Cip95Api {
       });
   return {
     getPubDRepKey: noArgs('getPubDRepKey', async () => bytesToHex(ctx.keys.drepPub)),
-    getRegisteredPubStakeKeys: noArgs('getRegisteredPubStakeKeys', async () => (config.stakeRegistered ? [stakeHex] : [])),
-    getUnregisteredPubStakeKeys: noArgs('getUnregisteredPubStakeKeys', async () => (config.stakeRegistered ? [] : [stakeHex])),
+    getRegisteredPubStakeKeys: noArgs('getRegisteredPubStakeKeys', async () => ((await ctx.ledger.getStakeRegistered()) ? [stakeHex] : [])),
+    getUnregisteredPubStakeKeys: noArgs('getUnregisteredPubStakeKeys', async () => ((await ctx.ledger.getStakeRegistered()) ? [] : [stakeHex])),
     signData: (addr, payload) => control.record('cip95.signData', [addr, payload], () => signDataWith(ctx, addr, payload, 'cip95')),
   };
 }
@@ -270,28 +272,18 @@ export async function signDataWith(ctx: WalletContext, addr: unknown, payload: u
  * and asset name, to be matched against the wallet's UTxOs.
  */
 function parseValue(hex: string): { coin: bigint; assets: MultiAsset } {
-  let value: unknown;
+  let value: CborValue;
   try {
     value = decode(hexToBytes(hex));
   } catch {
     throw apiError(APIErrorCode.InvalidRequest, 'amount is not valid cbor');
   }
-  if (typeof value === 'bigint' && value >= 0n) return { coin: value, assets: new Map() };
-  if (Array.isArray(value) && value.length === 2 && typeof value[0] === 'bigint' && value[0] >= 0n && value[1] instanceof Map) {
-    const parsed: MultiAsset = new Map();
-    for (const [policy, assets] of value[1]) {
-      if (!(policy instanceof Uint8Array) || policy.length !== 28) throw apiError(APIErrorCode.InvalidRequest, 'amount policy ids must be 28 bytes');
-      if (!(assets instanceof Map)) throw apiError(APIErrorCode.InvalidRequest, 'amount multiasset must map policies to asset maps');
-      const policyHex = bytesToHex(policy);
-      for (const [name, quantity] of assets) {
-        if (!(name instanceof Uint8Array) || name.length > 32) throw apiError(APIErrorCode.InvalidRequest, 'amount asset names must be at most 32 bytes');
-        if (typeof quantity !== 'bigint' || quantity < 0n) throw apiError(APIErrorCode.InvalidRequest, 'amount asset quantities must be non-negative integers');
-        if (quantity > 0n) addAsset(parsed, policyHex, bytesToHex(name), quantity);
-      }
-    }
-    return { coin: value[0], assets: parsed };
+  try {
+    return valueFromCbor(value, 'amount');
+  } catch (error) {
+    // valueFromCbor throws plain Errors only.
+    throw apiError(APIErrorCode.InvalidRequest, (error as Error).message);
   }
-  throw apiError(APIErrorCode.InvalidRequest, 'amount must be a cbor value');
 }
 
 /**

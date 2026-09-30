@@ -21,6 +21,6 @@ describe('public API', () => {
   });
 
   it('playwright entry exports the fixture and the assertions', () => {
-    expect(Object.keys(playwright).sort()).toEqual(['expect', 'expectSignedBy', 'expectSignedData', 'test']);
+    expect(Object.keys(playwright).sort()).toEqual(['attachWallet', 'expect', 'expectSignedBy', 'expectSignedData', 'test']);
   });
 });

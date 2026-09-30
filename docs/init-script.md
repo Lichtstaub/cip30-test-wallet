@@ -8,7 +8,7 @@ npx cip30-test-wallet init-script [--options <file.json>] [--network 0|1] [--nam
 
 | Flag | Meaning |
 |---|---|
-| `--options <file.json>` | Wallet options as JSON, the same shape as the fixture's `walletOptions`: `name`, `networkId`, `utxos`, `foreignUtxos`, `quirks`, `stakeRegistered` and the rest |
+| `--options <file.json>` | Wallet options as JSON, the same shape as the fixture's `walletOptions`: `name`, `networkId`, `utxos`, `foreignUtxos`, `quirks`, `stakeRegistered`, `ledger` and the rest |
 | `--network 0\|1` | Overrides `networkId`. 0 is testnet, 1 is mainnet |
 | `--name <name>` | Overrides the key under `window.cardano`, `chw` by default |
 | `--mnemonic-env <VAR>` | Reads the mnemonic from this environment variable, so it never appears on the command line or in shell history |
@@ -46,6 +46,10 @@ Without the fixture there is no `wallet` handle. The same controls are on `windo
 | `release('signTx')`, `reject('signTx')` | Ends a hanging `signTx` and returns how many calls it settled |
 
 Like the fixture's journal, this state lives in the page and resets on every navigation. Read the journal before the agent navigates away.
+
+## State after submit
+
+Without the fixture there is no host to keep the ledger in. The wallet applies each submitted transaction to its UTxOs inside the page, until the page loads again. `--options` with `{ "ledger": { "state": false } }` switches this off.
 
 ## Keys
 
