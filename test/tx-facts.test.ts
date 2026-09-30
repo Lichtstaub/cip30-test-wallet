@@ -186,6 +186,26 @@ describe('readTransaction: withdrawals, mint, proposals, witnesses', () => {
     ]);
   });
 
+  it('counts a repeated redeemer key once in the legacy array form, the later ex units win', () => {
+    const legacy = [[0n, 0n, 1n, [1000n, 2000n]], [1n, 0n, 1n, [7n, 8n]], [0n, 0n, 1n, [5n, 6n]]];
+    expect(factsOf(withBody([], new Map([[5n, legacy]]))).redeemers).toEqual([
+      { tag: 0n, index: 0n, mem: 5n, steps: 6n },
+      { tag: 1n, index: 0n, mem: 7n, steps: 8n },
+    ]);
+  });
+
+  it('counts a repeated redeemer key once in the Conway map form, the later ex units win', () => {
+    const map = new Map<unknown, unknown>([
+      [[0n, 0n], [1n, [1000n, 2000n]]],
+      [[1n, 0n], [1n, [7n, 8n]]],
+      [[0n, 0n], [1n, [5n, 6n]]],
+    ]);
+    expect(factsOf(withBody([], new Map([[5n, map]]))).redeemers).toEqual([
+      { tag: 0n, index: 0n, mem: 5n, steps: 6n },
+      { tag: 1n, index: 0n, mem: 7n, steps: 8n },
+    ]);
+  });
+
   it('counts bootstrap witnesses, plain array and tag 258', () => {
     const witness = [new Uint8Array(32), new Uint8Array(64), new Uint8Array(32), hexToBytes('a0')];
     expect(factsOf(withBody([], new Map([[2n, [witness, witness]]]))).bootstrapWitnesses).toBe(2);

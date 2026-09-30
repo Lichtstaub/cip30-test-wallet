@@ -214,22 +214,28 @@ function tagAndIndex(tag: CborValue | undefined, index: CborValue | undefined): 
 }
 
 // redeemers = [+ [tag, index, data, ex_units]] / {+ [tag, index] => [data, ex_units]}
+// Alonzo TxWits.hs decodes both forms with Map.fromList, so a repeated (tag, index) collapses
+// to one entry and the later wire entry wins. A JS Map keeps the position of the first
+// occurrence and takes the later value, which is the same set of entries.
 function readRedeemers(value: CborValue | undefined): RedeemerFact[] {
   if (value === undefined) return [];
+  const byKey = new Map<string, RedeemerFact>();
+  const add = (fact: RedeemerFact) => byKey.set(`${fact.tag}:${fact.index}`, fact);
   if (Array.isArray(value)) {
-    return value.map((r) => {
+    for (const r of value) {
       if (!Array.isArray(r) || r.length !== 4) malformed('redeemer');
-      return { ...tagAndIndex(r[0], r[1]), ...exUnits(r[3], 'redeemer ex units') };
-    });
-  }
-  if (value instanceof Map) {
-    return [...value].map(([key, entry]) => {
+      add({ ...tagAndIndex(r[0], r[1]), ...exUnits(r[3], 'redeemer ex units') });
+    }
+  } else if (value instanceof Map) {
+    for (const [key, entry] of value) {
       if (!Array.isArray(key) || key.length !== 2) malformed('redeemer key');
       if (!Array.isArray(entry) || entry.length !== 2) malformed('redeemer');
-      return { ...tagAndIndex(key[0], key[1]), ...exUnits(entry[1], 'redeemer ex units') };
-    });
+      add({ ...tagAndIndex(key[0], key[1]), ...exUnits(entry[1], 'redeemer ex units') });
+    }
+  } else {
+    malformed('redeemers');
   }
-  return malformed('redeemers');
+  return [...byKey.values()];
 }
 
 // mint = {+ policy_id => {+ asset_name => nonzero_int64}}, already checked by the page parser.
