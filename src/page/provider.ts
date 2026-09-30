@@ -7,7 +7,7 @@ import type { SigningKey } from '../core/keys.js';
 import { encodeUtxo, type MemoryLedger } from '../core/ledger.js';
 import { parseAddressArg, parseHexArg, resolveDataSigner } from '../core/sign-data.js';
 import { requirements } from '../core/requirements.js';
-import { parseTxHex, refuseDeprecatedCertificate, resolveInputs, signTx as coreSignTx, unsupportedForms } from '../core/sign-tx.js';
+import { parseTxHex, refuseDeprecatedCertificate, resolveInputs, signTx as coreSignTx } from '../core/sign-tx.js';
 import { selectCollateral, selectForAmount } from '../core/select.js';
 import { addAsset, addAssets, valueCbor, type MultiAsset } from '../core/value.js';
 import type { Control } from './control.js';
@@ -189,7 +189,7 @@ export function buildApi(ctx: WalletContext, extensions: { cip: number }[] = [])
         requirements(parsed.body, []);
         if (partialSign) {
           try {
-            const skipped = unsupportedForms(parsed.body, await resolveInputs(parsed.body, ledger));
+            const skipped = requirements(parsed.body, await resolveInputs(parsed.body, ledger)).unsupported;
             if (skipped.length > 0) {
               console.warn('[cip30-test-wallet] partialSign: true skipped unsupported transaction forms: ' + skipped.join(', '));
             }

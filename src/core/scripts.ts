@@ -1,6 +1,7 @@
 import { blake2b } from '@noble/hashes/blake2.js';
-import { bytesEqual, bytesToHex } from './bytes.js';
+import { bytesEqual, bytesToHex, concat } from './bytes.js';
 import { arrayItemRanges, decode, type CborValue } from './cbor/decode.js';
+import type { InputLabel } from './cbor/tx.js';
 import type { Utxo } from './ledger.js';
 import { MAX_INT64, MIN_INT64 } from './value.js';
 
@@ -32,10 +33,7 @@ export interface ProvidedScript {
 const MAX_DEPTH = 256;
 
 export function scriptHash(language: ScriptLanguage, bytes: Uint8Array): Uint8Array {
-  const tagged = new Uint8Array(bytes.length + 1);
-  tagged[0] = language;
-  tagged.set(bytes, 1);
-  return blake2b(tagged, { dkLen: 28 });
+  return blake2b(concat(Uint8Array.of(language), bytes), { dkLen: 28 });
 }
 
 function malformed(): never {
@@ -153,23 +151,21 @@ export function scriptFromRef(ref: Uint8Array): ProvidedScript {
 
 /**
  * The scripts the ledger finds for a transaction: the witness set, then the
- * reference scripts of body inputs and reference inputs. Collateral inputs
- * are no source (Babbage getBabbageScriptsProvided). A script reference that
- * does not parse provides nothing and is named in unreadable, as
- * "input <id>#<index>" or "reference input <id>#<index>": fixture configuration
- * is checked in Node, only a hand-written PageConfig can carry one.
- * Exported so a ledger-side witness check can reuse the same source rule.
+ * reference scripts of body inputs and reference inputs, in the order given.
+ * Collateral inputs are no source (Babbage getBabbageScriptsProvided). A
+ * script reference that does not parse provides nothing and is named in
+ * unreadable, as "input <id>#<index>" or "reference input <id>#<index>":
+ * fixture configuration is checked in Node, only a hand-written PageConfig
+ * can carry one.
  */
 export function scriptsProvided(
   witnessScripts: ReadonlyArray<ProvidedScript>,
-  bodyInputs: ReadonlyArray<Utxo>,
-  references: ReadonlyArray<Utxo>,
+  inputs: ReadonlyArray<{ label: InputLabel; utxo: Utxo }>,
 ): { scripts: ProvidedScript[]; unreadable: string[] } {
   const scripts = [...witnessScripts];
   const unreadable: string[] = [];
-  const sources: Array<[string, Utxo]> = [...bodyInputs.map((u): [string, Utxo] => ['input', u]), ...references.map((u): [string, Utxo] => ['reference input', u])];
-  for (const [label, utxo] of sources) {
-    if (!utxo.scriptRef) continue;
+  for (const { label, utxo } of inputs) {
+    if (label === 'collateral input' || !utxo.scriptRef) continue;
     try {
       scripts.push(scriptFromRef(utxo.scriptRef));
     } catch {

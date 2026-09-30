@@ -4,17 +4,16 @@ import { bytesToHex, concat, hexToBytes } from '../src/core/bytes.js';
 import { arrayItemRanges, decode, Tagged } from '../src/core/cbor/decode.js';
 import { encode } from '../src/core/cbor/encode.js';
 import { evaluateNativeScript, nativeKeyHashes, parseNativeScript, providedScript, scriptFromRef, scriptHash, type NativeScript } from '../src/core/scripts.js';
-import { isNativeScript } from '../src/host/cbor-shapes.js';
+import { prepareWallet } from '../src/host/config.js';
+import { hash28 as h, PLUTUS_COMPILED } from './helpers/synthetic.js';
 
-const h = (n: number) => new Uint8Array(28).fill(n);
 const cslPub = (n: number) => CSL.NativeScript.new_script_pubkey(CSL.ScriptPubkey.new(CSL.Ed25519KeyHash.from_bytes(h(n))));
 const cslList = (...items: CSL.NativeScript[]) => {
   const list = CSL.NativeScripts.new();
   for (const item of items) list.add(item);
   return list;
 };
-// A compiled Plutus script as plutus.json carries it: a CBOR byte string around flat bytes. Never executed.
-const COMPILED = hexToBytes('500100003232222533002494984d260011');
+const COMPILED = hexToBytes(PLUTUS_COMPILED);
 const cslPlutus = [(b: Uint8Array) => CSL.PlutusScript.new(b), (b: Uint8Array) => CSL.PlutusScript.new_v2(b), (b: Uint8Array) => CSL.PlutusScript.new_v3(b)];
 
 describe('script hashes against CSL', () => {
@@ -115,9 +114,11 @@ describe('parseNativeScript', () => {
   });
 
   it('is the one parser the configuration check uses', () => {
-    expect(isNativeScript([3n, 2n ** 63n, []])).toBe(false);
-    expect(isNativeScript([3n, -1n, []])).toBe(true);
-    expect(isNativeScript([0n, h(1)])).toBe(true);
+    const scriptRef = (native: unknown) => bytesToHex(encode([0n, native] as never));
+    const accepts = (native: unknown) => () => prepareWallet({ utxos: [{ lovelace: 1, scriptRef: scriptRef(native) }] });
+    expect(accepts([3n, 2n ** 63n, []])).toThrow(/scriptRef/);
+    expect(accepts([3n, -1n, []])).not.toThrow();
+    expect(accepts([0n, h(1)])).not.toThrow();
   });
 });
 

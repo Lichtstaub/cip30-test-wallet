@@ -35,24 +35,20 @@ export function cslGovernanceTx(opts: CslGovernanceTx): string {
     );
     body.set_voting_procedures(votes);
   }
-  if (opts.infoProposal) {
+  // One proposal per transaction: a second option would replace the first.
+  const propose = (action: CSL.GovernanceAction, rewardAddressHex: string) => {
     const proposals = CSL.VotingProposals.new();
     const anchor = CSL.Anchor.new(CSL.URL.new('https://example.com/p.json'), CSL.AnchorDataHash.from_bytes(new Uint8Array(32)));
-    const reward = CSL.RewardAddress.from_address(CSL.Address.from_hex(opts.infoProposal.rewardAddressHex))!;
-    proposals.add(CSL.VotingProposal.new(CSL.GovernanceAction.new_info_action(CSL.InfoAction.new()), anchor, reward, CSL.BigNum.from_str('100000000000')));
-    body.set_voting_proposals(proposals);
-  }
-  if (opts.guardrailProposal) {
-    const proposals = CSL.VotingProposals.new();
-    const update = CSL.ProtocolParamUpdate.new();
-    update.set_minfee_a(CSL.BigNum.from_str('44'));
-    const action = CSL.GovernanceAction.new_parameter_change_action(
-      CSL.ParameterChangeAction.new_with_policy_hash(update, CSL.ScriptHash.from_bytes(opts.guardrailProposal.policyHash)),
-    );
-    const anchor = CSL.Anchor.new(CSL.URL.new('https://example.com/p.json'), CSL.AnchorDataHash.from_bytes(new Uint8Array(32)));
-    const reward = CSL.RewardAddress.from_address(CSL.Address.from_hex(opts.guardrailProposal.rewardAddressHex))!;
+    const reward = CSL.RewardAddress.from_address(CSL.Address.from_hex(rewardAddressHex))!;
     proposals.add(CSL.VotingProposal.new(action, anchor, reward, CSL.BigNum.from_str('100000000000')));
     body.set_voting_proposals(proposals);
+  };
+  if (opts.infoProposal) propose(CSL.GovernanceAction.new_info_action(CSL.InfoAction.new()), opts.infoProposal.rewardAddressHex);
+  if (opts.guardrailProposal) {
+    const update = CSL.ProtocolParamUpdate.new();
+    update.set_minfee_a(CSL.BigNum.from_str('44'));
+    const policy = CSL.ScriptHash.from_bytes(opts.guardrailProposal.policyHash);
+    propose(CSL.GovernanceAction.new_parameter_change_action(CSL.ParameterChangeAction.new_with_policy_hash(update, policy)), opts.guardrailProposal.rewardAddressHex);
   }
   const witnesses = CSL.TransactionWitnessSet.new();
   if (opts.scriptWithdrawal) {

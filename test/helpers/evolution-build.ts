@@ -1,10 +1,10 @@
 import { readFileSync } from 'node:fs';
 import CSL from '@emurgo/cardano-serialization-lib-nodejs';
 import { Effect } from 'effect';
-import { Address, Redeemer, Transaction, UTxO } from '@evolution-sdk/evolution';
-import type { Evaluator } from '@evolution-sdk/evolution/sdk/builders/TransactionBuilder';
+import { Address, Assets, Redeemer, Transaction, TransactionHash, UTxO } from '@evolution-sdk/evolution';
+import { makeTxBuilder, type Evaluator } from '@evolution-sdk/evolution/sdk/builders/TransactionBuilder';
 import type { EvalRedeemer } from '@evolution-sdk/evolution/sdk/EvalRedeemer';
-import { makeTxBuilder } from '@evolution-sdk/evolution/sdk/builders/TransactionBuilder';
+import type { Utxo } from '../../src/core/ledger.js';
 import { preprod } from '@evolution-sdk/evolution/sdk/client/Chain';
 import type { ProtocolParameters } from '@evolution-sdk/evolution/sdk/provider/Provider';
 
@@ -71,4 +71,9 @@ export async function evolutionBuild(
     ...(options.evaluator ? { evaluator: options.evaluator } : {}),
   });
   return Transaction.toCBORHex(await built.toTransaction());
+}
+
+/** A coin-only wallet UTxO as Evolution's UTxO at the given address, for availableUtxos. */
+export function evolutionUtxo(u: Utxo, address: Uint8Array): UTxO.UTxO {
+  return new UTxO.UTxO({ transactionId: TransactionHash.fromBytes(u.input.txId), index: u.input.index, address: Address.fromBytes(address), assets: Assets.fromLovelace(u.lovelace) });
 }

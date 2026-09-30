@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import CSL from '@emurgo/cardano-serialization-lib-nodejs';
 import { Address, Assets, Credential, Data, NativeScripts, PlutusV3, ScriptHash, Transaction, TransactionHash, UTxO } from '@evolution-sdk/evolution';
-import { bytesToHex } from '../src/core/bytes.js';
+import { bytesToHex, hexToBytes } from '../src/core/bytes.js';
 import { encode } from '../src/core/cbor/encode.js';
 import { keyHash, publicKey } from '../src/core/keys.js';
 import { parseAddressArg } from '../src/core/sign-data.js';
@@ -10,9 +10,9 @@ import { deriveAccount } from '../src/derive/index.js';
 import { prepareWallet, type WalletOptions } from '../src/host/config.js';
 import { installWallet, syntheticOwnedUtxo, type InstallTarget } from '../src/page/install.js';
 import { cslGovernanceTx, cslTxId, cslVerifiedKeys, cslVerifiedKeysOfTx } from './helpers/csl-governance.js';
-import { evolutionBuild, fixedBudgetEvaluator } from './helpers/evolution-build.js';
+import { evolutionBuild, evolutionUtxo, fixedBudgetEvaluator } from './helpers/evolution-build.js';
 import { enableChw } from './helpers/page.js';
-import { syntheticInput } from './helpers/synthetic.js';
+import { PLUTUS_V3, syntheticInput } from './helpers/synthetic.js';
 import { MNEMONIC } from './fixtures/vectors.js';
 
 const OWN = [{ lovelace: 50_000_000 }, { lovelace: 10_000_000 }];
@@ -24,11 +24,9 @@ const other = deriveAccount(MNEMONIC, 1);
 const third = deriveAccount(MNEMONIC, 2);
 const otherPub = bytesToHex(publicKey(other.payment));
 const own = OWN.map((u, i) => syntheticOwnedUtxo(w.config.name, i, address, BigInt(u.lovelace)));
-const ownEvo = own.map(
-  (u) => new UTxO.UTxO({ transactionId: TransactionHash.fromBytes(u.input.txId), index: u.input.index, address: Address.fromBytes(address), assets: Assets.fromLovelace(u.lovelace) }),
-);
+const ownEvo = own.map((u) => evolutionUtxo(u, address));
 // A Plutus V3 script, never executed: fixedBudgetEvaluator stands in for the node.
-const plutus = new PlutusV3.PlutusV3({ bytes: Uint8Array.from([0x46, 0x01, 0x00, 0x00, 0x22, 0x49, 0x9d]) });
+const plutus = new PlutusV3.PlutusV3({ bytes: hexToBytes(PLUTUS_V3) });
 const plutusHash = ScriptHash.fromScript(plutus);
 const pk = (hash: Uint8Array) => NativeScripts.makeScriptPubKey(hash).script;
 

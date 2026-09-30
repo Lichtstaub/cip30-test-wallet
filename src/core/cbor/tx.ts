@@ -32,6 +32,13 @@ export function spentInputs(body: ParsedBody): Array<{ input: TxInput; label: 'i
   ];
 }
 
+export type InputLabel = 'input' | 'collateral input' | 'reference input';
+
+/** Every input the ledger must know: the spent inputs in spentInputs order, then the reference inputs, which are read and never spent. */
+export function lookupInputs(body: ParsedBody): Array<{ input: TxInput; label: InputLabel }> {
+  return [...spentInputs(body), ...body.referenceInputs.map((input) => ({ input, label: 'reference input' as const }))];
+}
+
 export interface ParsedBody {
   inputs: TxInput[];
   /** Collateral inputs (body key 13), spent only when a script fails. */
@@ -99,6 +106,14 @@ function parseInputs(value: CborValue | undefined): TxInput[] {
   });
 }
 
+/** nonempty_set<transaction_input>, empty when the field is absent. */
+function parseNonEmptyInputs(value: CborValue | undefined, what: string): TxInput[] {
+  const inputs = parseInputs(value);
+  if (value !== undefined && inputs.length === 0) throw new Error(`${what} must not be empty`);
+  return inputs;
+}
+
+/** A uint field (slot or coin), undefined when absent. */
 function parseSlot(value: CborValue | undefined, what: string): bigint | undefined {
   if (value === undefined) return undefined;
   if (typeof value !== 'bigint' || value < 0n) throw new Error(`malformed ${what}`);
@@ -132,20 +147,14 @@ function parseBodyMap(body: Map<CborValue, CborValue>): ParsedBody {
 
   const inputs = parseInputs(mapGet(body, BODY_INPUTS));
 
-  // nonempty_set<transaction_input>
-  const rawCollateral = mapGet(body, BODY_COLLATERAL_INPUTS);
-  const collateralInputs = parseInputs(rawCollateral);
-  if (rawCollateral !== undefined && collateralInputs.length === 0) throw new Error('collateral inputs must not be empty');
+  const collateralInputs = parseNonEmptyInputs(mapGet(body, BODY_COLLATERAL_INPUTS), 'collateral inputs');
   // The collateral return is an output without a witness requirement, so only its shape is checked.
   const rawReturn = mapGet(body, BODY_COLLATERAL_RETURN);
   if (rawReturn !== undefined && !Array.isArray(rawReturn) && !(rawReturn instanceof Map)) throw new Error('malformed collateral return');
-  const rawTotal = mapGet(body, BODY_TOTAL_COLLATERAL);
-  if (rawTotal !== undefined && (typeof rawTotal !== 'bigint' || rawTotal < 0n)) throw new Error('malformed total collateral');
+  parseSlot(mapGet(body, BODY_TOTAL_COLLATERAL), 'total collateral');
 
   // nonempty_set<transaction_input>
-  const rawReferences = mapGet(body, BODY_REFERENCE_INPUTS);
-  const referenceInputs = parseInputs(rawReferences);
-  if (rawReferences !== undefined && referenceInputs.length === 0) throw new Error('reference inputs must not be empty');
+  const referenceInputs = parseNonEmptyInputs(mapGet(body, BODY_REFERENCE_INPUTS), 'reference inputs');
   const mintPolicies = parseMint(mapGet(body, BODY_MINT));
   const ttl = parseSlot(mapGet(body, BODY_TTL), 'ttl');
   const validityStart = parseSlot(mapGet(body, BODY_VALIDITY_START), 'validity interval start');

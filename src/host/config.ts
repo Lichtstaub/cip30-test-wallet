@@ -8,7 +8,8 @@ import { publicKey } from '../core/keys.js';
 import { deriveAccount, type DerivedAccount } from '../derive/index.js';
 import { MAX_UINT64, parseAssetUnits } from '../core/value.js';
 import type { OwnedUtxoConfig, PageConfig, QuirkConfig, UtxoExtras } from '../page/config.js';
-import { isPlutusData, isScript } from './cbor-shapes.js';
+import { isPlutusData } from './cbor-shapes.js';
+import { scriptFromRef } from '../core/scripts.js';
 
 /** Public test vector from the CSL documentation. Holds no funds, safe to ship. */
 export const DEFAULT_MNEMONIC = 'test walk nut penalty hip pave soap entry language right filter choice';
@@ -94,7 +95,10 @@ function validateUtxoExtras(u: UtxoExtrasInput, where: string): UtxoExtras {
   }
   if (u.scriptRef !== undefined) {
     const hex = oneCborItem(u.scriptRef, `${where}.scriptRef`);
-    if (!isScript(decode(hexToBytes(hex)))) {
+    // The same reader signTx uses, so a script reference the wallet accepts here always resolves there.
+    try {
+      scriptFromRef(hexToBytes(hex));
+    } catch {
       throw new Error(`${where}.scriptRef must be the CBOR of script = [0, native_script] / [1 to 3, plutus script bytes]`);
     }
     out.scriptRef = hex;

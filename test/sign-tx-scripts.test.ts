@@ -11,7 +11,7 @@ import { scriptHash } from '../src/core/scripts.js';
 import { parseTxHex, signTx as signParsed, type SignContext } from '../src/core/sign-tx.js';
 import { deriveAccount } from '../src/derive/index.js';
 import { buildTx, witnessVkeys } from './helpers/build-tx.js';
-import { syntheticInput } from './helpers/synthetic.js';
+import { PLUTUS_V3, syntheticInput } from './helpers/synthetic.js';
 import { MNEMONIC } from './fixtures/vectors.js';
 
 const me = deriveAccount(MNEMONIC);
@@ -31,8 +31,7 @@ const nOfK = (n: bigint, ...scripts: Native[]): Native => [3n, n, scripts];
 const before = (slot: bigint): Native => [4n, slot];
 const hereafter = (slot: bigint): Native => [5n, slot];
 const nativeHash = (script: Native) => scriptHash(0, encode(script as never));
-// A Plutus V3 script as the witness set carries it. Never executed.
-const PLUTUS = hexToBytes('4601000022499d');
+const PLUTUS = hexToBytes(PLUTUS_V3);
 const plutusHash = scriptHash(3, PLUTUS);
 /** Testnet enterprise address with a script payment credential (header type 7). */
 const scriptAddress = (hash: Uint8Array) => concat(Uint8Array.of(0x70), hash);

@@ -9,10 +9,9 @@ import { parseTxHex } from '../src/core/sign-tx.js';
 import { installWallet, type InstallTarget } from '../src/page/install.js';
 import { buildTx, spliceWitnessSet } from './helpers/build-tx.js';
 import { enableChw, testConfig } from './helpers/page.js';
-import { syntheticInput } from './helpers/synthetic.js';
+import { hash28 as h, PLUTUS_COMPILED, syntheticInput } from './helpers/synthetic.js';
 
-const h = (n: number) => new Uint8Array(28).fill(n);
-const COMPILED = hexToBytes('500100003232222533002494984d260011');
+const COMPILED = hexToBytes(PLUTUS_COMPILED);
 const input = syntheticInput('tx-scripts', 0n);
 const txWith = (body: Array<[bigint, unknown]> = [], witnessSet?: Map<bigint, unknown>) =>
   buildTx({ inputs: [input], outputs: [], fee: 1n, extraBodyEntries: new Map(body), ...(witnessSet ? { witnessSet } : {}) });

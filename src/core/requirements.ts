@@ -161,9 +161,11 @@ function addCertificate(cert: CborValue[], out: Requirements): void {
 
 /**
  * Every requirement the body creates, in body order: inputs, collateral
- * inputs, required signers, withdrawals, certificates, mint policies, votes, proposals. An unresolved input
- * is skipped here, signTx raises CHW_UNRESOLVED_INPUT for it. The resolved
- * list covers body.inputs first, then body.collateralInputs.
+ * inputs, required signers, withdrawals, certificates, mint policies, votes,
+ * proposals. An unresolved input is skipped here, signTx raises
+ * CHW_UNRESOLVED_INPUT for it. The resolved list follows spentInputs order,
+ * body.inputs first, then body.collateralInputs. Entries after those (the
+ * reference inputs of resolveInputs) are not read.
  */
 export function requirements(body: ParsedBody, resolvedInputs: ReadonlyArray<Utxo | undefined>): Requirements {
   const out: Requirements = { keys: [], scripts: [], unsupported: [] };
@@ -180,13 +182,11 @@ export function requirements(body: ParsedBody, resolvedInputs: ReadonlyArray<Utx
     if (!utxo) continue;
     const where = `${label} ${bytesToHex(input.txId)}#${input.index}`;
     if (isByronAddress(utxo.address)) out.unsupported.push('an input at a Byron address');
-    else if (isScriptPayment(utxo.address)) {
-      // The ledger accepts only key-locked collateral (Alonzo UTXO rule ScriptsNotPaidUTxO) and never
-      // runs a script for it, so a script-locked collateral input needs nothing. A node refuses such a
-      // transaction, the wallet does not check validity.
-      if (label === 'input') out.scripts.push({ scriptHash: paymentHash(utxo.address), source: `${where} at a script address`, foreignOnly: false });
-    }
-    else out.keys.push({ keyHash: paymentHash(utxo.address), source: where, foreignOnly: false });
+    else if (!isScriptPayment(utxo.address)) out.keys.push({ keyHash: paymentHash(utxo.address), source: where, foreignOnly: false });
+    // The ledger accepts only key-locked collateral (Alonzo UTXO rule ScriptsNotPaidUTxO) and never
+    // runs a script for it, so a script-locked collateral input needs nothing. A node refuses such a
+    // transaction, the wallet does not check validity.
+    else if (label === 'input') out.scripts.push({ scriptHash: paymentHash(utxo.address), source: `${where} at a script address`, foreignOnly: false });
   }
 
   for (const signer of body.requiredSigners) {

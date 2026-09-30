@@ -1,5 +1,5 @@
 import { bytesEqual, bytesToHex, hexToBytes } from './bytes.js';
-import { encodeWitnessSet, parseTransaction, spentInputs, txHash, type ParsedBody, type ParsedTransaction, type TxInput } from './cbor/tx.js';
+import { encodeWitnessSet, lookupInputs, parseTransaction, txHash, type ParsedBody, type ParsedTransaction } from './cbor/tx.js';
 import { apiError, APIErrorCode, ChwError, TxSignErrorCode, txSignError } from './errors.js';
 import { keyHash, publicKey, sign, verifiesOver, type SigningKey } from './keys.js';
 import type { Ledger, Utxo } from './ledger.js';
@@ -22,34 +22,9 @@ export function parseTxHex(tx: unknown): { bytes: Uint8Array; parsed: ParsedTran
   }
 }
 
-/** Resolves every input and then every collateral input once, in body order, so callers never look an input up twice. */
+/** Resolves every input the ledger must know once, in lookupInputs order, so callers never look an input up twice. */
 export async function resolveInputs(body: ParsedBody, ledger: Ledger): Promise<Array<Utxo | undefined>> {
-  return Promise.all(spentInputs(body).map(({ input }) => ledger.resolveInput(input)));
-}
-
-/** Resolves every reference input once, in body order. */
-export async function resolveReferenceInputs(body: ParsedBody, ledger: Ledger): Promise<Array<Utxo | undefined>> {
-  return Promise.all(body.referenceInputs.map((input) => ledger.resolveInput(input)));
-}
-
-/** The first input the ledger does not know: spent inputs and collateral first, then reference inputs. */
-function unresolvedInput(
-  body: ParsedBody,
-  resolvedInputs: ReadonlyArray<Utxo | undefined>,
-  resolvedReferences: ReadonlyArray<Utxo | undefined>,
-): { input: TxInput; label: string } | undefined {
-  const spent = spentInputs(body).find((_, i) => !resolvedInputs[i]);
-  if (spent) return spent;
-  const index = resolvedReferences.findIndex((utxo) => !utxo);
-  return index < 0 ? undefined : { input: body.referenceInputs[index]!, label: 'reference input' };
-}
-
-/**
- * Every item signTx refuses at partialSign: false, for the page's
- * partialSign: true warning. Same order as the error signTx would raise.
- */
-export function unsupportedForms(body: ParsedBody, resolvedInputs: ReadonlyArray<Utxo | undefined>): string[] {
-  return requirements(body, resolvedInputs).unsupported;
+  return Promise.all(lookupInputs(body).map(({ input }) => ledger.resolveInput(input)));
 }
 
 /**
@@ -107,8 +82,8 @@ export async function signTx(parsed: ParsedTransaction, partialSign: boolean, ct
   // CIP-95: a pre-Conway certificate is refused regardless of consent and of partialSign.
   refuseDeprecatedCertificate(body);
 
+  const lookup = lookupInputs(body);
   const resolvedInputs = await resolveInputs(body, ctx.ledger);
-  const resolvedReferences = await resolveReferenceInputs(body, ctx.ledger);
   const reqs = requirements(body, resolvedInputs);
   if (!partialSign) {
     const [first] = reqs.unsupported;
@@ -117,7 +92,7 @@ export async function signTx(parsed: ParsedTransaction, partialSign: boolean, ct
     }
   }
 
-  const missing = unresolvedInput(body, resolvedInputs, resolvedReferences);
+  const missing = lookup.find((_, i) => !resolvedInputs[i]);
   if (missing) {
     throw new ChwError(
       'CHW_UNRESOLVED_INPUT',
@@ -125,8 +100,10 @@ export async function signTx(parsed: ParsedTransaction, partialSign: boolean, ct
     );
   }
 
-  const isUtxo = (utxo: Utxo | undefined): utxo is Utxo => utxo !== undefined;
-  const { scripts, unreadable } = scriptsProvided(parsed.scripts, resolvedInputs.slice(0, body.inputs.length).filter(isUtxo), resolvedReferences.filter(isUtxo));
+  const { scripts, unreadable } = scriptsProvided(
+    parsed.scripts,
+    lookup.map(({ label }, i) => ({ label, utxo: resolvedInputs[i]! })),
+  );
   const neededScripts = reqs.scripts.map((req) => {
     const script = scripts.find((s) => bytesEqual(s.hash, req.scriptHash));
     if (!script) {
