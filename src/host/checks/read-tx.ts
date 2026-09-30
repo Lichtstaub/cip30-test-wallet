@@ -260,12 +260,13 @@ function readMint(value: CborValue | undefined): MultiAsset {
   return mint;
 }
 
-// reward_account: one header byte, type 14 (key credential) or 15 (script credential),
-// and the 28 byte credential hash.
+// reward_account: one header byte and the 28 byte credential hash. A node decodes the
+// header only when it is 0xe0, 0xe1, 0xf0 or 0xf1 (Address.hs headerIsAccountAddress, the
+// mask keeps the type bits and the two bits no account header may set, bits 4 and 0 are the
+// credential kind and the network). Any other header never decodes.
 function rewardAccount(value: CborValue | undefined, what: string): Uint8Array {
   if (!(value instanceof Uint8Array) || value.length !== 29) malformed(what);
-  const type = value[0]! >> 4;
-  if (type !== 14 && type !== 15) malformed(what);
+  if ((value[0]! & 0b11101110) !== 0b11100000) malformed(what);
   return value;
 }
 

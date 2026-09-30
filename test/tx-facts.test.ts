@@ -363,6 +363,8 @@ describe('readTransaction: malformed fields', () => {
     ['an unknown certificate', [[4n, [[19n, [0n, hash28(1)]]]]], 'unknown certificate 19'],
     ['a proposal whose deposit is not a coin', [[20n, [['x', hexToBytes('e0' + '01'.repeat(28)), [6n], anchor]]]], 'malformed proposal deposit'],
     ['a proposal returning to an enterprise address', [[20n, [[7n, hexToBytes('60' + '01'.repeat(28)), [6n], anchor]]]], 'malformed proposal reward account'],
+    ['a withdrawal from a reward address with network nibble 2', [[5n, new Map([[hexToBytes('e2' + '01'.repeat(28)), 1n]])]], 'malformed withdrawal reward address'],
+    ['a proposal returning to an account with network nibble 2', [[20n, [[7n, hexToBytes('e2' + '01'.repeat(28)), [6n], anchor]]]], 'malformed proposal reward account'],
     ['a proposal returning to 28 bytes', [[20n, [[7n, hexToBytes('e0' + '01'.repeat(27)), [6n], anchor]]]], 'malformed proposal reward account'],
     ['an auxiliary data hash of 31 bytes', [[7n, new Uint8Array(31)]], 'malformed auxiliary data hash'],
   ])('refuses %s', (_name, entries, message) => {
@@ -397,13 +399,13 @@ describe('credentialKey', () => {
 });
 
 describe('headerNetwork', () => {
-  it('reads bit 0 of the header, the way a node reads the network of an address', () => {
+  it('reads bit 0 of the header', () => {
     expect(headerNetwork(hexToBytes('e0' + '00'.repeat(28)))).toBe(0);
     expect(headerNetwork(hexToBytes('e1' + '00'.repeat(28)))).toBe(1);
-    expect(headerNetwork(hexToBytes('e2' + '00'.repeat(28)))).toBe(0);
-    expect(headerNetwork(hexToBytes('e3' + '00'.repeat(28)))).toBe(1);
+    expect(headerNetwork(hexToBytes('f0' + '00'.repeat(28)))).toBe(0);
+    expect(headerNetwork(hexToBytes('f1' + '00'.repeat(28)))).toBe(1);
+    expect(headerNetwork(hexToBytes('01' + '00'.repeat(56)))).toBe(1);
     expect(headerNetwork(hexToBytes('71' + '00'.repeat(28)))).toBe(1);
-    expect(headerNetwork(TEST_ADDRESS)).toBe(TEST_ADDRESS[0]! & 1);
   });
 
   it('throws on an empty address', () => {

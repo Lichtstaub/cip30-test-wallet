@@ -224,12 +224,6 @@ describe('certificateFailures: proposals after the certificates', () => {
     expect(run([], [[G, rewardAddressBytes(1, OWN.hash)]], REGISTERED, 1)).toEqual([]);
   });
 
-  it('ProposalProcedureNetworkIdMismatch: reads the network from bit 0 of the header like the node, a nibble of 2 still decodes as testnet', () => {
-    const nibbleTwo = hexToBytes('e2' + bytesToHex(OWN.hash));
-    expect(run([], [[G, nibbleTwo]], REGISTERED, 0)).toEqual([]);
-    expect(run([], [[G, nibbleTwo]], REGISTERED, 1)).toEqual([wrongNetwork(nibbleTwo, 'Mainnet')]);
-  });
-
   it('checks a proposal a builder wrote', () => {
     const tx = cslGovernanceTx({ input: { txId: syntheticInput('cert-state-proposal', 0n).txId, index: 0 }, infoProposal: { rewardAddressHex: bytesToHex(OTHER_ACCOUNT) } });
     const bytes = hexToBytes(tx);

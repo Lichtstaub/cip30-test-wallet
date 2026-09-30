@@ -144,9 +144,9 @@ export function certificateFailures(facts: TxFacts, state: CertState, params: Pr
   }
   // Conway Gov.hs processProposal, one proposal after the other, against the state CERTS left
   // (Ledger.hs hands certStateAfterCERTS to GOV). The return account check applies after the
-  // bootstrap phase of protocol 9, the network check always, with the network read from bit 0 of
-  // the header as the node does. Only the credential of the account counts for the first. Accounts of other wallets start unregistered, so a proposal returning
-  // to one is refused here.
+  // bootstrap phase of protocol 9, the network check always. Only the credential of the
+  // account counts for the first. Accounts of other wallets start unregistered, so a proposal
+  // returning to one is refused here.
   const gov = (rule: string, detail: string) => failures.push({ path: PATH.GOV, rule, detail });
   facts.proposalReturnAccounts.forEach((account, i) => {
     const deposit = facts.proposalDeposits[i]!;
