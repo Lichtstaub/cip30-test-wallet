@@ -1,6 +1,8 @@
 import { bytesToHex } from '../../src/core/bytes.js';
 import { deriveAccount } from '../../src/derive/index.js';
 import vm from 'node:vm';
+import type { Ledger } from '../../src/core/ledger.js';
+import { LEDGER_BINDING, ledgerBinding } from '../../src/host/ledger.js';
 import type { PageConfig } from '../../src/page/config.js';
 import type { InstallTarget } from '../../src/page/install.js';
 import type { Cip30Api, Cip30Provider } from '../../src/page/provider.js';
@@ -46,4 +48,11 @@ export function runInBareWindow(source: string): Record<string, unknown> {
   const context = vm.createContext({ window, setTimeout, TextEncoder, TextDecoder, Date, console });
   vm.runInContext(source, context);
   return window;
+}
+
+/** A page window whose binding goes through JSON like Playwright's, so nothing the page receives is a bigint or a Uint8Array. */
+export function pageWith(ledger: Ledger): InstallTarget & Record<string, unknown> {
+  const handler = ledgerBinding(ledger);
+  const json = (v: unknown) => JSON.parse(JSON.stringify(v ?? null));
+  return { [LEDGER_BINDING]: async (op: string, arg?: unknown) => json(await handler(undefined, op, json(arg))) };
 }

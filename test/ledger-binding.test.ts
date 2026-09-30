@@ -10,17 +10,10 @@ import { LEDGER_BINDING, ledgerBinding, walletLedger } from '../src/host/ledger.
 import { installWallet, syntheticOwnedUtxo, type InstallTarget } from '../src/page/install.js';
 import { utxoFromConfig, utxoToConfig } from '../src/page/utxo-config.js';
 import { buildTx, spliceWitnessSet, standardUnsignedTx, TEST_ADDRESS } from './helpers/build-tx.js';
-import { enableChw } from './helpers/page.js';
+import { enableChw, pageWith } from './helpers/page.js';
 import { hash28 as h, syntheticInput } from './helpers/synthetic.js';
 
 afterEach(() => vi.restoreAllMocks());
-
-/** A page window whose binding goes through JSON like Playwright's, so nothing the page receives is a bigint or a Uint8Array. */
-function pageWith(ledger: ReturnType<typeof walletLedger>): InstallTarget & Record<string, unknown> {
-  const handler = ledgerBinding(ledger);
-  const json = (v: unknown) => JSON.parse(JSON.stringify(v ?? null));
-  return { [LEDGER_BINDING]: async (op: string, arg?: unknown) => json(await handler(undefined, op, json(arg))) };
-}
 
 describe('JSON shape of ledger UTxOs', () => {
   it('round trips assets above 2^53, datum hash, inline datum and script ref', () => {

@@ -132,8 +132,13 @@ export class MemoryLedger implements Ledger {
   }
 
   async resolveInput(input: TxInput): Promise<Utxo | undefined> {
-    const { owned, foreign, spent } = this.current;
-    return [...owned, ...foreign, ...spent].find((u) => sameInput(u.input, input));
+    return this.unspent(input) ?? this.current.spent.find((u) => sameInput(u.input, input));
+  }
+
+  /** The unspent output at this outpoint, owned or foreign. Undefined when unknown or already spent. */
+  unspent(input: TxInput): Utxo | undefined {
+    const { owned, foreign } = this.current;
+    return [...owned, ...foreign].find((u) => sameInput(u.input, input));
   }
 
   async getWalletUtxos(): Promise<Utxo[]> {

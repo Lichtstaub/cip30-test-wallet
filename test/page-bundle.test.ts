@@ -21,6 +21,11 @@ describe('page bundle', () => {
     expect(window['__chw']).toBeDefined();
   });
 
+  it('carries none of the ledger checks, they run in Node only', async () => {
+    const source = (await build({ ...PAGE_BUNDLE_OPTIONS, write: false, logLevel: 'silent' })).outputFiles[0]!.text;
+    for (const name of ['FeeTooSmallUTxO', 'ValueNotConservedUTxO', 'ConwayApplyTxError', 'tierRefScriptFee']) expect(source).not.toContain(name);
+  });
+
   it.skipIf(!existsSync('dist/node'))('emits the node entry points the package exports point at', () => {
     expect(existsSync('dist/node/index.js')).toBe(true);
     expect(existsSync('dist/node/index.d.ts')).toBe(true);

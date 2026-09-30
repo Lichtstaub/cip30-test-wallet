@@ -66,10 +66,10 @@ export function standardUnsignedTx(walletName: string, address: Uint8Array = TES
   return buildTx({ inputs: [utxo.input], outputs: [{ address, lovelace: 9_800_000n }], fee: 200_000n });
 }
 
-/** Replaces the witness set of a transaction with the given one, keeping the body bytes exactly. */
+/** Replaces the witness set of a transaction with the given one, keeping the body bytes and the is_valid flag exactly. */
 export function spliceWitnessSet(txHex: string, witnessSetHex: string): string {
-  const { bodyBytes } = parseTransaction(hexToBytes(txHex));
-  return bytesToHex(concat(Uint8Array.of(0x84), bodyBytes, hexToBytes(witnessSetHex), encode(true), encode(null)));
+  const { bodyBytes, isValid } = parseTransaction(hexToBytes(txHex));
+  return bytesToHex(concat(Uint8Array.of(0x84), bodyBytes, hexToBytes(witnessSetHex), encode(isValid), encode(null)));
 }
 
 /** Hex vkeys of a witness set, in witness order. */
