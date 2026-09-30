@@ -4,7 +4,8 @@ import { hexToBytes } from '../core/bytes.js';
 import { APIErrorCode, apiError } from '../core/errors.js';
 import { keyHash } from '../core/hash.js';
 import { publicKey, type SigningKey } from '../core/keys.js';
-import { MemoryLedger, type Utxo, type WalletCredentials } from '../core/ledger.js';
+import { MemoryLedger, type Ledger, type Utxo, type WalletCredentials } from '../core/ledger.js';
+import { BindingLedger, type LedgerBinding } from './binding-ledger.js';
 import type { KeyConfig, PageConfig } from './config.js';
 import { Control } from './control.js';
 import { buildProvider, type WalletContext } from './provider.js';
@@ -50,6 +51,18 @@ export function buildLedger(config: PageConfig, wallet: { baseAddress: Uint8Arra
   });
 }
 
+/** The ledger the provider talks to: the host's through a binding when the host announced one, otherwise one in the page. */
+function pageLedger(config: PageConfig, target: InstallTarget, wallet: { baseAddress: Uint8Array } & Omit<WalletCredentials, 'networkId'>): Ledger {
+  const name = config.ledger?.binding;
+  if (name) {
+    const call = (target as Record<string, unknown>)[name];
+    if (typeof call === 'function') return new BindingLedger(call as LedgerBinding);
+    // A safety net: the fixture's binding and init script both reach every frame of the page.
+    console.warn(`[cip30-test-wallet] ledger binding ${name} is missing on this page, the wallet keeps its own ledger until the next load and wallet.utxos() will not see it`);
+  }
+  return buildLedger(config, wallet);
+}
+
 /**
  * Installs the provider into the target (window in the page, any object in
  * tests). Existing entries in target.cardano stay untouched. With the
@@ -70,7 +83,7 @@ export function installWallet(config: PageConfig, target: InstallTarget): Contro
 
   const control = new Control(config.quirks);
   const keys = { paymentPub, stakePub, drepPub, paymentHash: keyHash(paymentPub), stakeHash: keyHash(stakePub), drepHash: keyHash(drepPub) };
-  const ctx: WalletContext = { config, control, ledger: buildLedger(config, { baseAddress, paymentKeyHash: keys.paymentHash, stakeKeyHash: keys.stakeHash }), payment, stake, drep, baseAddress, rewardAddress, keys };
+  const ctx: WalletContext = { config, control, ledger: pageLedger(config, target, { baseAddress, paymentKeyHash: keys.paymentHash, stakeKeyHash: keys.stakeHash }), payment, stake, drep, baseAddress, rewardAddress, keys };
   const provider = buildProvider(ctx);
 
   const define = () => {
