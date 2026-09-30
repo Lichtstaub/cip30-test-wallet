@@ -4,11 +4,13 @@ import { hexToBytes } from '../core/bytes.js';
 import { APIErrorCode, apiError } from '../core/errors.js';
 import { keyHash } from '../core/hash.js';
 import { publicKey, type SigningKey } from '../core/keys.js';
-import { MemoryLedger, type Utxo } from '../core/ledger.js';
-import { parseAssetUnits } from '../core/value.js';
-import type { KeyConfig, PageConfig, UtxoExtras } from './config.js';
+import { MemoryLedger, type Utxo, type WalletCredentials } from '../core/ledger.js';
+import type { KeyConfig, PageConfig } from './config.js';
 import { Control } from './control.js';
 import { buildProvider, type WalletContext } from './provider.js';
+import { parseUtxoExtras, utxoFromConfig } from './utxo-config.js';
+
+export { parseUtxoExtras, utxoFromConfig } from './utxo-config.js';
 
 export interface InstallTarget {
   cardano?: Record<string, unknown>;
@@ -37,30 +39,15 @@ export function syntheticOwnedUtxo(name: string, index: number, address: Uint8Ar
   return { input: { txId, index: 0n }, address, lovelace };
 }
 
-/** The optional output parts of a configured UTxO, turned from JSON into ledger values. */
-export function parseUtxoExtras(c: UtxoExtras): Pick<Utxo, 'assets' | 'datum' | 'scriptRef'> {
-  const out: Pick<Utxo, 'assets' | 'datum' | 'scriptRef'> = {};
-  // A hand-written PageConfig that skips the Node checks fails at install with a CIP-30 error.
-  try {
-    if (c.assets) out.assets = parseAssetUnits(c.assets);
-    if (c.datumHash) out.datum = { kind: 'hash', hash: hexToBytes(c.datumHash) };
-    if (c.inlineDatum) out.datum = { kind: 'inline', cbor: hexToBytes(c.inlineDatum) };
-    if (c.scriptRef) out.scriptRef = hexToBytes(c.scriptRef);
-  } catch (error) {
-    throw apiError(APIErrorCode.InvalidRequest, error instanceof Error ? error.message : 'invalid utxo value');
-  }
-  return out;
-}
-
-export function buildLedger(config: PageConfig, address: Uint8Array): MemoryLedger {
-  const owned = config.utxos.map((u, i) => ({ ...syntheticOwnedUtxo(config.name, i, address, BigInt(u.lovelace)), ...parseUtxoExtras(u) }));
-  const foreign = config.foreignUtxos.map((f) => ({
-    input: { txId: hexToBytes(f.txId), index: BigInt(f.index) },
-    address: hexToBytes(f.addressHex),
-    lovelace: BigInt(f.lovelace),
-    ...parseUtxoExtras(f),
-  }));
-  return new MemoryLedger({ owned, foreign });
+export function buildLedger(config: PageConfig, wallet: { baseAddress: Uint8Array } & Omit<WalletCredentials, 'networkId'>): MemoryLedger {
+  const owned = config.utxos.map((u, i) => ({ ...syntheticOwnedUtxo(config.name, i, wallet.baseAddress, BigInt(u.lovelace)), ...parseUtxoExtras(u) }));
+  return new MemoryLedger({
+    owned,
+    foreign: config.foreignUtxos.map(utxoFromConfig),
+    wallet: { paymentKeyHash: wallet.paymentKeyHash, stakeKeyHash: wallet.stakeKeyHash, networkId: config.networkId },
+    stakeRegistered: config.stakeRegistered,
+    state: config.ledger?.state !== false,
+  });
 }
 
 /**
@@ -83,7 +70,7 @@ export function installWallet(config: PageConfig, target: InstallTarget): Contro
 
   const control = new Control(config.quirks);
   const keys = { paymentPub, stakePub, drepPub, paymentHash: keyHash(paymentPub), stakeHash: keyHash(stakePub), drepHash: keyHash(drepPub) };
-  const ctx: WalletContext = { config, control, ledger: buildLedger(config, baseAddress), payment, stake, drep, baseAddress, rewardAddress, keys };
+  const ctx: WalletContext = { config, control, ledger: buildLedger(config, { baseAddress, paymentKeyHash: keys.paymentHash, stakeKeyHash: keys.stakeHash }), payment, stake, drep, baseAddress, rewardAddress, keys };
   const provider = buildProvider(ctx);
 
   const define = () => {

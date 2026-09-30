@@ -34,6 +34,8 @@ export interface WalletOptions {
   quirks?: QuirkConfig;
   /** CIP-95: report the stake key as registered. Defaults to false, a fresh wallet. */
   stakeRegistered?: boolean;
+  /** state: apply every submitted transaction to the wallet's UTxOs and registration (default true). */
+  ledger?: { state?: boolean };
 }
 
 export interface PreparedWallet {
@@ -175,6 +177,8 @@ export function prepareWallet(options: WalletOptions = {}): PreparedWallet {
 
   const utxos = (options.utxos ?? [{ lovelace: 10_000_000 }]).map((u, i) => ({ lovelace: lovelaceString(u.lovelace), ...validateUtxoExtras(u, `utxos[${i}]`) }));
   checkOwnedSums(utxos);
+  const state = options.ledger?.state ?? true;
+  if (typeof state !== 'boolean') throw new Error(`ledger.state must be a boolean, got ${String(state)}`);
 
   const config: PageConfig = {
     name: options.name ?? 'chw',
@@ -190,6 +194,7 @@ export function prepareWallet(options: WalletOptions = {}): PreparedWallet {
     foreignUtxos: (options.foreignUtxos ?? []).map(foreignUtxo),
     quirks: { ...(options.quirks ?? {}) },
     stakeRegistered: options.stakeRegistered ?? false,
+    ledger: { state },
   };
 
   return {

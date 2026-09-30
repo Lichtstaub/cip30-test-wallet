@@ -1,7 +1,8 @@
-import { bytesEqual } from './bytes.js';
+import { isByronAddress, isRewardAddress, isScriptPayment, networkTag, paymentHash } from './addresses.js';
+import { bytesEqual, bytesToHex } from './bytes.js';
 import { Tagged, type CborValue } from './cbor/decode.js';
 import { encode } from './cbor/encode.js';
-import { txHash, type TxInput } from './cbor/tx.js';
+import { parseTransaction, type ParsedTransaction, type TxInput } from './cbor/tx.js';
 import { valueCbor, type MultiAsset } from './value.js';
 
 export type Datum = { kind: 'hash'; hash: Uint8Array } | { kind: 'inline'; cbor: Uint8Array };
@@ -17,10 +18,8 @@ export interface Utxo {
 }
 
 /**
- * Everything signTx and the CIP-30 surface need from "the chain". In the
- * spike there is only the in-memory implementation. A chain provider
- * (Yaci, preprod, or similar) implements the same three async methods
- * later, before milestone 2 builds the CIP-30 surface against it.
+ * Everything signTx and the CIP-30 surface need from "the chain". The in-memory
+ * implementation serves the page and, in the Playwright fixture, the host side of a binding.
  */
 export interface Ledger {
   /** Any output this ledger knows, owned by the wallet or not. */
@@ -29,35 +28,123 @@ export interface Ledger {
   getWalletUtxos(): Promise<Utxo[]>;
   /** Record or broadcast a signed transaction, return its id (32 bytes). */
   submit(tx: Uint8Array): Promise<Uint8Array>;
+  /** CIP-95: whether the wallet's stake key is registered, after every transaction submitted so far. */
+  getStakeRegistered(): Promise<boolean>;
 }
 
 function sameInput(a: TxInput, b: TxInput): boolean {
   return a.index === b.index && bytesEqual(a.txId, b.txId);
 }
 
+/** The wallet side of the ledger state: which outputs it owns and which stake key it registers. */
+export interface WalletCredentials {
+  /** An output whose payment credential is this key hash becomes owned. */
+  paymentKeyHash: Uint8Array;
+  /** Registration certificates for this stake key hash change stakeRegistered. */
+  stakeKeyHash: Uint8Array;
+  /** Outputs to the payment key with another network tag stay foreign. */
+  networkId: 0 | 1;
+}
+
+export interface LedgerState {
+  owned: Utxo[];
+  foreign: Utxo[];
+  /** Outputs a submitted transaction consumed. signTx still resolves them: a wallet has seen them, a node refuses a second spend. */
+  spent: Utxo[];
+  stakeRegistered: boolean;
+}
+
+// Certificates whose second field is the stake credential they register or unregister (Conway CDDL).
+const REGISTERS = new Set<bigint>([0n, 7n, 11n, 12n, 13n]);
+const UNREGISTERS = new Set<bigint>([1n, 8n]);
+
+/** A base, pointer or enterprise address on this network whose payment credential is this key hash. Script and Byron addresses never are. */
+export function paysTo(address: Uint8Array, keyHash: Uint8Array, networkId: 0 | 1): boolean {
+  if (address.length < 29 || isByronAddress(address) || isRewardAddress(address) || isScriptPayment(address)) return false;
+  return networkTag(address) === networkId && bytesEqual(paymentHash(address), keyHash);
+}
+
+/**
+ * The state after a transaction the node accepted, taken as accepted without
+ * any check. A phase 2 valid transaction spends its inputs, creates its
+ * outputs at txId#0 onwards and applies its certificates (Babbage UTXO rule
+ * updateUTxOState, Conway LEDGER rule). An invalid one (is_valid false) spends
+ * only its collateral inputs and creates only the collateral return, at
+ * txId#(number of outputs) (Babbage mkCollateralTxIn).
+ */
+export function applyTransaction(state: LedgerState, tx: ParsedTransaction, wallet: WalletCredentials | undefined): LedgerState {
+  const { body, hash, isValid } = tx;
+  const consumed = isValid ? body.inputs : body.collateralInputs;
+  const isConsumed = (u: Utxo) => consumed.some((input) => sameInput(u.input, input));
+  const created: Utxo[] = isValid
+    ? body.outputs.map((output, i) => ({ ...output, input: { txId: hash, index: BigInt(i) } }))
+    : body.collateralReturn
+      ? [{ ...body.collateralReturn, input: { txId: hash, index: BigInt(body.outputs.length) } }]
+      : [];
+  const isMine = (u: Utxo) => wallet !== undefined && paysTo(u.address, wallet.paymentKeyHash, wallet.networkId);
+
+  let stakeRegistered = state.stakeRegistered;
+  if (isValid && wallet) {
+    for (const certificate of body.certificates) {
+      const credential = certificate[1];
+      const ownKey = Array.isArray(credential) && credential[0] === 0n && credential[1] instanceof Uint8Array && bytesEqual(credential[1], wallet.stakeKeyHash);
+      if (!ownKey) continue;
+      if (REGISTERS.has(certificate[0] as bigint)) stakeRegistered = true;
+      else if (UNREGISTERS.has(certificate[0] as bigint)) stakeRegistered = false;
+    }
+  }
+
+  return {
+    owned: [...state.owned.filter((u) => !isConsumed(u)), ...created.filter(isMine)],
+    foreign: [...state.foreign.filter((u) => !isConsumed(u)), ...created.filter((u) => !isMine(u))],
+    spent: [...state.spent, ...state.owned.filter(isConsumed), ...state.foreign.filter(isConsumed)],
+    stakeRegistered,
+  };
+}
+
+export interface MemoryLedgerOptions {
+  owned: Utxo[];
+  foreign?: Utxo[];
+  /** Without it no new output counts as owned and no certificate changes stakeRegistered. */
+  wallet?: WalletCredentials;
+  stakeRegistered?: boolean;
+  /** Apply every submitted transaction to the state. Default true, false keeps the configured UTxOs. */
+  state?: boolean;
+}
+
 export class MemoryLedger implements Ledger {
   readonly submitted: Uint8Array[] = [];
-  private readonly owned: Utxo[];
-  private readonly foreign: Utxo[];
+  private current: LedgerState;
+  private readonly applied = new Set<string>();
 
-  constructor(opts: { owned: Utxo[]; foreign?: Utxo[] }) {
-    this.owned = [...opts.owned];
-    this.foreign = [...(opts.foreign ?? [])];
+  constructor(private readonly opts: MemoryLedgerOptions) {
+    this.current = { owned: [...opts.owned], foreign: [...(opts.foreign ?? [])], spent: [], stakeRegistered: opts.stakeRegistered ?? false };
   }
 
   async resolveInput(input: TxInput): Promise<Utxo | undefined> {
-    return [...this.owned, ...this.foreign].find((u) => sameInput(u.input, input));
+    const { owned, foreign, spent } = this.current;
+    return [...owned, ...foreign, ...spent].find((u) => sameInput(u.input, input));
   }
 
   async getWalletUtxos(): Promise<Utxo[]> {
-    return [...this.owned];
+    return [...this.current.owned];
+  }
+
+  async getStakeRegistered(): Promise<boolean> {
+    return this.current.stakeRegistered;
   }
 
   async submit(tx: Uint8Array): Promise<Uint8Array> {
-    // Hash first, so a transaction the hash rejects leaves no record behind.
-    const id = txHash(tx);
+    // Parsed first, so a transaction that does not parse leaves no record behind.
+    const parsed = parseTransaction(tx);
     this.submitted.push(tx);
-    return id;
+    const id = bytesToHex(parsed.hash);
+    // A second submit of the same transaction changes nothing.
+    if (this.opts.state !== false && !this.applied.has(id)) {
+      this.current = applyTransaction(this.current, parsed, this.opts.wallet);
+      this.applied.add(id);
+    }
+    return parsed.hash;
   }
 }
 

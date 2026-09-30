@@ -4,7 +4,7 @@ import { encode } from '../core/cbor/encode.js';
 import { signCose } from '../core/cose.js';
 import { APIErrorCode, apiError, DataSignErrorCode, dataSignError, TxSignErrorCode, txSignError } from '../core/errors.js';
 import type { SigningKey } from '../core/keys.js';
-import { encodeUtxo, type MemoryLedger } from '../core/ledger.js';
+import { encodeUtxo, type Ledger } from '../core/ledger.js';
 import { parseAddressArg, parseHexArg, resolveDataSigner } from '../core/sign-data.js';
 import { requirements } from '../core/requirements.js';
 import { parseTxHex, refuseDeprecatedCertificate, resolveInputs, signTx as coreSignTx } from '../core/sign-tx.js';
@@ -26,7 +26,7 @@ export interface WalletKeys {
 export interface WalletContext {
   config: PageConfig;
   control: Control;
-  ledger: MemoryLedger;
+  ledger: Ledger;
   payment: SigningKey;
   stake: SigningKey;
   drep: SigningKey;
@@ -143,16 +143,18 @@ export function buildApi(ctx: WalletContext, extensions: { cip: number }[] = [])
   const { control, config, ledger } = ctx;
   const baseHex = bytesToHex(ctx.baseAddress);
   const rewardHex = bytesToHex(ctx.rewardAddress);
-  const hasFunds = async () => (await ledger.getWalletUtxos()).length > 0;
+  // CIP-30 "used" means the address appeared in a transaction. A configured UTxO counts, and so
+  // does any output the ledger holds now, so spending everything never turns the address unused.
+  const isUsed = async () => config.utxos.length > 0 || (await ledger.getWalletUtxos()).length > 0;
 
   const api: Cip30Api = {
     getNetworkId: () => control.record('getNetworkId', [], async () => config.networkId),
     getUsedAddresses: (paginate) =>
       control.record('getUsedAddresses', [paginate], async () => {
-        const used = (await hasFunds()) ? [baseHex] : [];
+        const used = (await isUsed()) ? [baseHex] : [];
         return paginate === undefined ? used : paginateList(used, paginate);
       }),
-    getUnusedAddresses: () => control.record('getUnusedAddresses', [], async () => ((await hasFunds()) ? [] : [baseHex])),
+    getUnusedAddresses: () => control.record('getUnusedAddresses', [], async () => ((await isUsed()) ? [] : [baseHex])),
     getChangeAddress: () => control.record('getChangeAddress', [], async () => baseHex),
     getRewardAddresses: () => control.record('getRewardAddresses', [], async () => [rewardHex]),
     getExtensions: () => control.record('getExtensions', [], async () => extensions.map((e) => ({ ...e }))),
@@ -225,7 +227,7 @@ export function buildApi(ctx: WalletContext, extensions: { cip: number }[] = [])
 }
 
 function buildCip95Api(ctx: WalletContext): Cip95Api {
-  const { control, config } = ctx;
+  const { control } = ctx;
   const stakeHex = bytesToHex(ctx.keys.stakePub);
   // CIP-95: these endpoints take no parameters, passing one is InvalidRequest.
   // An explicit undefined counts as absent, wrappers often forward optional
@@ -239,8 +241,8 @@ function buildCip95Api(ctx: WalletContext): Cip95Api {
       });
   return {
     getPubDRepKey: noArgs('getPubDRepKey', async () => bytesToHex(ctx.keys.drepPub)),
-    getRegisteredPubStakeKeys: noArgs('getRegisteredPubStakeKeys', async () => (config.stakeRegistered ? [stakeHex] : [])),
-    getUnregisteredPubStakeKeys: noArgs('getUnregisteredPubStakeKeys', async () => (config.stakeRegistered ? [] : [stakeHex])),
+    getRegisteredPubStakeKeys: noArgs('getRegisteredPubStakeKeys', async () => ((await ctx.ledger.getStakeRegistered()) ? [stakeHex] : [])),
+    getUnregisteredPubStakeKeys: noArgs('getUnregisteredPubStakeKeys', async () => ((await ctx.ledger.getStakeRegistered()) ? [] : [stakeHex])),
     signData: (addr, payload) => control.record('cip95.signData', [addr, payload], () => signDataWith(ctx, addr, payload, 'cip95')),
   };
 }

@@ -89,6 +89,12 @@ export interface PageConfig {
   quirks: QuirkConfig;
   /** CIP-95: whether the stake key counts as registered on chain. */
   stakeRegistered: boolean;
+  /**
+   * Ledger behaviour. state: apply every submitted transaction (default true).
+   * binding: name of a host function the page calls instead of keeping its own
+   * ledger, set by the Playwright fixture. Absent means both defaults.
+   */
+  ledger?: { state: boolean; binding?: string };
 }
 
 export interface JournalEntry {
