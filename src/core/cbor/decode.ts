@@ -177,3 +177,22 @@ export function arrayItemRanges(bytes: Uint8Array, offset: number, allowSetTag: 
   }
   return { ranges, next: p };
 }
+
+/** Offset of the value for every integer key of the CBOR map at offset, definite or indefinite. Other keys are skipped. */
+export function mapValueOffsets(bytes: Uint8Array, offset: number): Map<bigint, number> {
+  const h = readHeader(bytes, offset);
+  if (h.major !== 5) throw new Error('cbor: expected a map');
+  const offsets = new Map<bigint, number>();
+  let p = h.next;
+  const pair = () => {
+    const key = decodeItem(bytes, p);
+    p = decodeItem(bytes, key.next).next;
+    if (typeof key.value === 'bigint') offsets.set(key.value, key.next);
+  };
+  if (h.indefinite) {
+    while (bytes[p] !== BREAK) pair();
+  } else {
+    for (let i = 0n; i < h.arg; i++) pair();
+  }
+  return offsets;
+}

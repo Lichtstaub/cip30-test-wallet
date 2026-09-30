@@ -1,6 +1,8 @@
 import { blake2b } from '@noble/hashes/blake2.js';
-import { Tagged, decode, decodeItem, readHeader, type CborValue } from './decode.js';
+import { Tagged, arrayItemRanges, decode, decodeItem, mapValueOffsets, readHeader, type CborValue } from './decode.js';
 import { encode } from './encode.js';
+import { providedScript, type ProvidedScript, type ScriptLanguage } from '../scripts.js';
+import { MAX_INT64, MIN_INT64 } from '../value.js';
 
 // A Cardano transaction is [body, witness_set, is_valid, auxiliary_data].
 // The body is never re-encoded here. Hash and signature run over the exact
@@ -44,6 +46,14 @@ export interface ParsedBody {
   /** One entry per voter key of the voting procedures map, in map order. */
   voters: ParsedVoter[];
   proposals: ParsedProposal[];
+  /** Reference inputs (body key 18), read for their scripts and datums, never spent. */
+  referenceInputs: TxInput[];
+  /** Policy ids of the mint field (body key 9), in map order. */
+  mintPolicies: Uint8Array[];
+  /** ttl (body key 3), the first slot in which the transaction is no longer valid. */
+  ttl: bigint | undefined;
+  /** Validity interval start (body key 8). */
+  validityStart: bigint | undefined;
 }
 
 const BODY_INPUTS = 0n;
@@ -55,6 +65,10 @@ const BODY_WITHDRAWALS = 5n;
 const BODY_REQUIRED_SIGNERS = 14n;
 const BODY_VOTING_PROCEDURES = 19n;
 const BODY_PROPOSAL_PROCEDURES = 20n;
+const BODY_TTL = 3n;
+const BODY_VALIDITY_START = 8n;
+const BODY_MINT = 9n;
+const BODY_REFERENCE_INPUTS = 18n;
 
 function mapGet(map: Map<CborValue, CborValue>, key: bigint): CborValue | undefined {
   return map.get(key);
@@ -85,7 +99,37 @@ function parseInputs(value: CborValue | undefined): TxInput[] {
   });
 }
 
+function parseSlot(value: CborValue | undefined, what: string): bigint | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'bigint' || value < 0n) throw new Error(`malformed ${what}`);
+  return value;
+}
+
+// mint = {+ policy_id => {+ asset_name => nonzero_int64}}
+function parseMint(value: CborValue | undefined): Uint8Array[] {
+  if (value === undefined) return [];
+  if (!(value instanceof Map) || value.size === 0) throw new Error('mint must be a non-empty map');
+  const policies: Uint8Array[] = [];
+  for (const [policy, assets] of value) {
+    if (!(policy instanceof Uint8Array) || policy.length !== 28) throw new Error('malformed mint policy id');
+    if (!(assets instanceof Map) || assets.size === 0) throw new Error('a mint policy must name at least one asset');
+    for (const [name, quantity] of assets) {
+      if (!(name instanceof Uint8Array) || name.length > 32) throw new Error('malformed mint asset name');
+      if (typeof quantity !== 'bigint' || quantity === 0n || quantity < MIN_INT64 || quantity > MAX_INT64) {
+        throw new Error('mint quantity must be a nonzero int64');
+      }
+    }
+    policies.push(policy);
+  }
+  return policies;
+}
+
 function parseBodyMap(body: Map<CborValue, CborValue>): ParsedBody {
+  // The decoder turns CBOR undefined (0xf7) into undefined, which mapGet cannot tell from a missing key.
+  for (const [key, value] of body) {
+    if (value === undefined) throw new Error(`body key ${String(key)} must not be undefined`);
+  }
+
   const inputs = parseInputs(mapGet(body, BODY_INPUTS));
 
   // nonempty_set<transaction_input>
@@ -97,6 +141,14 @@ function parseBodyMap(body: Map<CborValue, CborValue>): ParsedBody {
   if (rawReturn !== undefined && !Array.isArray(rawReturn) && !(rawReturn instanceof Map)) throw new Error('malformed collateral return');
   const rawTotal = mapGet(body, BODY_TOTAL_COLLATERAL);
   if (rawTotal !== undefined && (typeof rawTotal !== 'bigint' || rawTotal < 0n)) throw new Error('malformed total collateral');
+
+  // nonempty_set<transaction_input>
+  const rawReferences = mapGet(body, BODY_REFERENCE_INPUTS);
+  const referenceInputs = parseInputs(rawReferences);
+  if (rawReferences !== undefined && referenceInputs.length === 0) throw new Error('reference inputs must not be empty');
+  const mintPolicies = parseMint(mapGet(body, BODY_MINT));
+  const ttl = parseSlot(mapGet(body, BODY_TTL), 'ttl');
+  const validityStart = parseSlot(mapGet(body, BODY_VALIDITY_START), 'validity interval start');
 
   const requiredSigners = unwrapSet(mapGet(body, BODY_REQUIRED_SIGNERS)).map((k) => asBytes(k, 'required signer'));
 
@@ -164,6 +216,10 @@ function parseBodyMap(body: Map<CborValue, CborValue>): ParsedBody {
     certificates,
     voters,
     proposals,
+    referenceInputs,
+    mintPolicies,
+    ttl,
+    validityStart,
   };
 }
 
@@ -181,6 +237,29 @@ function vkeyWitnessesOf(witnessSet: Map<CborValue, CborValue>): VKeyWitness[] {
   });
 }
 
+// Witness set keys that carry scripts, with the language tag the ledger hashes them under.
+const WITNESS_SCRIPTS: Array<[bigint, ScriptLanguage]> = [
+  [1n, 0],
+  [3n, 1],
+  [6n, 2],
+  [7n, 3],
+];
+
+/** Every script the witness set carries, read from the original bytes so a native script hashes the way the ledger hashes it. */
+function witnessScripts(tx: Uint8Array, witnessSetOffset: number): ProvidedScript[] {
+  const offsets = mapValueOffsets(tx, witnessSetOffset);
+  const scripts: ProvidedScript[] = [];
+  for (const [key, language] of WITNESS_SCRIPTS) {
+    const at = offsets.get(key);
+    if (at === undefined) continue;
+    const { ranges } = arrayItemRanges(tx, at, true);
+    // nonempty_list / nonempty_set in the Conway CDDL
+    if (ranges.length === 0) throw new Error(`script list in witness set key ${key} must not be empty`);
+    for (const [start, end] of ranges) scripts.push(providedScript(language, tx.slice(start, end)));
+  }
+  return scripts;
+}
+
 export interface ParsedTransaction {
   /** The body exactly as the builder encoded it, never re-encoded. */
   bodyBytes: Uint8Array;
@@ -189,6 +268,8 @@ export interface ParsedTransaction {
   body: ParsedBody;
   /** VKey witnesses already in the transaction (witness set key 0). */
   vkeyWitnesses: VKeyWitness[];
+  /** Scripts in the witness set (keys 1, 3, 6, 7), in key order. */
+  scripts: ProvidedScript[];
 }
 
 /**
@@ -197,9 +278,9 @@ export interface ParsedTransaction {
  * every path. It accepts one complete CBOR item shaped like a transaction,
  * [body map, witness set map, is_valid boolean, auxiliary data], with nothing
  * after it. Auxiliary data is null, a map (Shelley), an array (Allegra,
- * [metadata, native scripts]) or a tagged value (Alonzo and later). Fees,
- * validity and scripts are not checked. Throws a plain Error on anything
- * else, callers turn that into their own error shape.
+ * [metadata, native scripts]) or a tagged value (Alonzo and later). Fees and
+ * validity are not checked, scripts are read but never run. Throws a plain Error
+ * on anything else, callers turn that into their own error shape.
  */
 export function parseTransaction(tx: Uint8Array): ParsedTransaction {
   // decode() rejects trailing bytes and handles both array forms.
@@ -212,10 +293,17 @@ export function parseTransaction(tx: Uint8Array): ParsedTransaction {
   if (!(aux === null || aux instanceof Map || Array.isArray(aux) || aux instanceof Tagged)) {
     throw new Error('not a transaction: auxiliary data must be null, a map, an array or a tagged value');
   }
-  // The body is the first item after the array header, definite or not.
+  // The body is the first item after the array header, definite or not, the witness set follows it.
   const start = readHeader(tx, 0).next;
-  const bodyBytes = tx.slice(start, decodeItem(tx, start).next);
-  return { bodyBytes, hash: blake2b(bodyBytes, { dkLen: 32 }), body: parseBodyMap(body), vkeyWitnesses: vkeyWitnessesOf(witnessSet) };
+  const bodyEnd = decodeItem(tx, start).next;
+  const bodyBytes = tx.slice(start, bodyEnd);
+  return {
+    bodyBytes,
+    hash: blake2b(bodyBytes, { dkLen: 32 }),
+    body: parseBodyMap(body),
+    vkeyWitnesses: vkeyWitnessesOf(witnessSet),
+    scripts: witnessScripts(tx, bodyEnd),
+  };
 }
 
 export function txHash(tx: Uint8Array): Uint8Array {
