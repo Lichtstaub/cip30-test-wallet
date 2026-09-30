@@ -32,7 +32,7 @@ Coding agents start with [AGENTS.md](https://github.com/Lichtstaub/cip30-test-wa
 
 ## Not in the box yet
 
-This release is a CIP-30 subset for transaction tests plus CIP-95, including governance transactions. Missing on purpose, tracked for later milestones: script inputs, script credentials in certificates and votes, guardrail scripts in proposals, and every transaction form outside the supported set below. `submitTx` is simulated: it records the transaction and returns its id, it never talks to a node. Fees, validity and script execution are not checked.
+This release is a CIP-30 subset for transaction tests plus CIP-95, including governance and script transactions. Every transaction form outside the supported set below is missing on purpose and tracked for later milestones. `submitTx` is simulated: it records the transaction and returns its id, it never talks to a node. Fees, validity and script execution are not checked.
 
 ## Getting started
 
@@ -159,7 +159,7 @@ Everything the run produces is readable by a program:
 
 - The journal (`wallet.calls()`) lists every CIP-30 call with its arguments, result or error.
 - `expectSignedBy` and `expectSignedData` fail with a concrete reason when a signature does not verify.
-- Wallet errors are CIP-30 `{ code, info }` objects. Harness problems are `ChwError`s with a stable code such as `CHW_UNSUPPORTED_TX_FORM` or `CHW_UNRESOLVED_INPUT` and a hint on what to change.
+- Wallet errors are CIP-30 `{ code, info }` objects. Harness problems are `ChwError`s with a stable code such as `CHW_UNSUPPORTED_TX_FORM`, `CHW_UNRESOLVED_INPUT` or `CHW_UNRESOLVED_SCRIPT` and a hint on what to change.
 - `doctor --json` prints the full report, and the exit code (0 clean, 1 findings, 2 run failed) is enough to gate a pipeline.
 
 So an agent that changes a wallet flow can check its own work: write or extend a Playwright test, run it, read the journal and the assertion output, fix, repeat. A few lines in your project's agent instructions are enough:
@@ -244,9 +244,13 @@ One compatibility exception: `getCollateral()` without an argument means 5 ADA. 
 
 ## Supported transaction forms
 
-The wallet decides what to sign for these body fields: inputs at key addresses, `required_signers`, withdrawals, certificates, voting procedures, proposal procedures, treasury value and donation, collateral inputs, collateral return and total collateral, plus outputs, fee, ttl, validity start, auxiliary data hash and network id. A requirement it does not own must already be covered by a valid witness in the transaction (multi-party flows), otherwise `signTx` refuses with `TxSignError` ProofGeneration. Anything else (script inputs, script credentials anywhere, guardrail scripts, mint, unknown keys) raises a harness diagnosis `ChwError` with code `CHW_UNSUPPORTED_TX_FORM` at `partialSign: false`. A harness diagnosis is never disguised as a wallet error. An input the mock ledger does not know raises `CHW_UNRESOLVED_INPUT` with a hint to add it to `utxos` or `foreignUtxos`.
+The wallet decides what to sign for these body fields: inputs at key and script addresses, reference inputs, `required_signers`, withdrawals, certificates, mint, voting procedures, proposal procedures, treasury value and donation, collateral inputs, collateral return and total collateral, plus outputs, fee, ttl, validity start, auxiliary data hash, script data hash and network id. A requirement it does not own must already be covered by a valid witness in the transaction (multi-party flows), otherwise `signTx` refuses with `TxSignError` ProofGeneration.
 
-Evolution SDK always calls `signTx(cbor, true)`, so with Evolution the form check above never refuses. The wallet signs only its own share and logs a `console.warn` naming every skipped form instead.
+Scripts come from the witness set and from the reference scripts of inputs and reference inputs, as on chain. A native script is evaluated: the wallet signs with every key of its own the script names (never for a constitutional committee credential), and at `partialSign: false` the script must hold with those keys plus the valid witnesses already in the transaction, validity start and ttl included. A Plutus script needs no wallet witness and is never run. A script the transaction needs but does not provide raises `CHW_UNRESOLVED_SCRIPT` with a hint to attach it or to add the UTxO holding it as `scriptRef` to `utxos` or `foreignUtxos`.
+
+Anything else (Byron inputs, the pre-Conway update field, unknown body keys, certificates or voters) raises a harness diagnosis `ChwError` with code `CHW_UNSUPPORTED_TX_FORM` at `partialSign: false`. A harness diagnosis is never disguised as a wallet error. An input or reference input the mock ledger does not know raises `CHW_UNRESOLVED_INPUT` with a hint to add it to `utxos` or `foreignUtxos`. `CHW_UNRESOLVED_INPUT` and `CHW_UNRESOLVED_SCRIPT` come at both `partialSign` values: without the input or the script the wallet cannot tell its own share.
+
+Evolution SDK always calls `signTx(cbor, true)`, so with Evolution the form check above never refuses: the wallet signs only its own share and logs a `console.warn` naming every skipped form instead. A missing input or script still raises `CHW_UNRESOLVED_INPUT` or `CHW_UNRESOLVED_SCRIPT`.
 
 ## Known consumer issues
 
