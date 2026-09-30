@@ -40,7 +40,7 @@ export function dataSignError(code: (typeof DataSignErrorCode)[keyof typeof Data
   return { code, info };
 }
 
-export type ChwErrorCode = 'CHW_UNRESOLVED_INPUT' | 'CHW_UNSUPPORTED_TX_FORM';
+export type ChwErrorCode = 'CHW_UNRESOLVED_INPUT' | 'CHW_UNRESOLVED_SCRIPT' | 'CHW_UNSUPPORTED_TX_FORM';
 
 export class ChwError extends Error {
   constructor(

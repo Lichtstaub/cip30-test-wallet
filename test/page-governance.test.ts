@@ -58,14 +58,14 @@ describe('page signTx with governance forms', () => {
     }
   });
 
-  it('partialSign true warns about a script certificate, not about supported governance forms', async () => {
+  it('partialSign true warns about an unsupported body key, not about supported governance forms', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const w = prepared();
     const { api: a } = await api(w);
     await a.signTx(voteTx(w), true);
     expect(warn).not.toHaveBeenCalled();
-    await a.signTx(voteTx(w, [[4n, [[9n, [1n, new Uint8Array(28)], [0n, hexToBytes(w.drepKeyHashHex)]]]]]), true);
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('with a script credential'));
+    await a.signTx(voteTx(w, [[6n, [new Map(), 0n]]]), true);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('body key 6 (update)'));
   });
 
   it('a malformed governance field is InvalidRequest before signHangs or signRejected, at both partialSign values', async () => {

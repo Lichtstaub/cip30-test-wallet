@@ -117,16 +117,16 @@ describe('signTx over governance forms', () => {
     }
   });
 
-  it('a script credential in a certificate is CHW_UNSUPPORTED_TX_FORM at partialSign false, skipped at true', async () => {
+  it('a script credential in a certificate needs its script, CHW_UNRESOLVED_SCRIPT without it at both partialSign values', async () => {
     const t = tx([[4n, [[9n, [1n, myStake], [0n, myDrep]]]]]);
-    await expect(sign(t, false)).rejects.toBeInstanceOf(ChwError);
-    await expect(sign(t, false)).rejects.toThrow(/delegation_to_drep\) with a script credential/);
-    expect(signers(await sign(t, true))).toBe(1);
+    for (const partial of [false, true]) {
+      await expect(sign(t, partial)).rejects.toThrow(/CHW_UNRESOLVED_SCRIPT: certificate 9 \(delegation_to_drep\) with a script credential/);
+    }
   });
 
-  it('a proposal with a guardrail script is CHW_UNSUPPORTED_TX_FORM at partialSign false', async () => {
+  it('a proposal with a guardrail script needs its script', async () => {
     const guarded = [100n, rewardAddressBytes(0, myStake), [2n, new Map([[rewardAddressBytes(0, myStake), 5n]]), new Uint8Array(28).fill(9)], anchor];
-    await expect(sign(tx([[20n, [guarded]]]), false)).rejects.toThrow(/guardrail script/);
+    await expect(sign(tx([[20n, [guarded]]]), false)).rejects.toThrow(/CHW_UNRESOLVED_SCRIPT: proposal 0 \(treasury_withdrawals\) with a guardrail script/);
   });
 });
 

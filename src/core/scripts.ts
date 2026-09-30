@@ -1,6 +1,7 @@
 import { blake2b } from '@noble/hashes/blake2.js';
-import { bytesEqual } from './bytes.js';
+import { bytesEqual, bytesToHex } from './bytes.js';
 import { arrayItemRanges, decode, type CborValue } from './cbor/decode.js';
+import type { Utxo } from './ledger.js';
 import { MAX_INT64, MIN_INT64 } from './value.js';
 
 // Scripts after the Conway CDDL (script_hash, native_script, script) and
@@ -148,4 +149,32 @@ export function scriptFromRef(ref: Uint8Array): ProvidedScript {
   const language = decode(ref.slice(languageStart, languageEnd));
   if (language !== 0n && language !== 1n && language !== 2n && language !== 3n) throw new Error('unknown script language in script reference');
   return providedScript(Number(language) as ScriptLanguage, ref.slice(scriptStart, scriptEnd));
+}
+
+/**
+ * The scripts the ledger finds for a transaction: the witness set, then the
+ * reference scripts of body inputs and reference inputs. Collateral inputs
+ * are no source (Babbage getBabbageScriptsProvided). A script reference that
+ * does not parse provides nothing and is named in unreadable, as
+ * "input <id>#<index>" or "reference input <id>#<index>": fixture configuration
+ * is checked in Node, only a hand-written PageConfig can carry one.
+ * The offline ledger of M7 resolves scripts through this same function.
+ */
+export function scriptsProvided(
+  witnessScripts: ReadonlyArray<ProvidedScript>,
+  bodyInputs: ReadonlyArray<Utxo>,
+  references: ReadonlyArray<Utxo>,
+): { scripts: ProvidedScript[]; unreadable: string[] } {
+  const scripts = [...witnessScripts];
+  const unreadable: string[] = [];
+  const sources: Array<[string, Utxo]> = [...bodyInputs.map((u): [string, Utxo] => ['input', u]), ...references.map((u): [string, Utxo] => ['reference input', u])];
+  for (const [label, utxo] of sources) {
+    if (!utxo.scriptRef) continue;
+    try {
+      scripts.push(scriptFromRef(utxo.scriptRef));
+    } catch {
+      unreadable.push(`${label} ${bytesToHex(utxo.input.txId)}#${utxo.input.index}`);
+    }
+  }
+  return { scripts, unreadable };
 }

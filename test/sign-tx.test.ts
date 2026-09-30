@@ -71,10 +71,11 @@ describe('exit criterion 5: ownership decision', () => {
     expect(witnessCount(ws)).toBe(1);
   });
 
-  it('refuses a script input as an unsupported form, signs only its own share when partial', async () => {
+  it('a script input whose script is missing is CHW_UNRESOLVED_SCRIPT at both partialSign values', async () => {
     const tx = pay([mine.input, scripts.input]);
-    await expect(signTx(tx, false, ctx({ foreign: [scripts] }))).rejects.toThrow(/CHW_UNSUPPORTED_TX_FORM/);
-    expect(witnessCount(await signTx(tx, true, ctx({ foreign: [scripts] })))).toBe(1);
+    for (const partial of [false, true]) {
+      await expect(signTx(tx, partial, ctx({ foreign: [scripts] }))).rejects.toThrow(/CHW_UNRESOLVED_SCRIPT/);
+    }
   });
 
   it('completes a transaction another party already signed (multi-party)', async () => {
@@ -158,24 +159,23 @@ describe('exit criterion 5: ownership decision', () => {
 });
 
 describe('supported transaction forms are an allowlist, checked before ownership', () => {
-  it('refuses an unsupported body key (mint, 9) naming the key, signs its own share when partial', async () => {
-    const tx = pay([mine.input], {
-      extraBodyEntries: new Map([[9n, new Map([[new Uint8Array(28), new Map([[new Uint8Array(0), 1n]])]])]]),
-    });
+  it('refuses an unsupported body key (update, 6) naming the key, signs its own share when partial', async () => {
+    const tx = pay([mine.input], { extraBodyEntries: new Map([[6n, [new Map(), 0n]]]) });
     await expect(signTx(tx, false, ctx())).rejects.toBeInstanceOf(ChwError);
     await expect(signTx(tx, false, ctx())).rejects.toThrow(/CHW_UNSUPPORTED_TX_FORM/);
-    await expect(signTx(tx, false, ctx())).rejects.toThrow(/9/);
+    await expect(signTx(tx, false, ctx())).rejects.toThrow(/body key 6 \(update\)/);
     expect(witnessCount(await signTx(tx, true, ctx()))).toBe(1);
   });
 
-  it('refuses an unsupported body key (reference inputs, 18) the same way', async () => {
+  it('a reference input the ledger does not know is CHW_UNRESOLVED_INPUT at both partialSign values, a known one is fine', async () => {
     const tx = pay([mine.input], { extraBodyEntries: new Map([[18n, new Tagged(258n, [[theirs.input.txId, theirs.input.index]])]]) });
-    await expect(signTx(tx, false, ctx())).rejects.toBeInstanceOf(ChwError);
-    await expect(signTx(tx, false, ctx())).rejects.toThrow(/CHW_UNSUPPORTED_TX_FORM/);
-    expect(witnessCount(await signTx(tx, true, ctx()))).toBe(1);
+    for (const partial of [false, true]) {
+      await expect(signTx(tx, partial, ctx())).rejects.toThrow(/CHW_UNRESOLVED_INPUT: reference input/);
+    }
+    expect(witnessCount(await signTx(tx, false, ctx({ foreign: [theirs] })))).toBe(1);
   });
 
-  it('refuses a script withdrawal as an unsupported form, never ProofGeneration', async () => {
+  it('a script withdrawal without its script is CHW_UNRESOLVED_SCRIPT, never ProofGeneration', async () => {
     const scriptReward = new Uint8Array(29);
     scriptReward[0] = 0xf0; // reward address, script credential
     const tx = pay([mine.input], { withdrawals: [{ rewardAddress: scriptReward, lovelace: 1n }] });
@@ -186,10 +186,10 @@ describe('supported transaction forms are an allowlist, checked before ownership
       caught = e;
     }
     expect(caught).toBeInstanceOf(ChwError);
-    expect((caught as ChwError).code).toBe('CHW_UNSUPPORTED_TX_FORM');
+    expect((caught as ChwError).code).toBe('CHW_UNRESOLVED_SCRIPT');
   });
 
-  it('reports unsupported form, not ProofGeneration, for a foreign key input alongside a script withdrawal', async () => {
+  it('reports the missing script, not ProofGeneration, for a foreign key input alongside a script withdrawal', async () => {
     const scriptReward = new Uint8Array(29);
     scriptReward[0] = 0xf0;
     const tx = pay([mine.input, theirs.input], { withdrawals: [{ rewardAddress: scriptReward, lovelace: 1n }] });
@@ -200,7 +200,7 @@ describe('supported transaction forms are an allowlist, checked before ownership
       caught = e;
     }
     expect(caught).toBeInstanceOf(ChwError);
-    expect((caught as ChwError).code).toBe('CHW_UNSUPPORTED_TX_FORM');
+    expect((caught as ChwError).code).toBe('CHW_UNRESOLVED_SCRIPT');
   });
 });
 

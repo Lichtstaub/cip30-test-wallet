@@ -4,7 +4,7 @@ import { Tagged } from '../src/core/cbor/decode.js';
 import { parseTransaction } from '../src/core/cbor/tx.js';
 import { APIErrorCode, TxSignErrorCode } from '../src/core/errors.js';
 import type { Utxo } from '../src/core/ledger.js';
-import { deprecatedCertificate, formsOutOfScope, requirements } from '../src/core/requirements.js';
+import { deprecatedCertificate, requirements } from '../src/core/requirements.js';
 import { buildTx } from './helpers/build-tx.js';
 import { syntheticInput } from './helpers/synthetic.js';
 
@@ -64,10 +64,10 @@ describe('requirements: the witness table of the spec, row by row', () => {
     expect(reqs.keys.filter((k) => k.source.startsWith('certificate')).every((k) => k.foreignOnly)).toBe(true);
   });
 
-  it('a certificate with a script credential is a script requirement', () => {
+  it('a certificate with a script credential is a script requirement, not an unsupported form', () => {
     const reqs = reqsOf([[4n, [[9n, script(1), key(2)]]]]);
-    expect(reqs.scripts.map((s) => bytesToHex(s.scriptHash))).toEqual([bytesToHex(h(1))]);
-    expect(formsOutOfScope(reqs)[0]).toMatch(/certificate 9 \(delegation_to_drep\) with a script credential/);
+    expect(reqs.scripts.map((s) => [bytesToHex(s.scriptHash), s.source])).toEqual([[bytesToHex(h(1)), 'certificate 9 (delegation_to_drep) with a script credential']]);
+    expect(reqs.unsupported).toEqual([]);
   });
 
   it('an unknown certificate index is unsupported, naming it', () => {
@@ -140,8 +140,48 @@ describe('requirements: the witness table of the spec, row by row', () => {
     expect(reqs.keys).toHaveLength(1);
   });
 
-  it('still reports the body keys M4 does not cover (mint, 9)', () => {
-    expect(reqsOf([[9n, new Map([[new Uint8Array(28), new Map([[new Uint8Array(0), 1n]])]])]]).unsupported).toEqual(['body key 9 (mint)']);
+  it('mint policies are script requirements in map order, the update field (6) and unknown keys stay unsupported', () => {
+    const mint = new Map([
+      [h(2), new Map([[new Uint8Array(0), 1n]])],
+      [h(1), new Map([[new Uint8Array(1), -1n]])],
+    ]);
+    const reqs = reqsOf([[9n, mint], [6n, [new Map(), 0n]], [99n, 1n]]);
+    expect(reqs.scripts.map((s) => [bytesToHex(s.scriptHash), s.source])).toEqual([
+      [bytesToHex(h(2)), `mint policy ${bytesToHex(h(2))}`],
+      [bytesToHex(h(1)), `mint policy ${bytesToHex(h(1))}`],
+    ]);
+    expect(reqs.unsupported).toEqual(['body key 6 (update)', 'body key 99']);
+  });
+
+  it('script data hash (11) and reference inputs (18) are supported body keys without a requirement of their own', () => {
+    const reqs = reqsOf([[11n, new Uint8Array(32)], [18n, new Tagged(258n, [[new Uint8Array(32), 0n]])]]);
+    expect(reqs.unsupported).toEqual([]);
+    expect(reqs.scripts).toEqual([]);
+    expect(reqs.keys).toHaveLength(1); // only the input
+  });
+
+  it('committee script credentials and committee script voters are foreign only, every other script requirement is not', () => {
+    const id = [new Uint8Array(32), 0n];
+    const votes = new Map<unknown, unknown>([
+      [[1n, h(3)], new Map([[id, [1n, null]]])],
+      [[3n, h(4)], new Map([[id, [1n, null]]])],
+    ]);
+    const reqs = reqsOf([[4n, [[14n, script(1), key(9)], [9n, script(2), key(9)]]], [19n, votes]]);
+    expect(reqs.scripts.map((s) => [bytesToHex(s.scriptHash), s.foreignOnly])).toEqual([
+      [bytesToHex(h(1)), true],
+      [bytesToHex(h(2)), false],
+      [bytesToHex(h(3)), true],
+      [bytesToHex(h(4)), false],
+    ]);
+  });
+
+  it('an input at a script address names its outpoint, a script-locked collateral input creates no requirement', () => {
+    const locked: Utxo = { input: syntheticInput('req-locked', 0n), address: hexToBytes('70' + '0a'.repeat(28)), lovelace: 1n };
+    const tx = buildTx({ inputs: [locked.input], outputs: [], fee: 1n, extraBodyEntries: new Map([[13n, new Tagged(258n, [[locked.input.txId, 0n]])]]) });
+    const reqs = requirements(parseTransaction(hexToBytes(tx)).body, [locked, locked]);
+    expect(reqs.scripts.map((s) => s.source)).toEqual([`input ${bytesToHex(locked.input.txId)}#0 at a script address`]);
+    expect(reqs.keys).toEqual([]);
+    expect(reqs.unsupported).toEqual([]);
   });
 
   it('exports code 3 for deprecated certificates', () => {

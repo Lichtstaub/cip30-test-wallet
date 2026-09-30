@@ -25,6 +25,8 @@ export interface ScriptRequirement {
   /** 28 byte script hash. */
   scriptHash: Uint8Array;
   source: string;
+  /** Committee credentials. CIP-95 forbids the wallet to witness them, so their native scripts never get a wallet role. */
+  foreignOnly: boolean;
 }
 
 export interface Requirements {
@@ -34,13 +36,11 @@ export interface Requirements {
   unsupported: string[];
 }
 
-const SUPPORTED_BODY_KEYS = new Set<bigint>([0n, 1n, 2n, 3n, 4n, 5n, 7n, 8n, 13n, 14n, 15n, 16n, 17n, 19n, 20n, 21n, 22n]);
+const SUPPORTED_BODY_KEYS = new Set<bigint>([0n, 1n, 2n, 3n, 4n, 5n, 7n, 8n, 9n, 11n, 13n, 14n, 15n, 16n, 17n, 18n, 19n, 20n, 21n, 22n]);
 
+// Key 6 (update) is gone from the Conway CDDL, an old builder may still write it.
 const BODY_KEY_NAMES: Record<string, string> = {
   '6': 'update',
-  '9': 'mint',
-  '11': 'script data hash',
-  '18': 'reference inputs',
 };
 
 const CERTIFICATE_NAMES: Record<string, string> = {
@@ -109,7 +109,7 @@ function parseCredential(value: CborValue | undefined, where: string): { isScrip
 
 function addCredential(value: CborValue | undefined, where: string, foreignOnly: boolean, out: Requirements): void {
   const { isScript, hash } = parseCredential(value, where);
-  if (isScript) out.scripts.push({ scriptHash: hash, source: `${where} with a script credential` });
+  if (isScript) out.scripts.push({ scriptHash: hash, source: `${where} with a script credential`, foreignOnly });
   else out.keys.push({ keyHash: hash, source: where, foreignOnly });
 }
 
@@ -161,7 +161,7 @@ function addCertificate(cert: CborValue[], out: Requirements): void {
 
 /**
  * Every requirement the body creates, in body order: inputs, collateral
- * inputs, required signers, withdrawals, certificates, votes, proposals. An unresolved input
+ * inputs, required signers, withdrawals, certificates, mint policies, votes, proposals. An unresolved input
  * is skipped here, signTx raises CHW_UNRESOLVED_INPUT for it. The resolved
  * list covers body.inputs first, then body.collateralInputs.
  */
@@ -180,7 +180,12 @@ export function requirements(body: ParsedBody, resolvedInputs: ReadonlyArray<Utx
     if (!utxo) continue;
     const where = `${label} ${bytesToHex(input.txId)}#${input.index}`;
     if (isByronAddress(utxo.address)) out.unsupported.push('an input at a Byron address');
-    else if (isScriptPayment(utxo.address)) out.scripts.push({ scriptHash: paymentHash(utxo.address), source: 'an input at a script address' });
+    else if (isScriptPayment(utxo.address)) {
+      // The ledger accepts only key-locked collateral (Alonzo UTXO rule ScriptsNotPaidUTxO) and never
+      // runs a script for it, so a script-locked collateral input needs nothing. A node refuses such a
+      // transaction, the wallet does not check validity.
+      if (label === 'input') out.scripts.push({ scriptHash: paymentHash(utxo.address), source: `${where} at a script address`, foreignOnly: false });
+    }
     else out.keys.push({ keyHash: paymentHash(utxo.address), source: where, foreignOnly: false });
   }
 
@@ -189,31 +194,28 @@ export function requirements(body: ParsedBody, resolvedInputs: ReadonlyArray<Utx
   }
 
   for (const withdrawal of body.withdrawals) {
-    if (withdrawal.isScript) out.scripts.push({ scriptHash: withdrawal.hash, source: 'a withdrawal with a script credential' });
+    if (withdrawal.isScript) out.scripts.push({ scriptHash: withdrawal.hash, source: 'a withdrawal with a script credential', foreignOnly: false });
     else out.keys.push({ keyHash: withdrawal.hash, source: 'a withdrawal', foreignOnly: false });
   }
 
   for (const cert of body.certificates) addCertificate(cert, out);
 
+  for (const policy of body.mintPolicies) out.scripts.push({ scriptHash: policy, source: `mint policy ${bytesToHex(policy)}`, foreignOnly: false });
+
   for (const voter of body.voters) {
     const where = `vote by ${VOTER_NAMES[voter.type.toString()] ?? `voter type ${voter.type}`}`;
     if (voter.type === 2n) out.keys.push({ keyHash: hash28(voter.hash, where), source: where, foreignOnly: false });
     else if (voter.type === 0n || voter.type === 4n) out.keys.push({ keyHash: hash28(voter.hash, where), source: where, foreignOnly: true });
-    else if (voter.type === 1n || voter.type === 3n) out.scripts.push({ scriptHash: hash28(voter.hash, where), source: where });
+    else if (voter.type === 1n || voter.type === 3n) out.scripts.push({ scriptHash: hash28(voter.hash, where), source: where, foreignOnly: voter.type === 1n });
     else out.unsupported.push(where);
   }
 
   for (const [i, proposal] of body.proposals.entries()) {
     if (proposal.guardrail) {
       const name = ACTION_NAMES[proposal.actionIndex.toString()] ?? `action ${proposal.actionIndex}`;
-      out.scripts.push({ scriptHash: hash28(proposal.guardrail, `guardrail script hash in proposal ${i}`), source: `proposal ${i} (${name}) with a guardrail script` });
+      out.scripts.push({ scriptHash: hash28(proposal.guardrail, `guardrail script hash in proposal ${i}`), source: `proposal ${i} (${name}) with a guardrail script`, foreignOnly: false });
     }
   }
 
   return out;
-}
-
-/** Everything this release refuses at partialSign: false, in the order the first one is reported. Script requirements count until M6. */
-export function formsOutOfScope(reqs: Requirements): string[] {
-  return [...reqs.unsupported, ...reqs.scripts.map((s) => s.source)];
 }
