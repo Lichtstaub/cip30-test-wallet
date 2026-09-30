@@ -97,6 +97,15 @@ describe('a page wallet on a host ledger', () => {
     await expect(api.signTx(tx, false)).rejects.toThrow(/CHW_UNRESOLVED_INPUT/);
   });
 
+  it('never touches the host ledger while the wallet installs', () => {
+    const w = prepareWallet();
+    const page = pageWith(walletLedger(w));
+    const binding = vi.fn(page[LEDGER_BINDING] as (op: string, arg?: unknown) => Promise<unknown>);
+    page[LEDGER_BINDING] = binding;
+    installWallet({ ...w.config, ledger: { state: true, binding: LEDGER_BINDING } }, page);
+    expect(binding).toHaveBeenCalledTimes(0);
+  });
+
   it('keeps its own ledger with a warning when the binding is missing', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const w = prepareWallet();

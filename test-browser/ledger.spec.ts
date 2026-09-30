@@ -29,7 +29,14 @@ async function commit(page: Page): Promise<string> {
   return (await page.locator('#commit-result').textContent())!.replace('submitted ', '');
 }
 
-const pageUtxoCount = (page: Page) => page.evaluate(async () => ((await (window as unknown as ChwWindow).cardano.chw.enable()).getUtxos()).then((u) => u?.length ?? 0));
+/** The page's own getUtxos() hex list, so a page that fell back to a ledger of its own shows up as different ids. */
+const pageUtxos = (page: Page) => page.evaluate(async () => (await (await (window as unknown as ChwWindow).cardano.chw.enable()).getUtxos()) ?? []);
+
+/** The page lists exactly the outputs the Node ledger shows, every entry carrying the expected tx id. */
+function expectPageMatches(list: string[], expectedIds: string[]) {
+  expect(list).toHaveLength(expectedIds.length);
+  expectedIds.forEach((id, i) => expect(list[i]).toContain(id));
+}
 
 test('the commit spends UTxO 0 and pays back to the wallet', async ({ page, wallet }) => {
   await connect(page);
@@ -50,7 +57,8 @@ test('a second transaction spends the change of the first, across a reload and a
   expect(await wallet.utxos()).toEqual(afterFirst);
   await page.goto('http://127.0.0.1:4173/permissive/');
   await expect(page.locator('#wallets')).toHaveText('chw');
-  expect(await pageUtxoCount(page)).toBe(afterFirst.length);
+  expectPageMatches(await pageUtxos(page), afterFirst.map((u) => u.txId));
+  expect(afterFirst.every((u) => u.txId === firstId)).toBe(true);
 
   const address = parseAddressArg(wallet.addresses.payment);
   const available = afterFirst.map((c) => evolutionUtxo(utxoFromConfig(c), address));
@@ -78,7 +86,7 @@ test('a page that clears its storage does not reset the wallet', async ({ page, 
   await expect(page.locator('#wallets')).toHaveText('chw');
   const utxos = await wallet.utxos();
   expect(utxos.some((u) => u.txId === utxo0)).toBe(false);
-  expect(await pageUtxoCount(page)).toBe(utxos.length);
+  expectPageMatches(await pageUtxos(page), utxos.map((u) => u.txId));
 });
 
 test('a stake registration shows up in CIP-95 and stays after a reload', async ({ page, wallet }) => {
@@ -119,6 +127,13 @@ base('attachWallet keeps the ledger in Node without the test runner fixture', as
   const id = await commit(page);
   await page.reload();
   await expect(page.locator('#wallets')).toHaveText('chw');
-  expect(await pageUtxoCount(page)).toBe(1);
+  const list = await pageUtxos(page);
+  expect(list).toHaveLength(1);
+  expect(list[0]).toContain(id);
   expect((await wallet.utxos())[0]!.txId).toBe(id);
+});
+
+base('attachWallet twice on one page rejects', async ({ page }) => {
+  await attachWallet(page);
+  await expect(attachWallet(page)).rejects.toThrow(/already ran for this page/);
 });

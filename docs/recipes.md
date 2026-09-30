@@ -337,6 +337,9 @@ A page that checks token ownership on chain, through an indexer or its backend, 
 A submitted transaction spends its inputs and creates its outputs. `wallet.utxos()` reads the result from the test process, so it is still there after a reload or a change of origin. The commit button of the demo dApp spends UTxO 0 and pays back to the wallet:
 
 ```ts
+import type { Page } from '@playwright/test';
+import { expect, test } from 'cip30-test-wallet/playwright';
+
 async function connect(page: Page, url = '/strict/') {
   await page.goto(url);
   await expect(page.locator('#wallets')).toHaveText('chw');
@@ -359,7 +362,7 @@ test('the commit spends UTxO 0 and pays back to the wallet', async ({ page, wall
 });
 ```
 
-`test.use({ walletOptions: { ledger: { state: false } } })` keeps the configured UTxOs, as before 0.8.0.
+`test.use({ walletOptions: { ledger: { state: false } } })` keeps the configured UTxOs and stake registration, as before 0.8.0.
 
 ## A dApp that spends from a script
 

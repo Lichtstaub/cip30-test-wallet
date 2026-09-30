@@ -114,21 +114,29 @@ function makeHandle(page: Page, prepared: ReturnType<typeof prepareWallet>, inst
   };
 }
 
+const attached = new WeakSet<Page>();
+
 /**
  * Installs the test wallet into a page without the test runner, the way the
  * fixture does: the ledger in Node behind a binding, so its state outlives
  * reloads, navigations and origin changes, and the provider through an init
- * script. Call it before the first navigation. Returns the handle the fixture
- * gives a test.
+ * script. Call it before the first navigation and once per page, never on a
+ * page the test fixture already set up. Returns the handle the fixture gives a test.
  */
 export async function attachWallet(page: Page, options: WalletOptions = {}): Promise<WalletHandle> {
+  if (attached.has(page)) {
+    throw new Error(
+      'attachWallet already ran for this page. The test fixture from cip30-test-wallet/playwright calls it for every test, configure it with test.use({ walletOptions }) instead of calling attachWallet again',
+    );
+  }
   const prepared = prepareWallet(options);
+  attached.add(page);
   const installed = options.install !== false;
   const ledger = walletLedger(prepared);
   if (installed) {
     // The binding first: the init script finds it at document start in every engine.
     await page.exposeBinding(LEDGER_BINDING, ledgerBinding(ledger));
-    const config = { ...prepared.config, ledger: { state: prepared.config.ledger?.state !== false, binding: LEDGER_BINDING } };
+    const config = { ...prepared.config, ledger: { ...prepared.config.ledger!, binding: LEDGER_BINDING } };
     await page.addInitScript({ content: initScript(config) });
   }
   return makeHandle(page, prepared, installed, ledger);

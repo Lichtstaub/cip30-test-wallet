@@ -190,8 +190,7 @@ function parseOutput(output: CborValue, where: string): TxOutput {
     if (kind === 0n && content instanceof Uint8Array && content.length === 32) out.datum = { kind: 'hash', hash: content };
     else if (kind === 1n && content instanceof Tagged && content.tag === 24n && content.value instanceof Uint8Array && isPlutusDataBytes(content.value)) {
       out.datum = { kind: 'inline', cbor: content.value };
-    }
-    else throw new Error(`malformed datum option in ${where}`);
+    } else throw new Error(`malformed datum option in ${where}`);
   }
   if (scriptRef !== undefined) {
     // script_ref = #6.24(bytes .cbor script)

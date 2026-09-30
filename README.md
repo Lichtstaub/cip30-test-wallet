@@ -193,7 +193,7 @@ npx cip30-test-wallet init-script --network 0 --out wallet.js
 
 Every page the agent opens then has the wallet in `window.cardano`. The agent reads the journal and controls the wallet with its evaluate tool through `window.__chw`: `journal`, `setQuirk(name, value)`, `release('signTx')` and `reject('signTx')`. Quirks, UTxOs and a mnemonic from an environment variable go in through `--options` and `--mnemonic-env`. Tested with Playwright MCP against the demo dApp under a strict content security policy. Details in [docs/init-script.md](docs/init-script.md).
 
-Inside your own Playwright code, without the test runner, `attachWallet(page, options)` installs the same wallet and returns the `wallet` handle. It keeps the ledger in Node, like the fixture:
+Inside your own Playwright code, without the test runner, `attachWallet(page, options)` installs the same wallet and returns the `wallet` handle. It keeps the ledger in Node, like the fixture. Call it before the first navigation, once per page, and never on a page the `test` fixture already set up:
 
 ```ts
 import { attachWallet } from 'cip30-test-wallet/playwright';
@@ -250,7 +250,7 @@ Errors are plain `{ code, info }` objects, as CIP-30 requires, never `Error` ins
 
 One compatibility exception: `getCollateral()` without an argument means 5 ADA. CIP-30 calls that form possible but not specified, Mesh calls it this way and Lace answers it this way. An amount of 0 or above 5 ADA is InvalidRequest. Collateral comes from pure ADA UTxOs without datum or reference script, at most three: first in configuration order, then the largest ones if that is not enough. `null` when even that does not cover the amount.
 
-State after submit: a submitted transaction spends its inputs and creates its outputs, a phase 2 invalid one spends only its collateral. `getUtxos`, `getBalance` and `getCollateral` show the result, CIP-95 reflects stake registration and unregistration certificates. In the Playwright fixture this state lives in Node for the whole test and survives reloads, navigations and origin changes, `wallet.utxos()` reads it. The journal still starts fresh with every page load. `walletOptions.ledger: { state: false }` keeps the configured UTxOs as before 0.8.0. A spent output stays known for `signTx`, a node would refuse the second spend.
+State after submit: a submitted transaction spends its inputs and creates its outputs, a phase 2 invalid one spends only its collateral. `getUtxos`, `getBalance` and `getCollateral` show the result, CIP-95 reflects stake registration and unregistration certificates. In the Playwright fixture this state lives in Node for the whole test and survives reloads, navigations and origin changes. `wallet.utxos()` reads it. The journal still starts fresh with every page load. `walletOptions.ledger: { state: false }` keeps the configured UTxOs and stake registration as before 0.8.0. A spent output stays known for `signTx`. A node would refuse a second spend of it. The wallet accepts one and creates its outputs.
 
 ## Supported transaction forms
 

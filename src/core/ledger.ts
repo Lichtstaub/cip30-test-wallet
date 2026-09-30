@@ -24,7 +24,7 @@ export interface Utxo {
 export interface Ledger {
   /** Any output this ledger knows, owned by the wallet or not. */
   resolveInput(input: TxInput): Promise<Utxo | undefined>;
-  /** Outputs the wallet controls, in the order they were configured. */
+  /** Outputs the wallet controls: configured outputs still unspent first, then outputs of submitted transactions, in submit order. */
   getWalletUtxos(): Promise<Utxo[]>;
   /** Record or broadcast a signed transaction, return its id (32 bytes). */
   submit(tx: Uint8Array): Promise<Uint8Array>;
@@ -60,7 +60,7 @@ const UNREGISTERS = new Set<bigint>([1n, 8n]);
 
 /** A base, pointer or enterprise address on this network whose payment credential is this key hash. Script and Byron addresses never are. */
 export function paysTo(address: Uint8Array, keyHash: Uint8Array, networkId: 0 | 1): boolean {
-  if (address.length < 29 || isByronAddress(address) || isRewardAddress(address) || isScriptPayment(address)) return false;
+  if (address.length < 29 || address[0]! >> 4 > 7 || isByronAddress(address) || isRewardAddress(address) || isScriptPayment(address)) return false;
   return networkTag(address) === networkId && bytesEqual(paymentHash(address), keyHash);
 }
 
@@ -108,7 +108,7 @@ export interface MemoryLedgerOptions {
   /** Without it no new output counts as owned and no certificate changes stakeRegistered. */
   wallet?: WalletCredentials;
   stakeRegistered?: boolean;
-  /** Apply every submitted transaction to the state. Default true, false keeps the configured UTxOs. */
+  /** Apply every submitted transaction to the state. Default true, false keeps the configured UTxOs and stake registration. */
   state?: boolean;
 }
 

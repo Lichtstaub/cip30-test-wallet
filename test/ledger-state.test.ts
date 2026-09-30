@@ -57,6 +57,8 @@ describe('state after submit', () => {
     const id = bytesToHex(idOf(tx));
     await ledger.submit(hexToBytes(tx));
     expect(keys(await ledger.getWalletUtxos())).toEqual([...keys([a]), `${id}#2`]);
+    expect(await ledger.resolveInput({ txId: hexToBytes(id), index: 0n })).toBeUndefined();
+    expect(await ledger.resolveInput({ txId: hexToBytes(id), index: 1n })).toBeUndefined();
     expect(await ledger.getStakeRegistered()).toBe(false);
   });
 
@@ -99,6 +101,7 @@ describe('ownership', () => {
     expect(paysTo(myAddress, myPay, 0)).toBe(true);
     expect(paysTo(enterpriseAddressBytes(0, myPay), myPay, 0)).toBe(true);
     expect(paysTo(concat(Uint8Array.of(0x70), myPay), myPay, 0)).toBe(false);
+    expect(paysTo(concat(Uint8Array.of(0xa0), myPay, myStake), myPay, 0)).toBe(false);
     expect(paysTo(otherAddress, myPay, 0)).toBe(false);
   });
 
