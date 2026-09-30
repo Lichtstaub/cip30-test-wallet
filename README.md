@@ -32,7 +32,7 @@ Coding agents start with [AGENTS.md](https://github.com/Lichtstaub/cip30-test-wa
 
 ## Not in the box yet
 
-This release is a CIP-30 subset for transaction tests plus CIP-95, including governance and script transactions. Every transaction form outside the supported set below is missing on purpose and tracked for later milestones. `submitTx` is simulated: it records the transaction and returns its id, it never talks to a node. Fees, validity and script execution are not checked.
+This release is a CIP-30 subset for transaction tests plus CIP-95, including governance and script transactions. Every transaction form outside the supported set below is missing on purpose and tracked for later milestones. `submitTx` is simulated: it records the transaction and returns its id, it never talks to a node. Fees, validity and Plutus script execution are not checked.
 
 ## Getting started
 
@@ -246,7 +246,7 @@ One compatibility exception: `getCollateral()` without an argument means 5 ADA. 
 
 The wallet decides what to sign for these body fields: inputs at key and script addresses, reference inputs, `required_signers`, withdrawals, certificates, mint, voting procedures, proposal procedures, treasury value and donation, collateral inputs, collateral return and total collateral, plus outputs, fee, ttl, validity start, auxiliary data hash, script data hash and network id. A requirement it does not own must already be covered by a valid witness in the transaction (multi-party flows), otherwise `signTx` refuses with `TxSignError` ProofGeneration.
 
-Scripts come from the witness set and from the reference scripts of inputs and reference inputs, as on chain. A native script is evaluated: the wallet signs with every key of its own the script names (never for a constitutional committee credential), and at `partialSign: false` the script must hold with those keys plus the valid witnesses already in the transaction, validity start and ttl included. A Plutus script needs no wallet witness and is never run. A script the transaction needs but does not provide raises `CHW_UNRESOLVED_SCRIPT` with a hint to attach it or to add the UTxO holding it as `scriptRef` to `utxos` or `foreignUtxos`.
+Scripts come from the witness set and from the reference scripts of inputs and reference inputs, as on chain, never from collateral inputs. A native script is evaluated: the wallet signs with every key of its own the script names (never for a constitutional committee credential), and at `partialSign: false` the script must hold with those keys plus the valid witnesses already in the transaction, validity start and ttl included. A Plutus script needs no wallet witness and is never run. A script the transaction needs but does not provide raises `CHW_UNRESOLVED_SCRIPT` with a hint to attach it or to add the UTxO holding it as `scriptRef` to `utxos` or `foreignUtxos`.
 
 Anything else (Byron inputs, the pre-Conway update field, unknown body keys, certificates or voters) raises a harness diagnosis `ChwError` with code `CHW_UNSUPPORTED_TX_FORM` at `partialSign: false`. A harness diagnosis is never disguised as a wallet error. An input or reference input the mock ledger does not know raises `CHW_UNRESOLVED_INPUT` with a hint to add it to `utxos` or `foreignUtxos`. `CHW_UNRESOLVED_INPUT` and `CHW_UNRESOLVED_SCRIPT` come at both `partialSign` values: without the input or the script the wallet cannot tell its own share.
 
