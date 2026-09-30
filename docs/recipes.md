@@ -8,7 +8,7 @@ The wallet's UTxOs are synthetic. They exist inside the wallet only, not on any 
 
 - **Build from the wallet.** A transaction builder must take its inputs from CIP-30 `getUtxos()`. Evolution SDK, Mesh and Lucid Evolution all do that when they are connected to the CIP-30 api, see their recipes below. A builder that looks the address up at Blockfrost, Koios or a chain indexer finds nothing, coin selection fails.
 - **Protocol parameters still come from the network.** Fee calculation needs them. Serve them from a recorded answer and the test runs offline, see [Protocol parameters offline](#protocol-parameters-offline).
-- **Nothing reaches a chain.** The wallet's `submitTx` records the transaction and returns its id. A library that submits through its own provider, or a dApp that hands the signed transaction to its backend, would send a transaction whose inputs do not exist. Intercept that request with `page.route` and check the transaction instead, see [A backend or provider that submits](#a-backend-or-provider-that-submits).
+- **Nothing reaches a chain.** The wallet's `submitTx` records the transaction, applies it to the wallet's UTxOs and returns its id. A library that submits through its own provider, or a dApp that hands the signed transaction to its backend, would send a transaction whose inputs do not exist. Intercept that request with `page.route` and check the transaction instead, see [A backend or provider that submits](#a-backend-or-provider-that-submits).
 - **Chain checks cannot see synthetic funds.** A token-gated page, a balance read from an indexer or a check that an address is a registered DRep needs a wallet that really has that state on the dApp's network, passed in through `walletOptions.mnemonic`. See [Pages behind a wallet login](../README.md#pages-behind-a-wallet-login).
 
 ## Serving a test page on a fake origin
@@ -332,6 +332,35 @@ test('the wallet holds one token kind', async ({ page }) => {
 
 A page that checks token ownership on chain, through an indexer or its backend, does not see the synthetic UTxOs. A page that reads `getBalance` or `getUtxos` in the browser does. See [Pages behind a wallet login](../README.md#pages-behind-a-wallet-login).
 
+## Reading the wallet's UTxOs after a submit
+
+A submitted transaction spends its inputs and creates its outputs. `wallet.utxos()` reads the result from the test process, so it is still there after a reload or a change of origin. The commit button of the demo dApp spends UTxO 0 and pays back to the wallet:
+
+```ts
+async function connect(page: Page, url = '/strict/') {
+  await page.goto(url);
+  await expect(page.locator('#wallets')).toHaveText('chw');
+  await page.locator('#connect').click();
+  await expect(page.locator('#connect-result')).toHaveText('network 0');
+}
+
+async function commit(page: Page): Promise<string> {
+  await page.locator('#commit').click();
+  await expect(page.locator('#commit-result')).toHaveText(/^submitted [0-9a-f]{64}$/);
+  return (await page.locator('#commit-result').textContent())!.replace('submitted ', '');
+}
+
+test('the commit spends UTxO 0 and pays back to the wallet', async ({ page, wallet }) => {
+  await connect(page);
+  const id = await commit(page);
+  const utxos = await wallet.utxos();
+  expect(utxos).toHaveLength(1);
+  expect(utxos[0]!.txId).toBe(id);
+});
+```
+
+`test.use({ walletOptions: { ledger: { state: false } } })` keeps the configured UTxOs, as before 0.8.0.
+
 ## A dApp that spends from a script
 
 A dApp that spends from a contract builds the transaction from chain data. The wallet has to know every input it cannot find in its own UTxOs: the UTxO the contract locks and, when the validator is used as a reference script, the UTxO holding it. Without them `signTx` raises `CHW_UNRESOLVED_INPUT`. A dApp that attaches the validator to the transaction itself needs only the locked UTxO.
@@ -370,7 +399,7 @@ test('connect checks the network before it reads addresses', async ({ page, wall
 });
 ```
 
-The journal lives in the page and starts empty after every navigation, see [fixture-api.md](fixture-api.md#state-lives-in-the-page). Read it before the dApp navigates away, or hold the navigation with `page.route` as the login recipe does.
+The journal lives in the page and starts empty after every navigation, see [fixture-api.md](fixture-api.md#what-lives-where). Read it before the dApp navigates away, or hold the navigation with `page.route` as the login recipe does.
 
 ## Testing a wallet module directly on a dev server
 

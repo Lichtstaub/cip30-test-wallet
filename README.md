@@ -32,7 +32,7 @@ Coding agents start with [AGENTS.md](https://github.com/Lichtstaub/cip30-test-wa
 
 ## Not in the box yet
 
-This release is a CIP-30 subset for transaction tests plus CIP-95, including governance and script transactions. Every transaction form outside the supported set below is missing on purpose and tracked for later milestones. `submitTx` is simulated: it records the transaction and returns its id, it never talks to a node. Fees, validity and Plutus script execution are not checked.
+This release is a CIP-30 subset for transaction tests plus CIP-95, including governance and script transactions. Every transaction form outside the supported set below is missing on purpose and tracked for later milestones. `submitTx` is simulated: it records the transaction, applies it to the wallet's UTxOs and stake registration, and returns its id. It never talks to a node. Fees, validity and Plutus script execution are not checked.
 
 ## Getting started
 
@@ -104,7 +104,7 @@ Wallet errors are plain `{ code, info }` objects as CIP-30 requires, so a dApp t
 Two questions decide how a transaction test is wired, answer them for your dApp first:
 
 - **Where does the builder get its inputs?** The wallet's UTxOs exist only in the wallet. A builder connected to the CIP-30 api reads them through `getUtxos()` and works. One that looks the address up at an indexer finds nothing.
-- **Who submits?** The wallet's `submitTx` records the transaction and never reaches a chain. A library or backend that submits on its own has to be intercepted with `page.route`.
+- **Who submits?** The wallet's `submitTx` records the transaction, applies it to the wallet's UTxOs and never reaches a chain. A library or backend that submits on its own has to be intercepted with `page.route`.
 
 The details and a recipe per library follow in [Building and submitting transactions](#building-and-submitting-transactions). A test then proves the signature instead of counting calls:
 
@@ -140,7 +140,7 @@ The wallet's UTxOs are synthetic, they exist inside the wallet and on no chain. 
 
 - Build from the wallet's `getUtxos()`. Evolution SDK, Mesh and Lucid Evolution do that when they are connected to the CIP-30 api. A builder that looks the address up at a chain indexer finds nothing.
 - Protocol parameters still come from the network. Serve a recorded answer with `page.route` and the test runs offline.
-- Nothing reaches a chain. `submitTx` only records the transaction. A library or backend that submits on its own has to be intercepted with `page.route`, then `expectSignedBy` proves the transaction it would have sent.
+- Nothing reaches a chain. `submitTx` only records the transaction and applies it to the wallet's UTxOs. A library or backend that submits on its own has to be intercepted with `page.route`, then `expectSignedBy` proves the transaction it would have sent.
 
 Tested, complete recipes in [docs/recipes.md](docs/recipes.md):
 
@@ -193,7 +193,15 @@ npx cip30-test-wallet init-script --network 0 --out wallet.js
 
 Every page the agent opens then has the wallet in `window.cardano`. The agent reads the journal and controls the wallet with its evaluate tool through `window.__chw`: `journal`, `setQuirk(name, value)`, `release('signTx')` and `reject('signTx')`. Quirks, UTxOs and a mnemonic from an environment variable go in through `--options` and `--mnemonic-env`. Tested with Playwright MCP against the demo dApp under a strict content security policy. Details in [docs/init-script.md](docs/init-script.md).
 
-Inside your own Playwright code, without the test runner, the same wallet goes in through `page.addInitScript`:
+Inside your own Playwright code, without the test runner, `attachWallet(page, options)` installs the same wallet and returns the `wallet` handle. It keeps the ledger in Node, like the fixture:
+
+```ts
+import { attachWallet } from 'cip30-test-wallet/playwright';
+
+const wallet = await attachWallet(page, { networkId: 0 });
+```
+
+For other drivers, `page.addInitScript` takes the script directly. The ledger then lives in the page and a reload resets it to the configured UTxOs:
 
 ```ts
 import { initScript, prepareWallet } from 'cip30-test-wallet';
@@ -227,7 +235,7 @@ What decides whether a login works:
 
 - **Roles without chain state** work with any mnemonic, the default one included, for example a plain account login with the reward address.
 - **Roles the dApp checks on chain** need a wallet that really has that role on the dApp's network, for example a DRep registered on preprod. Pass its mnemonic through an environment variable, never commit it. Its keys end up in traces like any other, so use a testnet wallet only.
-- **Governance actions are signed.** Votes, vote delegation and DRep updates are signed with the right keys. `submitTx` still only records the transaction, so a vote never reaches the chain from a test.
+- **Governance actions are signed.** Votes, vote delegation and DRep updates are signed with the right keys. `submitTx` never reaches a chain, so a vote is never cast from a test.
 - **Token-gated pages** that check ownership on chain, through an indexer or their backend, do not see the synthetic UTxOs, the address itself has to hold the tokens. Pages that read `getBalance` or `getUtxos` in the browser do see them.
 
 The fixture injects into any URL, so this also works against a deployed site, not only a local dev server. The wallet's network has to match the site's. Against a mainnet site only flows that cost nothing make sense, such as a message-signing login, and only with a mnemonic that holds nothing. Remember that a production login creates real accounts and sessions on that site.
@@ -241,6 +249,8 @@ The wallet's extended private keys are serialised into the page's init script by
 Errors are plain `{ code, info }` objects, as CIP-30 requires, never `Error` instances. Code that reads `err.message` shows up immediately. `getUtxos()` returns `[]` for an empty wallet and `null` when the requested amount cannot be reached. Addresses are hex CBOR bytes. A test that is green with the defaults already tells you something.
 
 One compatibility exception: `getCollateral()` without an argument means 5 ADA. CIP-30 calls that form possible but not specified, Mesh calls it this way and Lace answers it this way. An amount of 0 or above 5 ADA is InvalidRequest. Collateral comes from pure ADA UTxOs without datum or reference script, at most three: first in configuration order, then the largest ones if that is not enough. `null` when even that does not cover the amount.
+
+State after submit: a submitted transaction spends its inputs and creates its outputs, a phase 2 invalid one spends only its collateral. `getUtxos`, `getBalance` and `getCollateral` show the result, CIP-95 reflects stake registration and unregistration certificates. In the Playwright fixture this state lives in Node for the whole test and survives reloads, navigations and origin changes, `wallet.utxos()` reads it. The journal still starts fresh with every page load. `walletOptions.ledger: { state: false }` keeps the configured UTxOs as before 0.8.0. A spent output stays known for `signTx`, a node would refuse the second spend.
 
 ## Supported transaction forms
 

@@ -1,6 +1,6 @@
 # Fixture reference
 
-`cip30-test-wallet/playwright` exports `test`, `expect`, `expectSignedBy` and `expectSignedData`. The main entry `cip30-test-wallet` exports `prepareWallet`, `initScript`, `DEFAULT_MNEMONIC`, `QUIRK_NAMES`, the two assertions and the error codes with `ChwError`, plus their types. Other modules in the package are internal and can change in any release.
+`cip30-test-wallet/playwright` exports `test`, `expect`, `expectSignedBy`, `expectSignedData` and `attachWallet(page, options)`. `attachWallet` installs the wallet on a page of your own Playwright code, without the test runner, and returns the same `wallet` handle with the ledger in Node. The main entry `cip30-test-wallet` exports `prepareWallet`, `initScript`, `DEFAULT_MNEMONIC`, `QUIRK_NAMES`, the two assertions and the error codes with `ChwError`, plus their types. Other modules in the package are internal and can change in any release.
 
 ## `test.use({ walletOptions })`
 
@@ -12,11 +12,12 @@
 | `networkId` | `0` | `0` testnets, `1` mainnet. Addresses follow it |
 | `mnemonic` | public CSL test vector | CIP-1852 account source. Never use a funded mnemonic, the keys end up in the page and in Playwright traces |
 | `accountIndex` | `0` | CIP-1852 account, 0 to 2^31 - 1 |
-| `install` | `true` | Set `false` to skip injecting the provider. `name`, `addresses`, `paymentPublicKeyHex` and `stakePublicKeyHex` still work, every other handle member rejects |
+| `install` | `true` | Set `false` to skip injecting the provider. `name`, `addresses`, `paymentPublicKeyHex` and `stakePublicKeyHex` still work, `utxos()` still reads the ledger in Node, every other handle member rejects |
 | `utxos` | `[{ lovelace: 10_000_000 }]` | Owned outputs, in order. Each is `{ lovelace, assets?, datumHash?, inlineDatum?, scriptRef? }`. `assets` maps units (policy id hex plus asset name hex) to quantities up to 2^64 - 1. Ids are deterministic per name and position |
 | `foreignUtxos` | `[]` | Outputs the ledger knows but does not own, for multi-party transactions. Same shape as `utxos`. A `scriptRef` here provides a reference script for script transactions, the way a UTxO holding a validator does on chain |
 | `quirks` | `{}` | See the quirk catalogue |
 | `stakeRegistered` | `false` | CIP-95: report the stake key as registered. Defaults to a fresh, unregistered wallet |
+| `ledger` | `{ state: true }` | `state: false` keeps the configured UTxOs after `submitTx`. By default a submitted transaction spends its inputs, creates its outputs and applies stake registration certificates |
 
 ## `wallet` handle
 
@@ -31,14 +32,19 @@ The wallet is an automatic fixture: it is installed for every test in a file tha
 | `drepId` | `string` | CIP-129 DRep id, bech32 with prefix `drep` |
 | `calls(method?)` | `Promise<JournalEntry[]>` | Journal, optionally filtered |
 | `lastSubmittedTx()` | `Promise<string \| undefined>` | Hex CBOR handed to `submitTx` |
+| `utxos()` | `Promise<LedgerUtxo[]>` | The wallet's unspent outputs after every submitted transaction of the test, in the shape of `foreignUtxos`. Kept in Node, it survives reloads and origin changes |
 | `setQuirk(name, value)` | `Promise<void>` | Flip a quirk at runtime. Rejects with `InvalidRequest` for an unknown quirk name, and for `lateInjection` or `answersEveryKey` after install, they only apply at install time through `walletOptions.quirks` |
 | `release('signTx')`, `reject('signTx')` | `Promise<number>` | End a hanging `signTx`, resolving to how many calls it settled. Nothing pending resolves to `0` |
 
 A `JournalEntry` is `{ method, args, result?, error?, t }`. Results of `enable` are journaled as `'[api]'`. Key material never appears in the journal. CIP-95 methods carry a `cip95.` prefix: `cip95.getPubDRepKey`, `cip95.getRegisteredPubStakeKeys`, `cip95.getUnregisteredPubStakeKeys`, `cip95.signData`.
 
-## State lives in the page
+## What lives where
 
-The journal and every `setQuirk` change live in the page, not in the test process. Each navigation resets both to the wallet's initial configuration. Read `wallet.calls()` before navigating away from the page you want to assert on, not after.
+The ledger lives for the test, the journal and runtime quirks live for one page load. After a navigation `wallet.utxos()` shows the updated outputs and `lastSubmittedTx()` returns `undefined`.
+
+- **Ledger, in Node.** The wallet's outputs and stake registration after every submitted transaction are kept in the test process behind a page binding. They survive reloads, navigations and origin changes, and every page of the test sees the same state. `wallet.utxos()` reads it, also before the first navigation and with `install: false`.
+- **Journal and quirks, in the page.** The journal and every `setQuirk` change are reset to the wallet's initial configuration by each navigation. Read `wallet.calls()` before navigating away from the page you want to assert on, not after.
+- **A page without the binding.** If a page does not have the binding, that page keeps its own ledger and logs a `console.warn`. `wallet.utxos()` does not see the state of that page.
 
 ## `expectSignedBy(txHex, wallet, options?)`
 
