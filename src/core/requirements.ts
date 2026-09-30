@@ -81,7 +81,8 @@ const VOTER_NAMES: Record<string, string> = {
 
 const ACTION_NAMES: Record<string, string> = { '0': 'parameter_change', '2': 'treasury_withdrawals' };
 
-function certificateName(index: bigint): string {
+/** 'certificate 7 (account_registration_deposit)', the name every malformed-certificate message uses, here and in the ledger checks. */
+export function certificateName(index: bigint): string {
   const name = CERTIFICATE_NAMES[index.toString()];
   return `certificate ${index}${name ? ` (${name})` : ''}`;
 }
@@ -116,7 +117,7 @@ function addCredential(value: CborValue | undefined, where: string, foreignOnly:
 // Array length per certificate, index included, from the Conway CDDL. The wallet
 // checks the field count and every field that decides a witness. It does not
 // check the types of the other fields (pool ids, coins, anchors), a node does.
-const CERTIFICATE_ARITY: Record<string, number> = {
+export const CERTIFICATE_ARITY: Record<string, number> = {
   '0': 2, '1': 2, '2': 3, '3': 10, '4': 3, '7': 3, '8': 3, '9': 3, '10': 4,
   '11': 4, '12': 4, '13': 5, '14': 3, '15': 3, '16': 4, '17': 3, '18': 3,
 };
