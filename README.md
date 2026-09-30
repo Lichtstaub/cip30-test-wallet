@@ -34,11 +34,79 @@ Coding agents start with [AGENTS.md](https://github.com/Lichtstaub/cip30-test-wa
 
 This release is a CIP-30 subset for transaction tests plus CIP-95, including governance transactions. Missing on purpose, tracked for later milestones: script inputs, script credentials in certificates and votes, guardrail scripts in proposals, and every transaction form outside the supported set below. `submitTx` is simulated: it records the transaction and returns its id, it never talks to a node. Fees, validity and script execution are not checked.
 
-## Quick start
+## Getting started
+
+You have a dApp with a wallet connect and want its wallet flows under test. Each step below stands on its own, stop wherever the coverage is enough.
+
+### 1. Install and point Playwright at your app
 
 ```bash
 npm install --save-dev cip30-test-wallet @playwright/test
+npx playwright install chromium
 ```
+
+```ts
+// playwright.config.ts
+import { defineConfig } from '@playwright/test';
+
+export default defineConfig({
+  testDir: 'tests',
+  use: { baseURL: 'http://localhost:5173' },
+  webServer: { command: 'npm run dev', url: 'http://localhost:5173', reuseExistingServer: !process.env.CI },
+});
+```
+
+Use your dev server's command and port. A deployed URL works as `baseURL` too, without `webServer`.
+
+### 2. Connect
+
+```ts
+// tests/connect.spec.ts
+import { test, expect } from 'cip30-test-wallet/playwright';
+
+test.use({ walletOptions: { name: 'eternl', networkId: 0 } });
+
+test('connects to the wallet', async ({ page, wallet }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Connect' }).click();
+  await expect(page.getByText('Connected')).toBeVisible(); // whatever your app shows after a connect
+
+  expect(await wallet.calls('enable')).toHaveLength(1);
+});
+```
+
+Import `test` and `expect` from `cip30-test-wallet/playwright`, not from `@playwright/test`. `name` is the key under `window.cardano`. Use one your dApp lists, many dApps only offer wallets they know. `networkId` is `0` for a testnet dApp and `1` for mainnet. This test needs no chain, no funds and no transaction builder.
+
+### 3. What your users do to it
+
+The failures users report and nobody can reproduce on a developer machine. Each is one line of `walletOptions`:
+
+```ts
+test.use({ walletOptions: { networkId: 1 } });                        // wallet on mainnet, your dApp expects preprod
+test.use({ walletOptions: { quirks: { enableRejected: true } } });    // the user declines the connection
+test.use({ walletOptions: { quirks: { lateInjection: 1500 } } });     // the wallet appears after 1.5 seconds
+test.use({ walletOptions: { quirks: { signRejected: true } } });      // the user declines the signature
+```
+
+A user who never answers the signing prompt, answered by the test when your assertion is done:
+
+```ts
+test.use({ walletOptions: { quirks: { signHangs: true } } });
+await page.getByRole('button', { name: 'Commit' }).click();
+await expect(page.getByText('Waiting for your wallet')).toBeVisible();
+await wallet.release('signTx');
+```
+
+Wallet errors are plain `{ code, info }` objects as CIP-30 requires, so a dApp that shows `err.message` shows nothing. That is the most common bug these tests find. The full list is in [User-side failures](docs/recipes.md#user-side-failures) and the [quirk catalogue](quirks/README.md).
+
+### 4. Transactions
+
+Two questions decide how a transaction test is wired, answer them for your dApp first:
+
+- **Where does the builder get its inputs?** The wallet's UTxOs exist only in the wallet. A builder connected to the CIP-30 api reads them through `getUtxos()` and works. One that looks the address up at an indexer finds nothing.
+- **Who submits?** The wallet's `submitTx` records the transaction and never reaches a chain. A library or backend that submits on its own has to be intercepted with `page.route`.
+
+The details and a recipe per library follow in [Building and submitting transactions](#building-and-submitting-transactions). A test then proves the signature instead of counting calls:
 
 ```ts
 // tests/commit.spec.ts
@@ -58,20 +126,11 @@ test('commit writes the expected metadata', async ({ page, wallet }) => {
 });
 ```
 
-Reproduce a wrong-network user in one line:
+### 5. Pages behind a wallet login, and the deployment
 
-```ts
-test.use({ walletOptions: { networkId: 1 } });   // wallet on mainnet, your dApp expects preprod
-```
-
-Reproduce a user who never answers the signing prompt, and let them answer when your assertion is done:
-
-```ts
-test.use({ walletOptions: { quirks: { signHangs: true } } });
-await page.getByRole('button', { name: 'Commit' }).click();
-await expect(page.getByText('Waiting for your wallet')).toBeVisible();
-await wallet.release('signTx');
-```
+- A dApp that logs in with a signed message becomes testable behind the login, see [Pages behind a wallet login](#pages-behind-a-wallet-login).
+- `npx cip30-test-wallet doctor <url>` checks the deployed site for the content security policy and detection problems that break wallets in mobile in-app browsers, see [doctor](#doctor).
+- Let a coding agent run and extend these tests on its own, see [CI and coding agents](#ci-and-coding-agents).
 
 The full option and handle reference is in [docs/fixture-api.md](docs/fixture-api.md).
 
