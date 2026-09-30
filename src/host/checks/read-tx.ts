@@ -20,6 +20,13 @@ export function credentialKey(c: Credential): string {
   return `${c.isScript ? 'script' : 'key'}:${bytesToHex(c.hash)}`;
 }
 
+/** The network a node reads from an address header: bit 0 (Address.hs headerNetworkId), 0 testnet, 1 mainnet. */
+export function headerNetwork(address: Uint8Array): 0 | 1 {
+  const header = address[0];
+  if (header === undefined) throw new Error('empty address');
+  return (header & 1) as 0 | 1;
+}
+
 export type CertFact =
   | { kind: 'accountRegistration'; cert: 0n | 7n | 11n | 12n | 13n; credential: Credential; deposit: bigint | undefined }
   | { kind: 'accountUnregistration'; cert: 1n | 8n; credential: Credential; refund: bigint | undefined }

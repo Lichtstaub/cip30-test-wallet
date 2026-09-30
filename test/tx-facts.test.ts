@@ -5,7 +5,7 @@ import { Tagged } from '../src/core/cbor/decode.js';
 import { encode } from '../src/core/cbor/encode.js';
 import { parseTransaction } from '../src/core/cbor/tx.js';
 import { requirements } from '../src/core/requirements.js';
-import { credentialKey, readTransaction, type CertFact } from '../src/host/checks/read-tx.js';
+import { credentialKey, headerNetwork, readTransaction, type CertFact } from '../src/host/checks/read-tx.js';
 import { buildTx, TEST_ADDRESS } from './helpers/build-tx.js';
 import { cslGovernanceTx, type CslCert } from './helpers/csl-governance.js';
 import { hash28, POLICY, syntheticInput } from './helpers/synthetic.js';
@@ -393,5 +393,20 @@ describe('credentialKey', () => {
   it('prefixes the hash with the credential kind', () => {
     expect(credentialKey(keyCred)).toBe(`key:${bytesToHex(hash28(1))}`);
     expect(credentialKey(scriptCred)).toBe(`script:${bytesToHex(hash28(2))}`);
+  });
+});
+
+describe('headerNetwork', () => {
+  it('reads bit 0 of the header, the way a node reads the network of an address', () => {
+    expect(headerNetwork(hexToBytes('e0' + '00'.repeat(28)))).toBe(0);
+    expect(headerNetwork(hexToBytes('e1' + '00'.repeat(28)))).toBe(1);
+    expect(headerNetwork(hexToBytes('e2' + '00'.repeat(28)))).toBe(0);
+    expect(headerNetwork(hexToBytes('e3' + '00'.repeat(28)))).toBe(1);
+    expect(headerNetwork(hexToBytes('71' + '00'.repeat(28)))).toBe(1);
+    expect(headerNetwork(TEST_ADDRESS)).toBe(TEST_ADDRESS[0]! & 1);
+  });
+
+  it('throws on an empty address', () => {
+    expect(() => headerNetwork(new Uint8Array())).toThrow('empty address');
   });
 });
