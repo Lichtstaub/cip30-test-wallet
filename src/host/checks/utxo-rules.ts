@@ -1,16 +1,14 @@
 import { isByronAddress, isScriptPayment, toBech32 } from '../../core/addresses.js';
-import { bytesToHex } from '../../core/bytes.js';
 import { arrayItemRanges, decode } from '../../core/cbor/decode.js';
-import { lookupInputs, type TxInput } from '../../core/cbor/tx.js';
+import type { InputLabel } from '../../core/cbor/tx.js';
 import type { Utxo } from '../../core/ledger.js';
 import { scriptFromRef } from '../../core/scripts.js';
-import type { MultiAsset } from '../../core/value.js';
 import type { ProtocolParams, Rational } from '../protocol-params.js';
 import { depositsAndRefunds } from './cert-state.js';
-import type { CheckContext } from './context.js';
-import { mismatch, PATH, type Failure } from './failure.js';
+import { knownInputs, type CheckContext } from './context.js';
+import { coin, failer, list, mismatch, network, PATH, type Failure } from './failure.js';
 import { headerNetwork, type SizedOutput } from './read-tx.js';
-import { addValues, formatValue, valuesEqual, type Value } from './value-math.js';
+import { addValues, formatValue, isAdaOnly, mapAssets, negate, valueOf, valuesEqual } from './value-math.js';
 
 // The UTXO rule of a Conway node: Babbage/Rules/Utxo.hs babbageUtxoValidation,
 // with validators from the Shelley, Allegra and Alonzo UTXO rules. Every check
@@ -50,8 +48,6 @@ export function tierRefScriptFee(costPerByte: Rational, size: bigint): bigint {
   return (acc + rest * price) / denominator;
 }
 
-const outpoint = (input: TxInput) => `${bytesToHex(input.txId)}#${input.index}`;
-const list = (items: readonly string[]) => `[${items.join(', ')}]`;
 
 /**
  * The bytes the script hash covers, what Conway counts as originalBytesSize:
@@ -67,14 +63,13 @@ function refScriptBytes(ref: Uint8Array): bigint {
 
 /** The resolved spend inputs and reference inputs, one entry per outpoint. Collateral inputs are no source of scripts. */
 function scriptSourceUtxos(ctx: CheckContext): Utxo[] {
-  const { body } = ctx.parsed;
   const seen = new Map<string, Utxo>();
-  lookupInputs(body).forEach(({ input, label }, i) => {
-    const utxo = ctx.resolved[i];
-    if (label !== 'collateral input' && utxo) seen.set(outpoint(input), utxo);
-  });
+  for (const { label, key, utxo } of knownInputs(ctx)) if (label !== 'collateral input' && utxo) seen.set(key, utxo);
   return [...seen.values()];
 }
+
+// The ledger rule and the fee both read the size, it is counted once per context. A context is not changed after it is built.
+const refScriptSizes = new WeakMap<CheckContext, bigint>();
 
 /**
  * Conway/UTxO.hs txNonDistinctRefScriptsSize: the reference scripts of the
@@ -82,8 +77,12 @@ function scriptSourceUtxos(ctx: CheckContext): Utxo[] {
  * same script in two UTxOs twice.
  */
 export function refScriptsSize(ctx: CheckContext): bigint {
-  let size = 0n;
-  for (const utxo of scriptSourceUtxos(ctx)) if (utxo.scriptRef) size += refScriptBytes(utxo.scriptRef);
+  let size = refScriptSizes.get(ctx);
+  if (size === undefined) {
+    size = 0n;
+    for (const utxo of scriptSourceUtxos(ctx)) if (utxo.scriptRef) size += refScriptBytes(utxo.scriptRef);
+    refScriptSizes.set(ctx, size);
+  }
   return size;
 }
 
@@ -109,22 +108,6 @@ export function minUtxo(output: SizedOutput, params: ProtocolParams): bigint {
   return (UTXO_ENTRY_OVERHEAD + BigInt(output.size)) * params.coinsPerUtxoByte;
 }
 
-const valueOf = (u: { lovelace: bigint; assets?: MultiAsset }): Value => ({ coin: u.lovelace, assets: u.assets ?? new Map() });
-
-function mapAssets(assets: MultiAsset, f: (q: bigint) => bigint): MultiAsset {
-  const out: MultiAsset = new Map();
-  for (const [policy, names] of assets) {
-    const inner = new Map<string, bigint>();
-    for (const [name, quantity] of names) if (f(quantity) !== 0n) inner.set(name, f(quantity));
-    if (inner.size > 0) out.set(policy, inner);
-  }
-  return out;
-}
-
-const negate = (v: Value): Value => ({ coin: -v.coin, assets: mapAssets(v.assets, (q) => -q) });
-/** Val.isAdaOnly: no asset with a quantity other than zero, negative ones included. */
-const isAdaOnly = (v: Value) => [...v.assets.values()].every((names) => [...names.values()].every((q) => q === 0n));
-const network = (id: bigint | number) => (BigInt(id) === 1n ? 'Mainnet' : BigInt(id) === 0n ? 'Testnet' : `Network ${id}`);
 
 /**
  * UTXO in the order of Babbage/Rules/Utxo.hs babbageUtxoValidation. Not
@@ -133,25 +116,21 @@ const network = (id: bigint | number) => (BigInt(id) === 1n ? 'Mainnet' : BigInt
  * attribute size (Byron outputs are an unsupported form).
  */
 export function utxoFailures(ctx: CheckContext): Failure[] {
-  const { parsed, facts, params, resolved } = ctx;
-  const { body } = parsed;
+  const { facts, params } = ctx;
+  const { body } = ctx.parsed;
   const failures: Failure[] = [];
-  const fail = (rule: string, detail?: string) => failures.push(detail === undefined ? { path: PATH.UTXO, rule } : { path: PATH.UTXO, rule, detail });
+  const fail = failer(PATH.UTXO, failures);
 
-  const lookup = lookupInputs(body);
-  const inputCount = body.inputs.length;
-  const collateralCount = body.collateralInputs.length;
-  const unique = (from: number, to: number) => {
+  const inputs = knownInputs(ctx);
+  /** The resolved inputs with this label, one entry per outpoint. */
+  const unique = (of: InputLabel) => {
     const seen = new Map<string, Utxo>();
-    for (let i = from; i < to; i++) {
-      const utxo = resolved[i];
-      if (utxo) seen.set(outpoint(lookup[i]!.input), utxo);
-    }
+    for (const { label, key, utxo } of inputs) if (label === of && utxo) seen.set(key, utxo);
     return seen;
   };
-  const spent = unique(0, inputCount);
+  const spent = unique('input');
   // Babbage/Rules/Utxo.hs feesOK: Map.restrictKeys utxo collateral, only the collateral the UTxO set holds.
-  const collateral = unique(inputCount, inputCount + collateralCount);
+  const collateral = unique('collateral input');
 
   // Allegra/Rules/Utxo.hs validateOutsideValidityIntervalUTxO, only with a current slot.
   const slot = ctx.currentSlot;
@@ -166,7 +145,7 @@ export function utxoFailures(ctx: CheckContext): Failure[] {
 
   // Babbage/Rules/Utxo.hs feesOK, part 1: minfee pp tx ≤ txfee.
   const expectedFee = minFee(ctx);
-  if (facts.fee < expectedFee) fail('FeeTooSmallUTxO', mismatch('RelGTEQ', `Coin ${facts.fee}`, `Coin ${expectedFee}`));
+  if (facts.fee < expectedFee) fail('FeeTooSmallUTxO', mismatch('RelGTEQ', coin(facts.fee), coin(expectedFee)));
 
   // feesOK, part 2: the collateral checks run only when the transaction carries redeemers (validateTotalCollateral).
   if (facts.redeemers.length > 0) {
@@ -188,21 +167,18 @@ export function utxoFailures(ctx: CheckContext): Failure[] {
     // Alonzo/Rules/Utxo.hs validateInsufficientCollateral: balance × 100 ≥ fee × collateralPercent.
     if (balance * 100n < facts.fee * params.collateralPercent) {
       const required = (facts.fee * params.collateralPercent + 99n) / 100n;
-      fail('InsufficientCollateral', `{balance: DeltaCoin ${balance}, required: Coin ${required}}`);
+      fail('InsufficientCollateral', `{balance: DeltaCoin ${balance}, required: ${coin(required)}}`);
     }
     // Babbage/Rules/Utxo.hs validateCollateralEqBalance.
     if (facts.totalCollateral !== undefined && balance !== facts.totalCollateral) {
-      fail('IncorrectTotalCollateralField', `{balance: DeltaCoin ${balance}, totalCollateral: Coin ${facts.totalCollateral}}`);
+      fail('IncorrectTotalCollateralField', `{balance: DeltaCoin ${balance}, totalCollateral: ${coin(facts.totalCollateral)}}`);
     }
     if (collateral.size === 0) fail('NoCollateralInputs');
   }
 
   // Shelley/Rules/Utxo.hs validateBadInputsUTxO over allInputs: spend, collateral and reference inputs.
-  const bad = new Set<string>();
-  lookup.forEach(({ input }, i) => {
-    if (!resolved[i]) bad.add(outpoint(input));
-  });
-  if (bad.size > 0) fail('BadInputsUTxO', list([...bad]));
+  const bad = new Set(inputs.filter((i) => !i.utxo).map((i) => i.key));
+  if (bad.size > 0) fail('BadInputsUTxO', list(bad));
 
   // Shelley/Rules/Utxo.hs validateValueNotConservedUTxO with Conway consumed and produced.
   // Only resolved spend inputs count, the collateral return and total_collateral never do.
@@ -220,7 +196,10 @@ export function utxoFailures(ctx: CheckContext): Failure[] {
   if (facts.collateralReturn) allOutputs.push(['collateral return', facts.collateralReturn]);
 
   // Babbage/Rules/Utxo.hs validateOutputTooSmallUTxO, one failure listing every output below its minimum.
-  const tooSmall = allOutputs.filter(([, o]) => o.output.lovelace < minUtxo(o, params)).map(([name, o]) => `(${name}, Coin ${minUtxo(o, params)})`);
+  const tooSmall = allOutputs.flatMap(([name, o]) => {
+    const min = minUtxo(o, params);
+    return o.output.lovelace < min ? [`(${name}, ${coin(min)})`] : [];
+  });
   if (tooSmall.length > 0) fail('BabbageOutputTooSmallUTxO', list(tooSmall));
 
   // Alonzo/Rules/Utxo.hs validateOutputTooBigUTxO: serialized value ≤ maxValSize.
@@ -233,11 +212,11 @@ export function utxoFailures(ctx: CheckContext): Failure[] {
     const { address } = o.output;
     if (!isByronAddress(address) && headerNetwork(address) !== ctx.networkId) wrongAddresses.add(toBech32(address));
   }
-  if (wrongAddresses.size > 0) fail('WrongNetwork', `{expected: ${network(ctx.networkId)}, addresses: ${list([...wrongAddresses])}}`);
+  if (wrongAddresses.size > 0) fail('WrongNetwork', `{expected: ${network(ctx.networkId)}, addresses: ${list(wrongAddresses)}}`);
 
   // Shelley/Rules/Utxo.hs validateWrongNetworkWithdrawal.
   const wrongAccounts = new Set(facts.withdrawals.filter((w) => headerNetwork(w.rewardAddress) !== ctx.networkId).map((w) => toBech32(w.rewardAddress)));
-  if (wrongAccounts.size > 0) fail('WrongNetworkWithdrawal', `{expected: ${network(ctx.networkId)}, accounts: ${list([...wrongAccounts])}}`);
+  if (wrongAccounts.size > 0) fail('WrongNetworkWithdrawal', `{expected: ${network(ctx.networkId)}, accounts: ${list(wrongAccounts)}}`);
 
   // Alonzo/Rules/Utxo.hs validateWrongNetworkInTxBody, only when the body names a network.
   if (facts.networkId !== undefined && facts.networkId !== BigInt(ctx.networkId)) {
@@ -254,7 +233,7 @@ export function utxoFailures(ctx: CheckContext): Failure[] {
   }
 
   // Alonzo/Rules/Utxo.hs validateTooManyCollateralInputs, with or without redeemers, over the set of collateral inputs.
-  const collateralInputs = new Set(body.collateralInputs.map(outpoint)).size;
+  const collateralInputs = new Set(inputs.filter((i) => i.label === 'collateral input').map((i) => i.key)).size;
   if (BigInt(collateralInputs) > params.maxCollateralInputs) {
     fail('TooManyCollateralInputs', mismatch('RelLTEQ', `${collateralInputs}`, `${params.maxCollateralInputs}`));
   }

@@ -10,7 +10,7 @@ import { LEDGER_BINDING, ledgerBinding, walletLedger } from '../src/host/ledger.
 import { installWallet, syntheticOwnedUtxo, type InstallTarget } from '../src/page/install.js';
 import { utxoFromConfig, utxoToConfig } from '../src/page/utxo-config.js';
 import { buildTx, spliceWitnessSet, standardUnsignedTx, TEST_ADDRESS } from './helpers/build-tx.js';
-import { enableChw, pageWith } from './helpers/page.js';
+import { enableChw, pageWith, rejectionOf } from './helpers/page.js';
 import { hash28 as h, syntheticInput } from './helpers/synthetic.js';
 
 afterEach(() => vi.restoreAllMocks());
@@ -123,14 +123,7 @@ describe('submit answers through the binding', () => {
     installWallet({ ...w.config, ledger: { state: true, binding: LEDGER_BINDING } }, page);
     return { node, page, tx: standardUnsignedTx(w.config.name) };
   };
-  const caught = async (run: () => Promise<unknown>): Promise<unknown> => {
-    try {
-      await run();
-    } catch (e) {
-      return e;
-    }
-    throw new Error('expected a rejection');
-  };
+  const caught = (run: () => Promise<unknown>) => rejectionOf(run());
 
   it('answers an accepted transaction with its id', async () => {
     const { node, tx } = setup();

@@ -1,22 +1,18 @@
 import { bytesEqual, bytesToHex } from '../../core/bytes.js';
-import { lookupInputs } from '../../core/cbor/tx.js';
 import { keyHash, verifiesOver } from '../../core/keys.js';
-import type { Utxo } from '../../core/ledger.js';
 import type { Requirements } from '../../core/requirements.js';
-import { evaluateNativeScript, scriptsProvided, type ProvidedScript } from '../../core/scripts.js';
-import type { CheckContext } from './context.js';
-import { mismatch, PATH, type Failure } from './failure.js';
+import { evaluateNativeScript, scriptsProvided } from '../../core/scripts.js';
+import { knownInputs, type CheckContext } from './context.js';
+import { failer, list, mismatch, PATH, type Failure } from './failure.js';
 
 // The witness part of the UTXOW rule of a Conway node: Babbage/Rules/Utxow.hs
 // babbageUtxowTransition with validators from Shelley/Rules/Utxow.hs. Plutus
 // scripts count for presence only, nothing here runs them. Datums, redeemers
 // and the script integrity hash are not checked.
 
-const list = (items: Iterable<string>) => `[${[...items].join(', ')}]`;
-
-/** Hashes in first-seen order, each once. */
-function hashSet(scripts: ReadonlyArray<{ hash: Uint8Array }>): Map<string, Uint8Array> {
-  return new Map(scripts.map((s) => [bytesToHex(s.hash), s.hash]));
+/** Hex hashes in first-seen order, each once. */
+function hashSet(scripts: ReadonlyArray<{ hash: Uint8Array }>): Set<string> {
+  return new Set(scripts.map((s) => bytesToHex(s.hash)));
 }
 
 /** UTXOW: witnesses and script presence. reqs from requirements(body, resolved spent inputs). */
@@ -24,7 +20,7 @@ export function witnessFailures(ctx: CheckContext, reqs: Requirements): Failure[
   const { parsed } = ctx;
   const { body } = parsed;
   const failures: Failure[] = [];
-  const fail = (rule: string, detail: string) => failures.push({ path: PATH.UTXOW, rule, detail });
+  const fail = failer(PATH.UTXOW, failures);
 
   // Core.hs keyHashWitnessesTxWits: the key hash of every vkey witness, valid or not. A bad
   // signature is reported once, as InvalidWitnessesUTXOW, and still counts as present.
@@ -32,12 +28,10 @@ export function witnessFailures(ctx: CheckContext, reqs: Requirements): Failure[
   const witnessKeySet = new Set(witnessKeys.map(bytesToHex));
 
   // Babbage getBabbageScriptsProvided: witness set, then the reference scripts of spend and reference inputs.
-  const sources = lookupInputs(body).flatMap(({ label }, i) => {
-    const utxo = ctx.resolved[i];
-    return utxo ? [{ label, utxo }] : ([] as Array<{ label: typeof label; utxo: Utxo }>);
-  });
-  const provided: ProvidedScript[] = scriptsProvided(parsed.scripts, sources).scripts;
-  const referenced = hashSet(scriptsProvided([], sources).scripts);
+  const sources = knownInputs(ctx).flatMap(({ label, utxo }) => (utxo ? [{ label, utxo }] : []));
+  const provided = scriptsProvided(parsed.scripts, sources).scripts;
+  // scriptsProvided appends the reference scripts after the witness scripts.
+  const referenced = hashSet(provided.slice(parsed.scripts.length));
   const received = hashSet(parsed.scripts);
   const needed = new Set(reqs.scripts.map((s) => bytesToHex(s.scriptHash)));
 
@@ -52,7 +46,7 @@ export function witnessFailures(ctx: CheckContext, reqs: Requirements): Failure[
 
   // Babbage/Rules/Utxow.hs babbageMissingScripts: needed minus reference scripts must equal the witness scripts.
   const neededNonRefs = new Set([...needed].filter((hex) => !referenced.has(hex)));
-  const extraneous = [...received.keys()].filter((hex) => !neededNonRefs.has(hex));
+  const extraneous = [...received].filter((hex) => !neededNonRefs.has(hex));
   if (extraneous.length > 0) fail('ExtraneousScriptWitnessesUTXOW', list(extraneous));
   const missing = [...neededNonRefs].filter((hex) => !received.has(hex));
   if (missing.length > 0) fail('MissingScriptWitnessesUTXOW', list(missing));

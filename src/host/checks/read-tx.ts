@@ -1,9 +1,10 @@
 import { blake2b } from '@noble/hashes/blake2.js';
+import { networkTag } from '../../core/addresses.js';
 import { bytesToHex } from '../../core/bytes.js';
 import { arrayItemRanges, decodeItem, mapValueOffsets, type CborValue } from '../../core/cbor/decode.js';
 import { unwrapSet, type ParsedTransaction, type TxOutput } from '../../core/cbor/tx.js';
 import { CERTIFICATE_ARITY, certificateName } from '../../core/requirements.js';
-import { addAsset, type MultiAsset } from '../../core/value.js';
+import { addAsset, MAX_INT64, type MultiAsset } from '../../core/value.js';
 
 // What the ledger rules need from a transaction beyond what the page parser
 // reads: amounts, byte sizes, certificates, redeemers and the auxiliary data
@@ -22,9 +23,12 @@ export function credentialKey(c: Credential): string {
 
 /** The network a node reads from an address header: bit 0 (Address.hs headerNetworkId), 0 testnet, 1 mainnet. */
 export function headerNetwork(address: Uint8Array): 0 | 1 {
-  const header = address[0];
-  if (header === undefined) throw new Error('empty address');
-  return (header & 1) as 0 | 1;
+  return (networkTag(address) & 1) as 0 | 1;
+}
+
+/** The credential of a reward account: header type 15 is a script, 14 a key. The hash follows the header. */
+export function accountCredential(account: Uint8Array): Credential {
+  return { isScript: account[0]! >> 4 === 15, hash: account.slice(1) };
 }
 
 export type CertFact =
@@ -68,10 +72,8 @@ export interface TxFacts {
   treasuryDonation: bigint;
   currentTreasuryValue: bigint | undefined;
   certificates: CertFact[];
-  /** Deposit field of every proposal procedure, in body order. */
-  proposalDeposits: bigint[];
-  /** Reward account bytes (header and credential, 29 bytes) of every proposal procedure, in body order. */
-  proposalReturnAccounts: Uint8Array[];
+  /** Deposit field and reward account bytes (header and credential, 29 bytes) of every proposal procedure, in body order. */
+  proposals: Array<{ deposit: bigint; returnAccount: Uint8Array }>;
   /** declaredHash: body key 7. computedHash: Blake2b-256 over the original bytes of the auxiliary data, undefined when it is null. */
   auxiliaryData: { declaredHash: Uint8Array | undefined; computedHash: Uint8Array | undefined };
   redeemers: RedeemerFact[];
@@ -92,11 +94,10 @@ const BODY_CURRENT_TREASURY = 21n;
 const BODY_DONATION = 22n;
 const WITNESS_BOOTSTRAP = 2n;
 const WITNESS_REDEEMERS = 5n;
+const CBOR_NULL = 0xf6;
 
 // uint .size 4, the redeemer index
 const MAX_UINT32 = 0xffffffffn;
-// ex_units = [mem : 0 .. max_int64, steps : 0 .. max_int64]
-const MAX_INT64 = 0x7fffffffffffffffn;
 
 function malformed(what: string): never {
   throw new Error(`malformed ${what}`);
@@ -116,10 +117,11 @@ function hash28(value: CborValue | undefined, what: string): Uint8Array {
   return value;
 }
 
-// credential = [0, addr_keyhash // 1, script_hash]
-function credential(value: CborValue | undefined, what: string): Credential {
-  if (!Array.isArray(value) || value.length !== 2 || (value[0] !== 0n && value[0] !== 1n)) malformed(what);
-  return { isScript: value[0] === 1n, hash: hash28(value[1], what) };
+// credential = [0, addr_keyhash // 1, script_hash]. 'malformed credential in <where>' for the shape and
+// 'malformed credential hash in <where>' for the hash, the words of requirements().
+function credential(value: CborValue | undefined, where: string, name = 'credential'): Credential {
+  if (!Array.isArray(value) || value.length !== 2 || (value[0] !== 0n && value[0] !== 1n)) malformed(`${name} in ${where}`);
+  return { isScript: value[0] === 1n, hash: hash28(value[1], `${name} hash in ${where}`) };
 }
 
 // drep = [0, addr_keyhash // 1, script_hash // 2 // 3]
@@ -143,12 +145,13 @@ function readCertificate(raw: CborValue): CertFact {
   // Conway TxCert.hs refuses 5 (genesis delegation) and 6 (MIR) when decoding. They are
   // kept here so the caller can name them instead of reporting a malformed transaction.
   if (index === 5n || index === 6n) return { kind: 'deprecated', cert: index };
-  // One arity table and one naming with requirements(), so both report a malformed certificate in the same words.
+  // One arity table, one naming and one credential wording with requirements(), so both report a wrong
+  // field count or a malformed credential in the same words. The other fields only the reader checks.
   const arity = CERTIFICATE_ARITY[index.toString()];
   if (arity === undefined) throw new Error(`unknown certificate ${index}`);
   const where = certificateName(index);
   if (raw.length !== arity) malformed(where);
-  const stake = () => credential(raw[1], `credential in ${where}`);
+  const stake = () => credential(raw[1], where);
   const pool = (at: number) => hash28(raw[at], `pool key hash in ${where}`);
   const drep = (at: number) => checkDRep(raw[at], `drep in ${where}`);
   switch (index) {
@@ -187,11 +190,11 @@ function readCertificate(raw: CborValue): CertFact {
       coin(raw[2], `epoch in ${where}`);
       return { kind: 'poolRetirement', cert: 4n, poolId: pool(1) };
     case 14n:
-      credential(raw[1], `cold credential in ${where}`);
-      credential(raw[2], `hot credential in ${where}`);
+      credential(raw[1], where);
+      credential(raw[2], where, 'hot credential');
       return { kind: 'committee', cert: 14n };
     case 15n:
-      credential(raw[1], `cold credential in ${where}`);
+      credential(raw[1], where);
       checkOptionalAnchor(raw[2], `anchor in ${where}`);
       return { kind: 'committee', cert: 15n };
     case 16n:
@@ -206,6 +209,7 @@ function readCertificate(raw: CborValue): CertFact {
   }
 }
 
+// ex_units = [mem : 0 .. max_int64, steps : 0 .. max_int64]
 function exUnits(value: CborValue | undefined, what: string): { mem: bigint; steps: bigint } {
   if (!Array.isArray(value) || value.length !== 2) malformed(what);
   const [mem, steps] = value;
@@ -276,12 +280,12 @@ function readWithdrawals(value: CborValue | undefined): TxFacts['withdrawals'] {
   if (!(value instanceof Map)) malformed('withdrawals');
   return [...value].map(([raw, amount]) => {
     const rewardAddress = rewardAccount(raw, 'withdrawal reward address');
-    return { rewardAddress, credential: { isScript: rewardAddress[0]! >> 4 === 15, hash: rewardAddress.slice(1) }, amount: coin(amount, 'withdrawal amount') };
+    return { rewardAddress, credential: accountCredential(rewardAddress), amount: coin(amount, 'withdrawal amount') };
   });
 }
 
 // proposal_procedure = [deposit : coin, reward_account, gov_action, anchor], the page parser checked the length.
-function readProposals(value: CborValue | undefined): Array<{ deposit: bigint; returnAccount: Uint8Array }> {
+function readProposals(value: CborValue | undefined): TxFacts['proposals'] {
   return (value === undefined ? [] : unwrapSet(value)).map((p) => {
     if (!Array.isArray(p)) malformed('proposal procedure');
     return { deposit: coin(p[0], 'proposal deposit'), returnAccount: rewardAccount(p[1], 'proposal reward account') };
@@ -372,7 +376,7 @@ export function readTransaction(bytes: Uint8Array, parsed: ParsedTransaction): T
   const proposals = readProposals(body.get(BODY_PROPOSAL_PROCEDURES));
   const bootstrap = witnessSet.get(WITNESS_BOOTSTRAP);
   // Core.hs hashTxAuxData: Blake2b-256 over the auxiliary data in the bytes it arrived in.
-  const auxIsNull = decodeItem(bytes, auxRange[0]).value === null;
+  const auxIsNull = bytes[auxRange[0]] === CBOR_NULL;
 
   return {
     size,
@@ -386,8 +390,7 @@ export function readTransaction(bytes: Uint8Array, parsed: ParsedTransaction): T
     treasuryDonation: readDonation(body.get(BODY_DONATION)),
     currentTreasuryValue: optionalCoin(body.get(BODY_CURRENT_TREASURY), 'current treasury value'),
     certificates: (rawCertificates === undefined ? [] : unwrapSet(rawCertificates)).map(readCertificate),
-    proposalDeposits: proposals.map((p) => p.deposit),
-    proposalReturnAccounts: proposals.map((p) => p.returnAccount),
+    proposals,
     auxiliaryData: {
       declaredHash: readAuxiliaryDataHash(body.get(BODY_AUXILIARY_DATA_HASH)),
       computedHash: auxIsNull ? undefined : blake2b(bytes.subarray(...auxRange), { dkLen: 32 }),

@@ -1,4 +1,5 @@
 import { blake2b } from '@noble/hashes/blake2.js';
+import { concat } from '../../src/core/bytes.js';
 import type { TxInput } from '../../src/core/cbor/tx.js';
 
 /** A 28 byte policy id shared by the native asset tests. */
@@ -11,6 +12,9 @@ export function syntheticInput(seed: string, index: bigint): TxInput {
 
 /** A 28 byte hash filled with one byte, for key hashes, script hashes and policy ids a test does not derive. */
 export const hash28 = (n: number) => new Uint8Array(28).fill(n);
+
+/** A testnet enterprise address locked by this script hash (header 0x70). */
+export const scriptAddress = (hash: Uint8Array) => concat(Uint8Array.of(0x70), hash);
 
 /** A compiled Plutus script as plutus.json carries it: a CBOR byte string around flat bytes. Never executed. */
 export const PLUTUS_COMPILED = '500100003232222533002494984d260011';

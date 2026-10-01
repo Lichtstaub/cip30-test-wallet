@@ -81,6 +81,12 @@ export interface QuirkConfig {
   submitRejected?: string;
 }
 
+/** Why value cannot be quirks.submitRejected, undefined when it can. Undefined itself is fine, it switches the quirk off. */
+export function submitRejectedProblem(value: unknown): string | undefined {
+  if (value === undefined || (typeof value === 'string' && value !== '')) return undefined;
+  return `quirks.submitRejected must be a non-empty string, the info the dApp receives, got ${String(value)}`;
+}
+
 export type HangableMethod = 'signTx';
 
 export interface PageConfig {

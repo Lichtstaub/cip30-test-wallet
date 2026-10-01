@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { Address, Assets, Data, PlutusV3, ScriptHash, Transaction, TransactionHash, UTxO } from '@evolution-sdk/evolution';
 import { baseAddressBytes } from '../src/core/addresses.js';
 import { concat, hexToBytes } from '../src/core/bytes.js';
-import { Tagged } from '../src/core/cbor/decode.js';
 import { encode } from '../src/core/cbor/encode.js';
 import { parseTransaction } from '../src/core/cbor/tx.js';
 import { keyHash, publicKey, sign, type SigningKey } from '../src/core/keys.js';
@@ -12,7 +11,7 @@ import { deriveAccount } from '../src/derive/index.js';
 import { formatFailures, renderFailure } from '../src/host/checks/failure.js';
 import { checkTransaction, MAX_REF_SCRIPT_SIZE_PER_TX } from '../src/host/checks/index.js';
 import { DEFAULT_PROTOCOL_PARAMS } from '../src/host/protocol-params.js';
-import { buildTx, type BuildTxOptions } from './helpers/build-tx.js';
+import { buildTx, outpoints, type BuildTxOptions } from './helpers/build-tx.js';
 import { checkContext } from './helpers/check-context.js';
 import { evolutionBuild, evolutionUtxo, fixedBudgetEvaluator } from './helpers/evolution-build.js';
 import { PLUTUS_V3, hash28 as h, syntheticInput } from './helpers/synthetic.js';
@@ -23,7 +22,6 @@ const myPay = keyHash(publicKey(me.payment));
 const myStake = keyHash(publicKey(me.stake));
 const myAddress = baseAddressBytes(0, myPay, myStake);
 const mine = (seed: string, lovelace = 10_000_000n): Utxo => ({ input: syntheticInput(seed, 0n), address: myAddress, lovelace });
-const outpoints = (...utxos: Utxo[]) => new Tagged(258n, utxos.map((u) => [u.input.txId, u.input.index]));
 /** A Plutus V3 reference script whose byte string holds size bytes, above the per transaction limit when size is. */
 const bigRef = (size: number) => encode([3n, new Uint8Array(size).fill(1)]);
 

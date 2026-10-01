@@ -23,7 +23,7 @@ const POOL_HEX = bytesToHex(POOL);
 /** The testnet reward account of OWN, where a proposal returns its deposit unless a test says otherwise. */
 const OWN_ACCOUNT = rewardAddressBytes(0, OWN.hash);
 
-const facts = (certificates: CertFact[], proposalDeposits: bigint[] = [], proposalReturnAccounts: Uint8Array[] = proposalDeposits.map(() => OWN_ACCOUNT)): TxFacts => ({
+const facts = (certificates: CertFact[], proposals: TxFacts['proposals'] = []): TxFacts => ({
   size: 0n,
   fee: 0n,
   outputs: [],
@@ -35,8 +35,7 @@ const facts = (certificates: CertFact[], proposalDeposits: bigint[] = [], propos
   treasuryDonation: 0n,
   currentTreasuryValue: undefined,
   certificates,
-  proposalDeposits,
-  proposalReturnAccounts,
+  proposals,
   auxiliaryData: { declaredHash: undefined, computedHash: undefined },
   redeemers: [],
   bootstrapWitnesses: 0,
@@ -95,7 +94,7 @@ describe('depositsAndRefunds', () => {
     ],
     ['delegation, DRep update, retirement, committee and deprecated certificates cost nothing', [deleg(2n, OWN), drepUpdate(OWN), poolRetire, { kind: 'committee', cert: 14n }, { kind: 'deprecated', cert: 6n }], [], state(), { deposits: 0n, refunds: 0n }],
   ])('%s', (_name, certificates, proposals, before, expected) => {
-    expect(depositsAndRefunds(facts(certificates, proposals), before, P)).toEqual(expected);
+    expect(depositsAndRefunds(facts(certificates, proposals.map((deposit) => ({ deposit, returnAccount: OWN_ACCOUNT }))), before, P)).toEqual(expected);
   });
 });
 
@@ -177,7 +176,7 @@ describe('certificateFailures: proposals after the certificates', () => {
   const wrongNetwork = (account: Uint8Array, expected = 'Testnet') => gov('ProposalProcedureNetworkIdMismatch', `{account: ${toBech32(account)}, expected: ${expected}}`);
   /** Proposals as [deposit, return account]. */
   const run = (certificates: CertFact[], proposals: Array<[bigint, Uint8Array]>, before: CertState, networkId: 0 | 1 = 0) =>
-    certificateFailures(facts(certificates, proposals.map(([deposit]) => deposit), proposals.map(([, account]) => account)), before, P, networkId).map(renderFailure);
+    certificateFailures(facts(certificates, proposals.map(([deposit, returnAccount]) => ({ deposit, returnAccount }))), before, P, networkId).map(renderFailure);
 
   it('accepts a proposal with govActionDeposit returning to a registered account of the network', () => {
     expect(run([], [[G, OWN_ACCOUNT]], REGISTERED)).toEqual([]);

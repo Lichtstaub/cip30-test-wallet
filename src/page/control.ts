@@ -1,5 +1,5 @@
 import { apiError, APIErrorCode, TxSignErrorCode, txSignError } from '../core/errors.js';
-import { INSTALL_TIME_QUIRKS, QUIRK_NAMES, type HangableMethod, type JournalEntry, type QuirkConfig, type QuirkName } from './config.js';
+import { INSTALL_TIME_QUIRKS, QUIRK_NAMES, submitRejectedProblem, type HangableMethod, type JournalEntry, type QuirkConfig, type QuirkName } from './config.js';
 
 interface Deferred {
   resolve: () => void;
@@ -27,9 +27,8 @@ export class Control {
     if ((INSTALL_TIME_QUIRKS as readonly string[]).includes(name)) {
       throw apiError(APIErrorCode.InvalidRequest, `${name} only applies at install time, set it in walletOptions.quirks`);
     }
-    if (name === 'submitRejected' && value !== undefined && (typeof value !== 'string' || value === '')) {
-      throw apiError(APIErrorCode.InvalidRequest, `quirks.submitRejected must be a non-empty string, the info the dApp receives, got ${String(value)}`);
-    }
+    const problem = name === 'submitRejected' ? submitRejectedProblem(value) : undefined;
+    if (problem) throw apiError(APIErrorCode.InvalidRequest, problem);
     this.quirks[name] = value;
   }
 

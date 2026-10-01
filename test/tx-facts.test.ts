@@ -81,8 +81,7 @@ describe('readTransaction: amounts and sizes', () => {
       treasuryDonation: 0n,
       currentTreasuryValue: undefined,
       certificates: [],
-      proposalDeposits: [],
-      proposalReturnAccounts: [],
+      proposals: [],
       auxiliaryData: { declaredHash: undefined, computedHash: undefined },
       redeemers: [],
       bootstrapWitnesses: 0,
@@ -150,14 +149,15 @@ describe('readTransaction: withdrawals, mint, proposals, witnesses', () => {
 
   it('reads the deposit and the return account of every proposal procedure in body order', () => {
     const csl = factsOf(cslGovernanceTx({ input: { txId: input.txId, index: 0 }, infoProposal: { rewardAddressHex: 'e0' + '01'.repeat(28) } }));
-    expect(csl.proposalDeposits).toEqual([100_000_000_000n]);
-    expect(csl.proposalReturnAccounts).toEqual([hexToBytes('e0' + '01'.repeat(28))]);
+    expect(csl.proposals).toEqual([{ deposit: 100_000_000_000n, returnAccount: hexToBytes('e0' + '01'.repeat(28)) }]);
     const reward = hexToBytes('e0' + '01'.repeat(28));
     const scriptReward = hexToBytes('f1' + '02'.repeat(28));
     const proposals = [[7n, reward, [6n], anchor], [9n, scriptReward, [6n], anchor]];
     const facts = factsOf(withBody([[20n, new Tagged(258n, proposals)]]));
-    expect(facts.proposalDeposits).toEqual([7n, 9n]);
-    expect(facts.proposalReturnAccounts).toEqual([reward, scriptReward]);
+    expect(facts.proposals).toEqual([
+      { deposit: 7n, returnAccount: reward },
+      { deposit: 9n, returnAccount: scriptReward },
+    ]);
   });
 
   it('reads redeemers in the map form CSL writes', () => {
@@ -355,7 +355,7 @@ describe('readTransaction: malformed fields', () => {
     ['a withdrawal from a base address', [[5n, new Map([[hexToBytes('00' + '01'.repeat(28)), 1n]])]], 'malformed withdrawal reward address'],
     ['a withdrawal with a negative amount', [[5n, new Map([[hexToBytes('e0' + '01'.repeat(28)), -1n]])]], 'malformed withdrawal amount'],
     ['a certificate with a field too many', [[4n, [[0n, [0n, hash28(1)], 1n]]]], 'malformed certificate 0 (account_registration)'],
-    ['a certificate with a 27 byte credential', [[4n, [[7n, [0n, new Uint8Array(27)], 1n]]]], 'malformed credential in certificate 7 (account_registration_deposit)'],
+    ['a certificate with a 27 byte credential', [[4n, [[7n, [0n, new Uint8Array(27)], 1n]]]], 'malformed credential hash in certificate 7 (account_registration_deposit)'],
     ['a certificate with credential type 2', [[4n, [[9n, [2n, hash28(1)], [2n]]]]], 'malformed credential in certificate 9 (delegation_to_drep)'],
     ['a registration with a negative deposit', [[4n, [[7n, [0n, hash28(1)], -1n]]]], 'malformed deposit in certificate 7 (account_registration_deposit)'],
     ['a DRep delegation to DRep type 4', [[4n, [[9n, [0n, hash28(1)], [4n]]]]], 'malformed drep in certificate 9 (delegation_to_drep)'],

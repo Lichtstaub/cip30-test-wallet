@@ -15,10 +15,10 @@ import { deriveAccount } from '../src/derive/index.js';
 import type { CheckContext } from '../src/host/checks/context.js';
 import { mismatch } from '../src/host/checks/failure.js';
 import { witnessFailures } from '../src/host/checks/witness-rules.js';
-import { buildTx, spliceWitnessSet } from './helpers/build-tx.js';
+import { buildTx, outpoints, spliceWitnessSet } from './helpers/build-tx.js';
 import { checkContext } from './helpers/check-context.js';
 import { evolutionBuild, evolutionUtxo, fixedBudgetEvaluator } from './helpers/evolution-build.js';
-import { PLUTUS_V3, hash28 as h, syntheticInput } from './helpers/synthetic.js';
+import { PLUTUS_V3, hash28 as h, scriptAddress, syntheticInput } from './helpers/synthetic.js';
 import { MNEMONIC } from './fixtures/vectors.js';
 
 const me = deriveAccount(MNEMONIC);
@@ -38,8 +38,6 @@ const nOfK = (n: bigint, ...scripts: Native[]): Native => [3n, n, scripts];
 const before = (slot: bigint): Native => [4n, slot];
 const nativeHash = (script: Native) => scriptHash(0, encode(script as never));
 /** Testnet enterprise address with a script payment credential (header type 7). */
-const scriptAddress = (hash: Uint8Array) => concat(Uint8Array.of(0x70), hash);
-const outpoints = (...utxos: Utxo[]) => new Tagged(258n, utxos.map((u) => [u.input.txId, u.input.index]));
 
 const mine: Utxo = { input: syntheticInput('witness-mine', 0n), address: myAddress, lovelace: 10_000_000n };
 const locked = (hash: Uint8Array, seed = 'witness-locked'): Utxo => ({ input: syntheticInput(seed, 0n), address: scriptAddress(hash), lovelace: 5_000_000n });

@@ -7,7 +7,7 @@ import { keyHash } from '../core/hash.js';
 import { publicKey } from '../core/keys.js';
 import { deriveAccount, type DerivedAccount } from '../derive/index.js';
 import { MAX_UINT64, parseAssetUnits } from '../core/value.js';
-import type { OwnedUtxoConfig, PageConfig, QuirkConfig, UtxoExtras } from '../page/config.js';
+import { submitRejectedProblem, type OwnedUtxoConfig, type PageConfig, type QuirkConfig, type UtxoExtras } from '../page/config.js';
 import { isPlutusDataBytes } from '../core/cbor-shapes.js';
 import { isScriptRef } from '../core/scripts.js';
 import { resolveProtocolParams, type ProtocolParams, type ProtocolParamsInput } from './protocol-params.js';
@@ -175,11 +175,15 @@ function ledgerOptions(ledger: unknown, networkId: 0 | 1): { state: boolean; che
   for (const key of Object.keys(options)) {
     if (!(LEDGER_OPTIONS as readonly string[]).includes(key)) throw new Error(`ledger.${key} is not a ledger option, known: ${LEDGER_OPTIONS.join(', ')}`);
   }
-  // Only undefined takes the default. null fails the boolean check below instead of switching a check off.
-  const state = options.state === undefined ? true : options.state;
-  if (typeof state !== 'boolean') throw new Error(`ledger.state must be a boolean, got ${String(state)}`);
-  const checks = options.checks === undefined ? false : options.checks;
-  if (typeof checks !== 'boolean') throw new Error(`ledger.checks must be a boolean, got ${String(checks)}`);
+  // Only undefined takes the default. null fails the boolean check instead of switching a check off.
+  const booleanOption = (key: 'state' | 'checks' | 'drepRegistered', fallback: boolean): boolean => {
+    const value: unknown = options[key];
+    if (value === undefined) return fallback;
+    if (typeof value !== 'boolean') throw new Error(`ledger.${key} must be a boolean, got ${String(value)}`);
+    return value;
+  };
+  const state = booleanOption('state', true);
+  const checks = booleanOption('checks', false);
   if (!checks) {
     const stray = CHECKS_ONLY_OPTIONS.find((key) => options[key] !== undefined);
     if (stray) throw new Error(`ledger.${stray} only applies with ledger.checks: true`);
@@ -189,8 +193,7 @@ function ledgerOptions(ledger: unknown, networkId: 0 | 1): { state: boolean; che
   const slot = options.currentSlot;
   const slotOk = (typeof slot === 'number' && Number.isSafeInteger(slot) && slot >= 0) || (typeof slot === 'bigint' && slot >= 0n);
   if (slot !== undefined && (!slotOk || BigInt(slot) > MAX_UINT64)) throw new Error(`ledger.currentSlot must be a non-negative integer slot number as number or bigint, got ${String(slot)}`);
-  const drepRegistered = options.drepRegistered === undefined ? false : options.drepRegistered;
-  if (typeof drepRegistered !== 'boolean') throw new Error(`ledger.drepRegistered must be a boolean, got ${String(drepRegistered)}`);
+  const drepRegistered = booleanOption('drepRegistered', false);
   return {
     state,
     checks: { params: resolveProtocolParams(networkId, options.protocolParams), currentSlot: slot === undefined ? undefined : BigInt(slot), drepRegistered },
@@ -227,10 +230,8 @@ export function prepareWallet(options: WalletOptions = {}): PreparedWallet {
   const utxos = (options.utxos ?? [{ lovelace: 10_000_000 }]).map((u, i) => ({ lovelace: lovelaceString(u.lovelace), ...validateUtxoExtras(u, `utxos[${i}]`) }));
   checkOwnedSums(utxos);
   const ledger = ledgerOptions(options.ledger, networkId);
-  const rejected = options.quirks?.submitRejected;
-  if (rejected !== undefined && (typeof rejected !== 'string' || rejected === '')) {
-    throw new Error(`quirks.submitRejected must be a non-empty string, the info the dApp receives, got ${String(rejected)}`);
-  }
+  const rejected = submitRejectedProblem(options.quirks?.submitRejected);
+  if (rejected) throw new Error(rejected);
 
   const config: PageConfig = {
     name: options.name ?? 'chw',

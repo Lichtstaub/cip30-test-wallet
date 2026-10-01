@@ -8,7 +8,6 @@ import CSL from '@emurgo/cardano-serialization-lib-nodejs';
 import { Address, Assets, Data, PlutusV3, ScriptHash, Transaction, TransactionHash, UTxO } from '@evolution-sdk/evolution';
 import { baseAddressBytes } from '../src/core/addresses.js';
 import { bytesToHex, hexToBytes } from '../src/core/bytes.js';
-import { Tagged } from '../src/core/cbor/decode.js';
 import { encode } from '../src/core/cbor/encode.js';
 import { APIErrorCode, ChwError, isCip30Error, TxSendErrorCode, type Cip30Error } from '../src/core/errors.js';
 import { keyHash, publicKey, type SigningKey } from '../src/core/keys.js';
@@ -22,9 +21,9 @@ import { DEFAULT_MNEMONIC, prepareWallet, type WalletOptions } from '../src/host
 import { LEDGER_BINDING, walletLedger } from '../src/host/ledger.js';
 import { DEFAULT_PROTOCOL_PARAMS } from '../src/host/protocol-params.js';
 import { installWallet, syntheticOwnedUtxo } from '../src/page/install.js';
-import { buildTx, spliceWitnessSet } from './helpers/build-tx.js';
+import { buildTx, outpoints, spliceWitnessSet } from './helpers/build-tx.js';
 import { evolutionBuild, evolutionUtxo, fixedBudgetEvaluator } from './helpers/evolution-build.js';
-import { enableChw, pageWith } from './helpers/page.js';
+import { enableChw, pageWith, rejectionOf } from './helpers/page.js';
 import { PLUTUS_V3, syntheticInput } from './helpers/synthetic.js';
 
 type DemoTx = { unsignedHex: string; bodyEndHex: number };
@@ -36,7 +35,6 @@ const stakeHash = keyHash(publicKey(account.stake));
 const drepHash = keyHash(publicKey(account.drep));
 const ownStake = credentialKey({ isScript: false, hash: stakeHash });
 const otherAddress = baseAddressBytes(0, keyHash(publicKey(other.payment)), keyHash(publicKey(other.stake)));
-const outpoints = (...utxos: Utxo[]) => new Tagged(258n, utxos.map((u) => [u.input.txId, u.input.index]));
 const keys = (utxos: Utxo[]) => utxos.map((u) => `${bytesToHex(u.input.txId)}#${u.input.index}`);
 
 function checked(ledger: Ledger): CheckedLedger {
@@ -62,10 +60,7 @@ async function snapshot(ledger: CheckedLedger) {
 
 /** The submit must fail with a plain TxSendError Failure object, the shape a dApp receives. */
 async function rejection(ledger: Ledger, tx: Uint8Array): Promise<Cip30Error> {
-  const error: unknown = await ledger.submit(tx).then(
-    () => undefined,
-    (e: unknown) => e,
-  );
+  const error = await rejectionOf(ledger.submit(tx));
   expect(isCip30Error(error), `a plain CIP-30 error, got ${String(error)}`).toBe(true);
   expect(error).toMatchObject({ code: TxSendErrorCode.Failure });
   return error as Cip30Error;

@@ -20,6 +20,29 @@ export const PATH = {
   LEDGER: [],
 } as const;
 
+/** Pushes a failure under one path onto failures. A failure without detail has no detail key. */
+export function failer(path: readonly string[], failures: Failure[]): (rule: string, detail?: string) => void {
+  return (rule, detail) => {
+    failures.push(detail === undefined ? { path, rule } : { path, rule, detail });
+  };
+}
+
+/** '[a, b]', the bracketed list the details use for sets and lists. */
+export function list(items: Iterable<string>): string {
+  return `[${[...items].join(', ')}]`;
+}
+
+/** 'Coin 5'. */
+export function coin(c: bigint): string {
+  return `Coin ${c}`;
+}
+
+/** Mainnet for 1, Testnet for 0, as Show writes a Network. */
+export function network(id: bigint | number): string {
+  const n = BigInt(id);
+  return n === 1n ? 'Mainnet' : n === 0n ? 'Testnet' : `Network ${id}`;
+}
+
 /** 'Mismatch (RelGTEQ) {supplied: X, expected: Y}', the Show of Mismatch in BaseTypes.hs. */
 export function mismatch(relation: 'RelEQ' | 'RelGTEQ' | 'RelLTEQ', supplied: string, expected: string): string {
   return `Mismatch (${relation}) {supplied: ${supplied}, expected: ${expected}}`;

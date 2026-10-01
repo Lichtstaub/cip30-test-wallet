@@ -21,7 +21,8 @@ const ALL_INPUTS_SPENT = 'All inputs are spent. Transaction has probably already
  * reference script limit, CERTS and GOV, then UTXOW, which runs UTXO last.
  * requirements() throws apiError InvalidRequest for a malformed certificate,
  * which passes through. On a submit the reader refuses such a certificate
- * first, in the same words.
+ * first. A wrong field count or a malformed credential reads the same on both
+ * paths, the reader also refuses fields requirements() does not check.
  */
 export function checkTransaction(ctx: CheckContext): { failures: Failure[]; unsupported: string[] } {
   const { parsed, facts } = ctx;

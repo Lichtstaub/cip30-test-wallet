@@ -1,12 +1,11 @@
-import { lookupInputs, parseTransaction, type TxInput } from '../../core/cbor/tx.js';
+import type { TxInput } from '../../core/cbor/tx.js';
 import { apiError, APIErrorCode, ChwError, TxSendErrorCode, txSendError } from '../../core/errors.js';
 import type { Ledger, MemoryLedger, Utxo } from '../../core/ledger.js';
 import type { LedgerChecksConfig } from '../config.js';
 import { applyCertificates, initialCertState, type CertState } from './cert-state.js';
-import type { CheckContext } from './context.js';
+import { buildCheckContext } from './context.js';
 import { formatFailures } from './failure.js';
 import { checkTransaction } from './index.js';
-import { readTransaction } from './read-tx.js';
 
 export interface CheckedLedgerOptions {
   checks: LedgerChecksConfig;
@@ -79,19 +78,11 @@ export class CheckedLedger implements Ledger {
   }
 
   private async checkAndSubmit(tx: Uint8Array): Promise<Uint8Array> {
-    const parsed = readOrRefuse(() => parseTransaction(tx));
-    const facts = readOrRefuse(() => readTransaction(tx, parsed));
     const { checks, networkId } = this.opts;
-    const ctx: CheckContext = {
-      parsed,
-      facts,
+    const ctx = readOrRefuse(() =>
       // A spent output counts as unknown, a node no longer holds it. signTx still resolves it through resolveInput.
-      resolved: lookupInputs(parsed.body).map(({ input }) => this.inner.unspent(input)),
-      params: checks.params,
-      networkId,
-      currentSlot: checks.currentSlot,
-      certState: this.state,
-    };
+      buildCheckContext(tx, (input) => this.inner.unspent(input), { params: checks.params, networkId, currentSlot: checks.currentSlot, certState: this.state }),
+    );
     const { failures, unsupported } = checkTransaction(ctx);
     if (unsupported.length > 0) {
       throw new ChwError(
@@ -101,7 +92,7 @@ export class CheckedLedger implements Ledger {
     }
     if (failures.length > 0) throw txSendError(TxSendErrorCode.Failure, formatFailures(failures));
     const id = await this.inner.submit(tx);
-    if (parsed.isValid) this.state = applyCertificates(this.state, facts, checks.params);
+    if (ctx.parsed.isValid) this.state = applyCertificates(this.state, ctx.facts, checks.params);
     return id;
   }
 }

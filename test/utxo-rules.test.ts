@@ -15,10 +15,10 @@ import type { CheckContext } from '../src/host/checks/context.js';
 import { credentialKey } from '../src/host/checks/read-tx.js';
 import { minFee, minUtxo, refScriptsSize, scriptFee, tierRefScriptFee, utxoFailures } from '../src/host/checks/utxo-rules.js';
 import { syntheticOwnedUtxo } from '../src/page/install.js';
-import { buildTx } from './helpers/build-tx.js';
+import { buildTx, outpoints } from './helpers/build-tx.js';
 import { checkContext, emptyCertState } from './helpers/check-context.js';
 import { evolutionBuild, evolutionUtxo, fixedBudgetEvaluator } from './helpers/evolution-build.js';
-import { PLUTUS_V3, POLICY, hash28 as h, syntheticInput } from './helpers/synthetic.js';
+import { PLUTUS_V3, POLICY, hash28 as h, scriptAddress, syntheticInput } from './helpers/synthetic.js';
 import { MNEMONIC } from './fixtures/vectors.js';
 
 const me = deriveAccount(MNEMONIC);
@@ -28,11 +28,9 @@ const myAddress = baseAddressBytes(0, myPay, myStake);
 const PREPROD = DEFAULT_PROTOCOL_PARAMS[0];
 const PLUTUS = hexToBytes(PLUTUS_V3);
 /** Testnet enterprise address with a script payment credential (header type 7). */
-const scriptAddress = (hash: Uint8Array) => concat(Uint8Array.of(0x70), hash);
 const bn = (n: bigint | number) => CSL.BigNum.from_str(n.toString());
 
 const utxo = (seed: string, lovelace: bigint, extra: Partial<Utxo> = {}): Utxo => ({ input: syntheticInput(seed, 0n), address: myAddress, lovelace, ...extra });
-const outpoints = (...utxos: Utxo[]) => new Tagged(258n, utxos.map((u) => [u.input.txId, u.input.index]));
 /** One redeemer in the legacy array form, [tag, index, data, [mem, steps]]. */
 const redeemers = (mem = 100_000n, steps = 10_000_000n) => new Map<bigint, unknown>([[5n, [[0n, 0n, new Tagged(121n, []), [mem, steps]]]]]);
 

@@ -50,6 +50,16 @@ export function runInBareWindow(source: string): Record<string, unknown> {
   return window;
 }
 
+/** The error p rejects with. Throws when p resolves. */
+export async function rejectionOf(p: Promise<unknown>): Promise<unknown> {
+  try {
+    await p;
+  } catch (e) {
+    return e;
+  }
+  throw new Error('expected a rejection');
+}
+
 /** A page window whose binding goes through JSON like Playwright's, so nothing the page receives is a bigint or a Uint8Array. */
 export function pageWith(ledger: Ledger): InstallTarget & Record<string, unknown> {
   const handler = ledgerBinding(ledger);

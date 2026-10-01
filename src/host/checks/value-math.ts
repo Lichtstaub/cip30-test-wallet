@@ -1,4 +1,4 @@
-import { addAsset, type MultiAsset } from '../../core/value.js';
+import { addAsset, addAssets, type MultiAsset } from '../../core/value.js';
 
 // Values as the value balance of the UTXO rule adds and compares them. Quantities
 // may be negative here (a burn in the mint field), the MultiAsset invariant of
@@ -18,12 +18,34 @@ function withoutZeros(assets: MultiAsset): MultiAsset {
   return out;
 }
 
+/** A Value from anything with lovelace and optional assets, an output or a UTxO. */
+export const valueOf = (u: { lovelace: bigint; assets?: MultiAsset }): Value => ({ coin: u.lovelace, assets: u.assets ?? new Map() });
+
+/** f applied to every quantity, entries where f gives 0 dropped. */
+export function mapAssets(assets: MultiAsset, f: (q: bigint) => bigint): MultiAsset {
+  const out: MultiAsset = new Map();
+  for (const [policy, names] of assets) {
+    const inner = new Map<string, bigint>();
+    for (const [name, quantity] of names) {
+      const mapped = f(quantity);
+      if (mapped !== 0n) inner.set(name, mapped);
+    }
+    if (inner.size > 0) out.set(policy, inner);
+  }
+  return out;
+}
+
+export const negate = (v: Value): Value => ({ coin: -v.coin, assets: mapAssets(v.assets, (q) => -q) });
+
+/** Val.isAdaOnly: no asset with a quantity other than zero, negative ones included. */
+export const isAdaOnly = (v: Value) => [...v.assets.values()].every((names) => [...names.values()].every((q) => q === 0n));
+
 export function addValues(...values: Value[]): Value {
   const assets: MultiAsset = new Map();
   let coin = 0n;
   for (const v of values) {
     coin += v.coin;
-    for (const [policy, names] of v.assets) for (const [name, quantity] of names) addAsset(assets, policy, name, quantity);
+    addAssets(assets, v.assets);
   }
   return { coin, assets: withoutZeros(assets) };
 }

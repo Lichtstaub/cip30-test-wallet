@@ -1,8 +1,8 @@
 import { toBech32 } from '../../core/addresses.js';
 import { bytesToHex } from '../../core/bytes.js';
 import type { ProtocolParams } from '../protocol-params.js';
-import { mismatch, PATH, type Failure } from './failure.js';
-import { credentialKey, headerNetwork, type Credential, type TxFacts } from './read-tx.js';
+import { coin, failer, mismatch, network, PATH, type Failure } from './failure.js';
+import { accountCredential, credentialKey, headerNetwork, type CertFact, type Credential, type TxFacts } from './read-tx.js';
 
 // The part of the ledger's CertState the offline checks follow: registered
 // stake credentials and DReps with the deposit the ledger stored for them, and
@@ -23,8 +23,6 @@ export function initialCertState(opts: { stakeKeyHash: Uint8Array; stakeRegister
   return state;
 }
 
-const coin = (c: bigint) => `Coin ${c}`;
-
 /** A credential roughly as Show prints it in a node's error: KeyHashObj (KeyHash {unKeyHash = "<hex>"}) or ScriptHashObj (ScriptHash "<hex>"). */
 function showCredential(c: Credential): string {
   const hex = bytesToHex(c.hash);
@@ -40,7 +38,7 @@ export function depositsAndRefunds(facts: TxFacts, state: CertState, params: Pro
   // Deposits: Conway TxCert.hs conwayTotalDepositsTxCerts (Shelley TxCert.hs shelleyTotalDepositsTxCerts
   // plus conwayDRepDepositsTxCerts) and Conway TxBody.hs conwayProposalsDeposits. Every amount comes
   // from the protocol parameters, the certificate fields are checked by DELEG, GOVCERT and GOV.
-  let deposits = BigInt(facts.proposalDeposits.length) * params.govActionDeposit;
+  let deposits = BigInt(facts.proposals.length) * params.govActionDeposit;
   const newPools = new Set<string>();
   // Refunds: Shelley TxCert.hs shelleyTotalRefundsTxCerts plus Conway TxCert.hs conwayDRepRefundsTxCerts.
   let refunds = 0n;
@@ -85,11 +83,12 @@ export function depositsAndRefunds(facts: TxFacts, state: CertState, params: Pro
 /** CERTS (DELEG, POOL, GOVCERT) in body order, then GOV per proposal: return account, deposit, network. */
 export function certificateFailures(facts: TxFacts, state: CertState, params: ProtocolParams, networkId: 0 | 1): Failure[] {
   const failures: Failure[] = [];
-  const deleg = (rule: string, detail: string) => failures.push({ path: PATH.DELEG, rule, detail });
-  const govCert = (rule: string, detail: string) => failures.push({ path: PATH.GOVCERT, rule, detail });
+  const deleg = failer(PATH.DELEG, failures);
+  const pool = failer(PATH.POOL, failures);
+  const govCert = failer(PATH.GOVCERT, failures);
   // Conway Certs.hs conwayCertsTransition runs every certificate against the state the
   // earlier ones left, so a registration and an unregistration in one transaction see each other.
-  let current = state;
+  const current = copyCertState(state);
   for (const cert of facts.certificates) {
     switch (cert.kind) {
       case 'accountRegistration': {
@@ -116,9 +115,7 @@ export function certificateFailures(facts: TxFacts, state: CertState, params: Pr
         break;
       case 'poolRetirement':
         // Shelley Pool.hs RetirePool, the rule Conway uses for POOL. Registration and re-registration always pass here.
-        if (!current.pools.has(bytesToHex(cert.poolId))) {
-          failures.push({ path: PATH.POOL, rule: 'StakePoolNotRegisteredOnKeyPOOL', detail: showKeyHash(cert.poolId) });
-        }
+        if (!current.pools.has(bytesToHex(cert.poolId))) pool('StakePoolNotRegisteredOnKeyPOOL', showKeyHash(cert.poolId));
         break;
       case 'drepRegistration':
         // Conway GovCert.hs ConwayRegDRep: registration first, then the deposit field.
@@ -140,54 +137,58 @@ export function certificateFailures(facts: TxFacts, state: CertState, params: Pr
         // Pool registration always passes here. Committee certificates are not followed, deprecated ones never get this far.
         break;
     }
-    current = applyCertificates(current, { ...facts, certificates: [cert] }, params);
+    applyCertificate(current, cert, params);
   }
   // Conway Gov.hs processProposal, one proposal after the other, against the state CERTS left
   // (Ledger.hs hands certStateAfterCERTS to GOV). The return account check applies after the
   // bootstrap phase of protocol 9, the network check always. Only the credential of the
   // account counts for the first. Accounts of other wallets start unregistered, so a proposal
   // returning to one is refused here.
-  const gov = (rule: string, detail: string) => failures.push({ path: PATH.GOV, rule, detail });
-  facts.proposalReturnAccounts.forEach((account, i) => {
-    const deposit = facts.proposalDeposits[i]!;
-    if (!current.accounts.has(credentialKey({ isScript: account[0]! >> 4 === 15, hash: account.slice(1) }))) {
-      gov('ProposalReturnAccountDoesNotExist', toBech32(account));
-    }
+  const gov = failer(PATH.GOV, failures);
+  for (const { deposit, returnAccount: account } of facts.proposals) {
+    if (!current.accounts.has(credentialKey(accountCredential(account)))) gov('ProposalReturnAccountDoesNotExist', toBech32(account));
     if (deposit !== params.govActionDeposit) gov('ProposalDepositIncorrect', mismatch('RelEQ', coin(deposit), coin(params.govActionDeposit)));
-    if (headerNetwork(account) !== networkId) gov('ProposalProcedureNetworkIdMismatch', `{account: ${toBech32(account)}, expected: ${networkId === 1 ? 'Mainnet' : 'Testnet'}}`);
-  });
+    if (headerNetwork(account) !== networkId) gov('ProposalProcedureNetworkIdMismatch', `{account: ${toBech32(account)}, expected: ${network(networkId)}}`);
+  }
   return failures;
 }
 
 /** The state after a valid transaction. Pure. */
 export function applyCertificates(state: CertState, facts: TxFacts, params: ProtocolParams): CertState {
-  const next: CertState = { accounts: new Map(state.accounts), dreps: new Map(state.dreps), pools: new Set(state.pools) };
-  for (const cert of facts.certificates) {
-    switch (cert.kind) {
-      case 'accountRegistration':
-        // Conway Deleg.hs registerConwayAccount stores keyDeposit, whatever the certificate field says.
-        next.accounts.set(credentialKey(cert.credential), params.keyDeposit);
-        break;
-      case 'accountUnregistration':
-        next.accounts.delete(credentialKey(cert.credential));
-        break;
-      case 'drepRegistration':
-        // Conway GovCert.hs ConwayRegDRep stores drepDeposit from the protocol parameters.
-        next.dreps.set(credentialKey(cert.credential), params.drepDeposit);
-        break;
-      case 'drepUnregistration':
-        next.dreps.delete(credentialKey(cert.credential));
-        break;
-      case 'poolRegistration':
-        next.pools.add(bytesToHex(cert.poolId));
-        break;
-      case 'poolRetirement':
-        // Shelley Pool.hs only schedules the retirement, POOLREAP removes the pool at an epoch
-        // boundary. Without an epoch clock the pool stays registered.
-        break;
-      default:
-        break;
-    }
-  }
+  const next = copyCertState(state);
+  for (const cert of facts.certificates) applyCertificate(next, cert, params);
   return next;
+}
+
+function copyCertState(state: CertState): CertState {
+  return { accounts: new Map(state.accounts), dreps: new Map(state.dreps), pools: new Set(state.pools) };
+}
+
+/** Changes state as one certificate of a valid transaction does. */
+function applyCertificate(state: CertState, cert: CertFact, params: ProtocolParams): void {
+  switch (cert.kind) {
+    case 'accountRegistration':
+      // Conway Deleg.hs registerConwayAccount stores keyDeposit, whatever the certificate field says.
+      state.accounts.set(credentialKey(cert.credential), params.keyDeposit);
+      break;
+    case 'accountUnregistration':
+      state.accounts.delete(credentialKey(cert.credential));
+      break;
+    case 'drepRegistration':
+      // Conway GovCert.hs ConwayRegDRep stores drepDeposit from the protocol parameters.
+      state.dreps.set(credentialKey(cert.credential), params.drepDeposit);
+      break;
+    case 'drepUnregistration':
+      state.dreps.delete(credentialKey(cert.credential));
+      break;
+    case 'poolRegistration':
+      state.pools.add(bytesToHex(cert.poolId));
+      break;
+    case 'poolRetirement':
+      // Shelley Pool.hs only schedules the retirement, POOLREAP removes the pool at an epoch
+      // boundary. Without an epoch clock the pool stays registered.
+      break;
+    default:
+      break;
+  }
 }
