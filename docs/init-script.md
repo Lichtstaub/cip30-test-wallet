@@ -51,6 +51,8 @@ Like the fixture's journal, this state lives in the page and resets on every nav
 
 Without the fixture there is no host to keep the ledger in. The wallet applies each submitted transaction to its UTxOs inside the page, until the page loads again. `--options` with `{ "ledger": { "state": false } }` switches this off.
 
+The ledger checks (`ledger.checks`) run in Node, so `init-script` refuses options that set them. Use the Playwright fixture or `attachWallet` for them.
+
 ## Keys
 
 The file holds the wallet's extended private keys in plain text. Use a test mnemonic only and keep the file out of version control.

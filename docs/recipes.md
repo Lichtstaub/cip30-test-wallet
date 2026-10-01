@@ -365,6 +365,27 @@ test('the commit spends UTxO 0 and pays back to the wallet', async ({ page, wall
 
 `test.use({ walletOptions: { ledger: { state: false } } })` keeps the configured UTxOs and stake registration, as before 0.8.0.
 
+## Seeing the node's rejection offline
+
+A node refuses a transaction whose fee is too low, whose inputs are gone or whose value does not balance, and a dApp has to show that to the user. With `ledger: { checks: true }` the wallet refuses such a transaction the same way, as `{ code: 2, info }` with the node's rule names in `info`. The dApp's builder computes its fee from the parameters it fetched, the wallet checks against its own. Raising `minFeeB` for the wallet reproduces a fee a node would refuse without touching the dApp:
+
+```ts
+test.use({ walletOptions: { ledger: { checks: true, protocolParams: { minFeeB: 1_000_000 } } } });
+
+test('the dApp shows the node rejection of a fee that is too low', async ({ page, wallet }) => {
+  await page.goto('/checkout');
+  await page.getByRole('button', { name: 'Connect' }).click();
+  await page.getByRole('button', { name: 'Pay' }).click();
+  await expect(page.getByText(/FeeTooSmallUTxO/)).toBeVisible(); // whatever your app shows for a refused submit
+
+  const [call] = await wallet.calls('submitTx');
+  expect(call!.error).toMatchObject({ code: 2, info: expect.stringContaining('FeeTooSmallUTxO') });
+  expect(await wallet.lastSubmittedTx()).toBeUndefined();
+});
+```
+
+The wallet's UTxOs stay as they were, a corrected transaction over the same inputs goes through afterwards. For a rejection without a failing transaction, the quirk `submitRejected` answers every `submitTx` with the `info` it holds, see [User-side failures](#user-side-failures).
+
 ## A dApp that spends from a script
 
 A dApp that spends from a contract builds the transaction from chain data. The wallet has to know every input it cannot find in its own UTxOs: the UTxO the contract locks and, when the validator is used as a reference script, the UTxO holding it. Without them `signTx` raises `CHW_UNRESOLVED_INPUT`. A dApp that attaches the validator to the transaction itself needs only the locked UTxO.

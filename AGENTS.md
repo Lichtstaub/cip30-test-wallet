@@ -8,7 +8,7 @@ This package injects a CIP-30 Cardano wallet into a page under Playwright. It co
 |---|---|
 | Adding the wallet to an existing dApp step by step, logins with `signData` | [README.md](README.md#getting-started) |
 | Every `walletOptions` field and `wallet` handle member | [docs/fixture-api.md](docs/fixture-api.md) |
-| Building and submitting transactions with Evolution SDK, Mesh or Lucid Evolution, backends that submit, offline protocol parameters, user-side failures, the journal | [docs/recipes.md](docs/recipes.md) |
+| Building and submitting transactions with Evolution SDK, Mesh or Lucid Evolution, backends that submit, offline protocol parameters, node rejections with the ledger checks, user-side failures, the journal | [docs/recipes.md](docs/recipes.md) |
 | Reproducing a specific wallet or user behaviour | [quirks/README.md](quirks/README.md) |
 | A browser driven through Playwright MCP instead of a test file | [docs/init-script.md](docs/init-script.md) |
 | Checking a deployed dApp for CSP and detection problems | [docs/doctor.md](docs/doctor.md) |
@@ -24,6 +24,7 @@ In an installed project these files are under `node_modules/cip30-test-wallet/`.
 - A call count proves no signature. Prove it with `expectSignedBy(tx, wallet)` for transactions and `expectSignedData(result, { payload, address })` for messages.
 - Wallet errors are plain `{ code, info }` objects as CIP-30 requires. Code that reads `err.message` is a dApp bug the test just found.
 - A `ChwError` with code `CHW_UNSUPPORTED_TX_FORM`, `CHW_UNRESOLVED_INPUT` or `CHW_UNRESOLVED_SCRIPT` is a harness diagnosis about the test setup, not wallet behaviour. Follow its hint (add the input to `utxos` or `foreignUtxos`, attach the script or add the UTxO holding it as `scriptRef`, or, for `CHW_UNSUPPORTED_TX_FORM` only, sign with `partialSign: true`) instead of changing the dApp.
+- With `walletOptions.ledger: { checks: true }` a refused `submitTx` is wallet behaviour: a plain `{ code: 2, info }` whose `info` names the node's rules, such as `FeeTooSmallUTxO`. Fix the transaction or the dApp's error display. A `CHW_UNSUPPORTED_TX_FORM` from `submitTx` is still a harness diagnosis, run that test without the checks.
 - A click does not wait for the wallet. Wait for what the app shows afterwards before you read the journal or `lastSubmittedTx()`.
 - The journal (`wallet.calls()`) starts empty after every navigation. Read it before the dApp navigates away, see the login recipe. The ledger behind `wallet.utxos()` lives for the whole test and is not reset by a navigation.
 - Reproduce user-side failures with `walletOptions.quirks`, never with a real wallet. Use only the default mnemonic or a throwaway testnet mnemonic, the keys end up in traces.

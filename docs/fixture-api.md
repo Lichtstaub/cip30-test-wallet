@@ -18,6 +18,10 @@
 | `quirks` | `{}` | See the quirk catalogue |
 | `stakeRegistered` | `false` | CIP-95: the starting value for whether the stake key is registered. Defaults to a fresh, unregistered wallet. Registration certificates in submitted transactions change it |
 | `ledger` | `{ state: true }` | `state: false` keeps the configured UTxOs and stake registration after `submitTx`. By default a submitted transaction spends its inputs, creates its outputs and applies stake registration certificates |
+| `ledger.checks` | `false` | `true` makes `submitTx` refuse what a Conway node would refuse, with `TxSendError` Failure naming the node's rules. Not with `state: false`. See [Ledger checks](../README.md#ledger-checks) |
+| `ledger.protocolParams` | preprod for `networkId` 0, mainnet for 1 | Overrides single parameters for the checks: `minFeeA`, `minFeeB`, `maxTxSize`, `maxValSize`, `keyDeposit`, `poolDeposit`, `drepDeposit`, `govActionDeposit`, `coinsPerUtxoByte`, `priceMem`, `priceSteps`, `maxTxExMem`, `maxTxExSteps`, `collateralPercent`, `maxCollateralInputs`, `minFeeRefScriptCostPerByte`. Integers as number, bigint or string, prices as `[numerator, denominator]` or a decimal such as `0.0577`. Only with `checks` |
+| `ledger.currentSlot` | none | Slot number the validity interval is checked against. Without it the validity interval is not checked. Only with `checks` |
+| `ledger.drepRegistered` | `false` | The wallet's DRep key starts registered, with the DRep deposit. Only with `checks` |
 
 ## `wallet` handle
 
@@ -76,6 +80,6 @@ expectSignedData(call!.result as { signature: string; key: string }, {
 
 ## Errors
 
-CIP-30 errors are plain objects: `APIError` `{ code: -1 | -2 | -3 | -4, info }`, `TxSignError` `{ code: 1 | 2 | 3, info }`, `DataSignError` `{ code: 1 | 2 | 3, info }` (`ProofGeneration`, `AddressNotPK`, `UserDeclined`), `TxSendError` `{ code: 1 | 2, info }` (`Refused`, `Failure`) from `submitTx`, `PaginateError` `{ maxSize }`. Harness diagnoses are `ChwError` instances with `code` `CHW_UNRESOLVED_INPUT`, `CHW_UNRESOLVED_SCRIPT` or `CHW_UNSUPPORTED_TX_FORM`. Decoding failures become `APIError` InvalidRequest. Code 3, `DeprecatedCertificate` (CIP-95), comes for a pre-Conway certificate at both `partialSign` values and before any prompt quirk such as `signHangs`.
+CIP-30 errors are plain objects: `APIError` `{ code: -1 | -2 | -3 | -4, info }`, `TxSignError` `{ code: 1 | 2 | 3, info }`, `DataSignError` `{ code: 1 | 2 | 3, info }` (`ProofGeneration`, `AddressNotPK`, `UserDeclined`), `TxSendError` `{ code: 1 | 2, info }` (`Refused`, `Failure`) from `submitTx`, `PaginateError` `{ maxSize }`. `submitTx` rejects with TxSendError Failure when the ledger checks refuse a transaction or the `submitRejected` quirk is set, and `info` names the node's rules, for example `ConwayApplyTxError [ConwayUtxowFailure (UtxoFailure (FeeTooSmallUTxO ...))]`. The wallet never raises Refused itself. Harness diagnoses are `ChwError` instances with `code` `CHW_UNRESOLVED_INPUT`, `CHW_UNRESOLVED_SCRIPT` or `CHW_UNSUPPORTED_TX_FORM`. Decoding failures become `APIError` InvalidRequest. Code 3, `DeprecatedCertificate` (CIP-95), comes for a pre-Conway certificate at both `partialSign` values and before any prompt quirk such as `signHangs`.
 
 The deployed-site check lives in [doctor.md](doctor.md).
