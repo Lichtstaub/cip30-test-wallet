@@ -40,7 +40,7 @@ export function checkTransaction(ctx: CheckContext): { failures: Failure[]; unsu
   if (facts.collateralReturn && isByronAddress(facts.collateralReturn.output.address)) unsupported.push('a collateral return at a Byron address');
   if (facts.bootstrapWitnesses > 0) unsupported.push('bootstrap witnesses');
   for (const cert of facts.certificates) if (cert.kind === 'deprecated') unsupported.push(`certificate ${cert.cert}, deprecated since Conway`);
-  if (unsupported.length > 0) return { failures: [], unsupported };
+  if (unsupported.length > 0) return { failures: [], unsupported: [...new Set(unsupported)] };
 
   const failures: Failure[] = [];
   if (parsed.isValid) {

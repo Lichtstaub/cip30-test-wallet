@@ -12,6 +12,24 @@ import { enableChw } from './helpers/page.js';
 
 afterEach(() => vi.restoreAllMocks());
 
+describe('walletOptions.quirks.submitRejected', () => {
+  it('takes a non-empty string and is off without it', () => {
+    expect(prepareWallet({ quirks: { submitRejected: 'rejected' } }).config.quirks.submitRejected).toBe('rejected');
+    expect(prepareWallet({ quirks: {} }).config.quirks.submitRejected).toBeUndefined();
+  });
+
+  it.each([
+    ['true', true],
+    ['an empty string', ''],
+    ['a number', 7],
+    ['null', null],
+  ])('refuses %s, it would silently do nothing or give an empty info', (_name, value) => {
+    expect(() => prepareWallet({ quirks: { submitRejected: value as never } })).toThrow(
+      `quirks.submitRejected must be a non-empty string, the info the dApp receives, got ${String(value)}`,
+    );
+  });
+});
+
 describe('walletOptions.ledger', () => {
   it('without checks keeps the page config as before and prepares no checks', () => {
     expect(prepareWallet().config.ledger).toEqual({ state: true });
@@ -61,6 +79,7 @@ describe('walletOptions.ledger', () => {
     ['state that is null', { state: null }, 'ledger.state must be a boolean, got null'],
     ['checks that is null', { checks: null }, 'ledger.checks must be a boolean, got null'],
     ['drepRegistered that is null', { checks: true, drepRegistered: null }, 'ledger.drepRegistered must be a boolean, got null'],
+    ['a currentSlot above 2^64 - 1', { checks: true, currentSlot: 2n ** 64n }, 'ledger.currentSlot must be a non-negative integer slot number as number or bigint, got 18446744073709551616'],
     ['currentSlot that is null', { checks: true, currentSlot: null }, 'ledger.currentSlot must be a non-negative integer slot number as number or bigint, got null'],
     ['protocolParams that is null', { checks: true, protocolParams: null }, 'ledger.protocolParams must be an object of parameter overrides, got null'],
   ])('refuses %s', (_name, ledger, message) => {

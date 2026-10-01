@@ -171,6 +171,19 @@ describe('submitRejected', () => {
 });
 
 describe('setQuirk validation', () => {
+  it.each([
+    ['true', true],
+    ['an empty string', ''],
+    ['a number', 7],
+  ])('rejects submitRejected as %s with InvalidRequest and keeps the quirk off', (_name, value) => {
+    const target: InstallTarget = {};
+    const control = installWallet(testConfig(), target);
+    expect(() => control.setQuirk('submitRejected', value as never)).toThrow(
+      expect.objectContaining({ code: APIErrorCode.InvalidRequest, info: expect.stringContaining('quirks.submitRejected must be a non-empty string') }),
+    );
+    expect(control.quirks.submitRejected).toBeUndefined();
+  });
+
   it('rejects an unknown quirk name with InvalidRequest', () => {
     const target: InstallTarget = {};
     const control = installWallet(testConfig(), target);

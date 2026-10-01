@@ -88,6 +88,14 @@ describe('forms the checks do not judge', () => {
     expect(check(buildTx(opts), unspent)).toEqual({ failures: [], unsupported: [message] });
   });
 
+  it('names a form once when several inputs or certificates share it', () => {
+    const b = mine('unsupported-b');
+    const twoByron = buildTx({ inputs: [a.input, b.input], outputs: [], fee: 200_000n });
+    expect(check(twoByron, [{ ...a, address: byron }, { ...b, address: byron }]).unsupported).toEqual(['an input at a Byron address']);
+    const twoCerts = buildTx({ inputs: [a.input], outputs: [], fee: 200_000n, extraBodyEntries: new Map([[4n, [[5n, h(1), h(2), new Uint8Array(32)], [5n, h(3), h(4), new Uint8Array(32)]]]]) });
+    expect(check(twoCerts, [a]).unsupported).toEqual(['certificate 5, deprecated since Conway']);
+  });
+
   it('the mempool check comes first', () => {
     expect(check(buildTx({ inputs: [a.input], outputs: [{ address: byron, lovelace: 1n }], fee: 1n }), []).unsupported).toEqual([]);
   });

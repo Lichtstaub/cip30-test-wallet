@@ -188,7 +188,7 @@ function ledgerOptions(ledger: unknown, networkId: 0 | 1): { state: boolean; che
   if (!state) throw new Error('ledger.checks: true needs ledger.state: true, the checks judge each transaction against the state the ones before it left');
   const slot = options.currentSlot;
   const slotOk = (typeof slot === 'number' && Number.isSafeInteger(slot) && slot >= 0) || (typeof slot === 'bigint' && slot >= 0n);
-  if (slot !== undefined && !slotOk) throw new Error(`ledger.currentSlot must be a non-negative integer slot number as number or bigint, got ${String(slot)}`);
+  if (slot !== undefined && (!slotOk || BigInt(slot) > MAX_UINT64)) throw new Error(`ledger.currentSlot must be a non-negative integer slot number as number or bigint, got ${String(slot)}`);
   const drepRegistered = options.drepRegistered === undefined ? false : options.drepRegistered;
   if (typeof drepRegistered !== 'boolean') throw new Error(`ledger.drepRegistered must be a boolean, got ${String(drepRegistered)}`);
   return {
@@ -227,6 +227,10 @@ export function prepareWallet(options: WalletOptions = {}): PreparedWallet {
   const utxos = (options.utxos ?? [{ lovelace: 10_000_000 }]).map((u, i) => ({ lovelace: lovelaceString(u.lovelace), ...validateUtxoExtras(u, `utxos[${i}]`) }));
   checkOwnedSums(utxos);
   const ledger = ledgerOptions(options.ledger, networkId);
+  const rejected = options.quirks?.submitRejected;
+  if (rejected !== undefined && (typeof rejected !== 'string' || rejected === '')) {
+    throw new Error(`quirks.submitRejected must be a non-empty string, the info the dApp receives, got ${String(rejected)}`);
+  }
 
   const config: PageConfig = {
     name: options.name ?? 'chw',

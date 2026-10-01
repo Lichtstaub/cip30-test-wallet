@@ -69,6 +69,11 @@ describe('parseRational', () => {
     [[577, 10_000], r(577n, 10_000n)],
     [[2n, '4'], r(1n, 2n)],
     [[0, 7], r(0n, 1n)],
+    // Both sit on the edge of the cap, the exponent 40 itself is allowed as long as the reduced fraction fits.
+    ['10000000000000000000000000000000000000000e-40', r(1n, 1n)],
+    ['0e40', r(0n, 1n)],
+    ['18446744073709551615', r(18446744073709551615n, 1n)],
+    ['0.0000000000000000001', r(1n, 10_000_000_000_000_000_000n)],
   ] as const)('reads %s exactly', (value, expected) => {
     expect(parseRational(value as never, 'x')).toEqual(expected);
   });
@@ -84,6 +89,11 @@ describe('parseRational', () => {
     ['a pair of three', [1, 2, 3], 'price must be [numerator, denominator], got [1, 2, 3]'],
     ['a zero denominator', [1, 0], 'price denominator must be positive, got [1, 0]'],
     ['a negative numerator', [-1, 2], 'price numerator must be a non-negative integer as number, bigint or decimal string, got -1'],
+    ['a huge exponent, refused before the power is computed', '1e1000000000', 'price exponent must be between -40 and 40, got 1000000000'],
+    ['a huge negative exponent', '1e-1000000000', 'price exponent must be between -40 and 40, got -1000000000'],
+    ['1e300', 1e300, 'price exponent must be between -40 and 40, got 300'],
+    ['a numerator above 2^64 - 1', '1e20', 'price must have a numerator and denominator of at most 2^64 - 1 in lowest terms, got "1e20"'],
+    ['a denominator above 2^64 - 1', '5e-40', 'price must have a numerator and denominator of at most 2^64 - 1 in lowest terms, got "5e-40"'],
     ['a fractional numerator', [0.5, 2], 'price numerator must be a non-negative integer as number, bigint or decimal string, got 0.5'],
   ])('refuses %s with a message naming the parameter', (_name, value, message) => {
     expect(() => parseRational(value as never, 'price')).toThrow(message);

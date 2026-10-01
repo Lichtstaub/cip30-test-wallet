@@ -27,6 +27,9 @@ export class Control {
     if ((INSTALL_TIME_QUIRKS as readonly string[]).includes(name)) {
       throw apiError(APIErrorCode.InvalidRequest, `${name} only applies at install time, set it in walletOptions.quirks`);
     }
+    if (name === 'submitRejected' && value !== undefined && (typeof value !== 'string' || value === '')) {
+      throw apiError(APIErrorCode.InvalidRequest, `quirks.submitRejected must be a non-empty string, the info the dApp receives, got ${String(value)}`);
+    }
     this.quirks[name] = value;
   }
 

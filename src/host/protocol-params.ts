@@ -93,6 +93,9 @@ function lowestTerms(numerator: bigint, denominator: bigint): Rational {
   return { numerator: numerator / d, denominator: denominator / d };
 }
 
+// No Rational parameter needs more than 20 digits, so a larger exponent is refused before 10 ** exponent is computed.
+const MAX_DECIMAL_EXPONENT = 40n;
+
 // A decimal with an optional exponent, what String(number) prints for 0.0577 or 1e-7.
 const DECIMAL = /^(\d+)(?:\.(\d+))?(?:[eE]([+-]?\d+))?$/;
 
@@ -114,9 +117,18 @@ export function parseRational(value: RationalInput, what: string): Rational {
   const match = typeof text === 'string' ? DECIMAL.exec(text) : null;
   if (!match) throw new Error(`${what} must be a non-negative decimal as number or string, or [numerator, denominator], got ${show(value)}`);
   const [, whole, fraction = '', exponent = '0'] = match;
-  const shift = BigInt(exponent) - BigInt(fraction.length);
+  const power = BigInt(exponent);
+  // Checked before the power is computed, a text like 1e1000000000 would otherwise take forever.
+  if (power > MAX_DECIMAL_EXPONENT || power < -MAX_DECIMAL_EXPONENT) {
+    throw new Error(`${what} exponent must be between -${MAX_DECIMAL_EXPONENT} and ${MAX_DECIMAL_EXPONENT}, got ${power}`);
+  }
+  const shift = power - BigInt(fraction.length);
   const digits = BigInt(whole! + fraction);
-  return shift >= 0n ? lowestTerms(digits * 10n ** shift, 1n) : lowestTerms(digits, 10n ** -shift);
+  const result = shift >= 0n ? lowestTerms(digits * 10n ** shift, 1n) : lowestTerms(digits, 10n ** -shift);
+  if (result.numerator > MAX_UINT64 || result.denominator > MAX_UINT64) {
+    throw new Error(`${what} must have a numerator and denominator of at most 2^64 - 1 in lowest terms, got ${show(value)}`);
+  }
+  return result;
 }
 
 /**
