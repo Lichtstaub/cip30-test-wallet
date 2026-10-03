@@ -27,6 +27,7 @@ In an installed project these files are under `node_modules/cip30-test-wallet/`.
 - A click does not wait for the wallet. Wait for what the app shows afterwards before you read the journal or `lastSubmittedTx()`.
 - The journal (`wallet.calls()`) starts empty after every navigation. Read it before the dApp navigates away, see the login recipe. The ledger behind `wallet.utxos()` lives for the whole test and is not reset by a navigation.
 - Reproduce user-side failures with `walletOptions.quirks`, never with a real wallet. Use only the default mnemonic or a throwaway testnet mnemonic, the keys end up in traces.
+- On macOS, Playwright browsers cannot start inside an agent sandbox such as Codex `--sandbox workspace-write`. Every engine aborts at launch without window server access, Playwright reports only a closed browser, and each abort opens a crash dialog on the user's screen. Run browser tests and `doctor --deep` outside the sandbox or with your escalation. `doctor --deep` detects the Codex sandbox and stops before launching.
 
 ## Minimal test
 

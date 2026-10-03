@@ -151,6 +151,7 @@ Tested, complete recipes in [docs/recipes.md](docs/recipes.md):
 - [User-side failures](docs/recipes.md#user-side-failures): declined, hanging, wrong network, late injection
 - [Reading the journal](docs/recipes.md#reading-the-journal) and [signing in with a message](docs/recipes.md#signing-in-with-a-message)
 - [Testing a wallet module directly on a dev server](docs/recipes.md#testing-a-wallet-module-directly-on-a-dev-server)
+- [Running inside an agent sandbox](docs/recipes.md#running-inside-an-agent-sandbox): browsers cannot start inside it on macOS
 
 ## CI and coding agents
 
@@ -171,7 +172,10 @@ After changing connect, signing or submit code, run the wallet tests and check `
 Reproduce user-side failures with `walletOptions.quirks` (see node_modules/cip30-test-wallet/quirks/README.md), never with a real wallet.
 Before writing a transaction test, read node_modules/cip30-test-wallet/AGENTS.md and node_modules/cip30-test-wallet/docs/recipes.md: the wallet's UTxOs exist only in the wallet, and anything that submits outside the wallet must be intercepted.
 Before deploying, run `npx cip30-test-wallet doctor <url> --json` and treat exit code 1 as a failed check.
+On macOS, run the browser tests and `doctor --deep` outside the agent sandbox or with escalation, browsers crash at launch inside it.
 ```
+
+On macOS, Playwright browsers cannot start inside an agent sandbox such as Codex `--sandbox workspace-write`. Chromium, Firefox and WebKit all abort at launch because the sandbox blocks the window server, Playwright reports only a closed browser, and every abort opens a crash dialog. The agent has to run browser tests and `doctor --deep` outside the sandbox or with its escalation. `doctor --deep` detects the Codex sandbox and stops with that hint instead of launching, see [Running inside an agent sandbox](docs/recipes.md#running-inside-an-agent-sandbox).
 
 ### Agents that drive the browser themselves
 

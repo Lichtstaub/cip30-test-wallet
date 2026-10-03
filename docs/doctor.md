@@ -25,7 +25,7 @@ Every `Content-Security-Policy` header, every comma-separated policy inside one 
 
 ## Deep run
 
-`--deep` starts a browser (`--browser chromium|firefox|webkit`, default chromium, needs `@playwright/test` and its browsers) and loads the page twice. `--settle <ms>` (default 1500) bounds how long the second load waits after loading (and after `--click`, when given) before the probes are read, or, with `--expect <selector>`, how long it waits for that selector to become visible, whichever is longer than `--inject-after <ms> + 500`.
+`--deep` starts a browser (`--browser chromium|firefox|webkit`, default chromium, needs `@playwright/test` and its browsers) and loads the page twice. On macOS it cannot run inside a coding agent's sandbox, the browser aborts at launch there. Inside the Codex sandbox doctor stops before launching, after any other failed launch on macOS it names the sandbox as the likely cause. Run it outside the sandbox or with the agent's escalation, see [Running inside an agent sandbox](recipes.md#running-inside-an-agent-sandbox). `--settle <ms>` (default 1500) bounds how long the second load waits after loading (and after `--click`, when given) before the probes are read, or, with `--expect <selector>`, how long it waits for that selector to become visible, whichever is longer than `--inject-after <ms> + 500`.
 
 The first load observes. An accessor on `window.cardano` records when the page first reads it and how often, and a listener records the page's own `securitypolicyviolation` events. Nothing is injected. If the page ends up on a different URL than the static fetch judged (a redirect the static fetch's cookie-less request did not take, a client-side navigation), `deep-url-differs` names it, the measurements describe the page the browser actually loaded.
 
@@ -47,7 +47,7 @@ Wording is deliberately careful. "No access observed during the executed scenari
 
 ## Output and exit codes
 
-Human readable by default: the page, its content security policy (one directive per line), the deep run measurements when `--deep` ran, the findings sorted from error to info, run errors, and a closing result line with the exit code. `--json` prints the full report. Exit 0 means no finding above info, 1 means at least one warning or error, 2 means the run itself failed (URL unreachable, timed out, browser missing).
+Human readable by default: the page, its content security policy (one directive per line), the deep run measurements when `--deep` ran, the findings sorted from error to info, run errors, and a closing result line with the exit code. `--json` prints the full report. Exit 0 means no finding above info, 1 means at least one warning or error, 2 means the run itself failed (URL unreachable, timed out, browser missing or unable to start, deep run skipped inside an agent sandbox).
 
 ## What doctor cannot see
 
