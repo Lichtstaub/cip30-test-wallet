@@ -7,7 +7,7 @@ import { keyHash } from '../core/hash.js';
 import { publicKey } from '../core/keys.js';
 import { deriveAccount, type DerivedAccount } from '../derive/index.js';
 import { MAX_UINT64, parseAssetUnits } from '../core/value.js';
-import { submitRejectedProblem, type OwnedUtxoConfig, type PageConfig, type QuirkConfig, type UtxoExtras } from '../page/config.js';
+import { submitFailsProblem, type OwnedUtxoConfig, type PageConfig, type QuirkConfig, type UtxoExtras } from '../page/config.js';
 import { isPlutusDataBytes } from '../core/cbor-shapes.js';
 import { isScriptRef } from '../core/scripts.js';
 import { resolveProtocolParams, type ProtocolParams, type ProtocolParamsInput } from './protocol-params.js';
@@ -230,8 +230,8 @@ export function prepareWallet(options: WalletOptions = {}): PreparedWallet {
   const utxos = (options.utxos ?? [{ lovelace: 10_000_000 }]).map((u, i) => ({ lovelace: lovelaceString(u.lovelace), ...validateUtxoExtras(u, `utxos[${i}]`) }));
   checkOwnedSums(utxos);
   const ledger = ledgerOptions(options.ledger, networkId);
-  const rejected = submitRejectedProblem(options.quirks?.submitRejected);
-  if (rejected) throw new Error(rejected);
+  const submitFails = submitFailsProblem(options.quirks?.submitFails);
+  if (submitFails) throw new Error(submitFails);
 
   const config: PageConfig = {
     name: options.name ?? 'chw',

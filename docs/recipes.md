@@ -276,9 +276,8 @@ Each quirk reproduces one thing a real user or wallet does. The wallet answers w
 | declines the connection | `quirks: { enableRejected: true }` | `enable()` rejects with `{ code: -3 }` (APIError Refused) |
 | declines the signature | `quirks: { signRejected: true }` | `signTx` rejects with `{ code: 2 }` (TxSignError UserDeclined) |
 | declines to sign a message | `quirks: { signDataRejected: true }` | `signData` rejects with `{ code: 3 }` (DataSignError UserDeclined) |
-| sends a transaction the node refuses | `quirks: { submitFails: true }` | `submitTx` rejects with `{ code: 2 }` (TxSendError Failure), the same code a declined signature has |
+| sends a transaction the node refuses | `quirks: { submitFails: true }` | `submitTx` rejects with `{ code: 2 }` (TxSendError Failure), the same code a declined signature has. A string in place of `true` becomes the `info` |
 | never answers the signature prompt | `quirks: { signHangs: true }` | `signTx` stays pending until the test calls `wallet.release('signTx')` or `wallet.reject('signTx')` |
-| sends a transaction the node rejects | `quirks: { submitRejected: 'ConwayApplyTxError [ConwayUtxowFailure (UtxoFailure (FeeTooSmallUTxO (Mismatch (RelGTEQ) {supplied: Coin 150000, expected: Coin 170000})))]' }` | `submitTx` rejects with `{ code: 2 }` (TxSendError Failure), `info` is the configured string |
 | has the wallet on the other network | `networkId: 1` (dApp on a testnet) | `getNetworkId()` returns 1, addresses are mainnet addresses |
 | has a wallet that injects late | `quirks: { lateInjection: 1500 }` | `window.cardano[name]` appears after 1.5 seconds |
 | has a wallet without CIP-95 | `quirks: { noCip95: true }` | `supportedExtensions` is empty, `enable({ extensions: [{ cip: 95 }] })` grants nothing |
@@ -389,7 +388,7 @@ test('the dApp shows the node rejection of a fee that is too low', async ({ page
 });
 ```
 
-The wallet's UTxOs stay as they were, a corrected transaction over the same inputs goes through afterwards. For a rejection without a failing transaction, the quirk `submitRejected` answers every `submitTx` with the `info` it holds, see [User-side failures](#user-side-failures).
+The wallet's UTxOs stay as they were, a corrected transaction over the same inputs goes through afterwards. For a rejection without a failing transaction, `quirks: { submitFails: 'ConwayApplyTxError [...]' }` answers every `submitTx` with that string as `info`, see [User-side failures](#user-side-failures).
 
 ## A dApp that spends from a script
 

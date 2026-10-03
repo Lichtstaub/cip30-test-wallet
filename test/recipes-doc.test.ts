@@ -44,14 +44,6 @@ describe('docs/recipes.md user-side failure table', () => {
     await expect(api.signData(reward!, '00')).rejects.toMatchObject({ code: promisedCode('signDataRejected') });
   });
 
-  it('submitRejected rejects submitTx with the code the table names and its own string as info', async () => {
-    const info = /quirks: \{ submitRejected: '([^']+)' \}/.exec(tableRow('submitRejected'))![1]!;
-    const target: InstallTarget = {};
-    installWallet(testConfig({ quirks: { submitRejected: info } }), target);
-    const api = await enableChw(target);
-    await expect(api.submitTx(standardUnsignedTx('chw'))).rejects.toEqual({ code: promisedCode('submitRejected'), info });
-  });
-
   it('submitFails rejects submitTx with the code the table names', async () => {
     const target: InstallTarget = {};
     installWallet(testConfig({ quirks: { submitFails: true } }), target);

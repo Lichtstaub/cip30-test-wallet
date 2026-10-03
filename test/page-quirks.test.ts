@@ -132,45 +132,9 @@ describe('signHangs', () => {
   });
 });
 
-describe('submitRejected', () => {
+describe('submitFails', () => {
   const info = 'ConwayApplyTxError [ConwayUtxowFailure (UtxoFailure (FeeTooSmallUTxO (Mismatch (RelGTEQ) {supplied: Coin 1, expected: Coin 170000})))]';
 
-  it('throws TxSendError Failure with the configured info as a plain object and journals it', async () => {
-    const target: InstallTarget = {};
-    const control = installWallet(testConfig({ quirks: { submitRejected: info } }), target);
-    const api = await enableChw(target);
-    let caught: unknown;
-    try {
-      await api.submitTx(unsigned());
-    } catch (e) {
-      caught = e;
-    }
-    expect(caught).toEqual({ code: TxSendErrorCode.Failure, info });
-    expect(caught).not.toBeInstanceOf(Error);
-    expect(control.journal.at(-1)).toMatchObject({ method: 'submitTx', args: [unsigned()], error: { code: TxSendErrorCode.Failure, info } });
-    // The ledger never saw the transaction.
-    expect(await api.getUtxos()).toHaveLength(2);
-  });
-
-  it('refuses malformed hex as InvalidRequest first', async () => {
-    const target: InstallTarget = {};
-    installWallet(testConfig({ quirks: { submitRejected: info } }), target);
-    const api = await enableChw(target);
-    await expect(api.submitTx('zz')).rejects.toEqual(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
-  });
-
-  it('can be switched on and off at runtime through setQuirk', async () => {
-    const target: InstallTarget = {};
-    const control = installWallet(testConfig(), target);
-    const api = await enableChw(target);
-    control.setQuirk('submitRejected', info);
-    await expect(api.submitTx(unsigned())).rejects.toEqual({ code: TxSendErrorCode.Failure, info });
-    control.setQuirk('submitRejected', undefined);
-    expect(await api.submitTx(unsigned())).toMatch(/^[0-9a-f]{64}$/);
-  });
-});
-
-describe('submitFails', () => {
   it('throws TxSendError Failure as a plain object and leaves the UTxO set as it was', async () => {
     const target: InstallTarget = {};
     const control = installWallet(testConfig({ quirks: { submitFails: true } }), target);
@@ -182,7 +146,7 @@ describe('submitFails', () => {
     } catch (e) {
       caught = e;
     }
-    expect(caught).toEqual({ code: TxSendErrorCode.Failure, info: expect.any(String) });
+    expect(caught).toEqual({ code: TxSendErrorCode.Failure, info: 'the node refused the transaction' });
     expect(caught).not.toBeInstanceOf(Error);
     expect(await api.getUtxos()).toEqual(before);
     expect(control.journal.find((e) => e.method === 'submitTx')!.error).toEqual(caught);
@@ -202,20 +166,65 @@ describe('submitFails', () => {
     control.setQuirk('submitFails', true);
     await expect(api.submitTx(unsigned())).rejects.toEqual(expect.objectContaining({ code: TxSendErrorCode.Failure }));
   });
+
+  it('passes a string through as the info and journals it, the ledger never sees the transaction', async () => {
+    const target: InstallTarget = {};
+    const control = installWallet(testConfig({ quirks: { submitFails: info } }), target);
+    const api = await enableChw(target);
+    let caught: unknown;
+    try {
+      await api.submitTx(unsigned());
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toEqual({ code: TxSendErrorCode.Failure, info });
+    expect(caught).not.toBeInstanceOf(Error);
+    expect(control.journal.at(-1)).toMatchObject({ method: 'submitTx', args: [unsigned()], error: { code: TxSendErrorCode.Failure, info } });
+    expect(await api.getUtxos()).toHaveLength(2);
+  });
+
+  it('refuses malformed hex as InvalidRequest first with a string too', async () => {
+    const target: InstallTarget = {};
+    installWallet(testConfig({ quirks: { submitFails: info } }), target);
+    const api = await enableChw(target);
+    await expect(api.submitTx('zz')).rejects.toEqual(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
+  });
+
+  it('switches between both forms and off at runtime through setQuirk', async () => {
+    const target: InstallTarget = {};
+    const control = installWallet(testConfig(), target);
+    const api = await enableChw(target);
+    control.setQuirk('submitFails', info);
+    await expect(api.submitTx(unsigned())).rejects.toEqual({ code: TxSendErrorCode.Failure, info });
+    control.setQuirk('submitFails', true);
+    await expect(api.submitTx(unsigned())).rejects.toEqual({ code: TxSendErrorCode.Failure, info: 'the node refused the transaction' });
+    control.setQuirk('submitFails', undefined);
+    expect(await api.submitTx(unsigned())).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('takes false as off, like the boolean quirks', async () => {
+    const target: InstallTarget = {};
+    const control = installWallet(testConfig({ quirks: { submitFails: info } }), target);
+    const api = await enableChw(target);
+    control.setQuirk('submitFails', false as never);
+    expect(control.quirks.submitFails).toBe(false);
+    expect(await api.submitTx(unsigned())).toMatch(/^[0-9a-f]{64}$/);
+  });
 });
 
 describe('setQuirk validation', () => {
   it.each([
-    ['true', true],
     ['an empty string', ''],
     ['a number', 7],
-  ])('rejects submitRejected as %s with InvalidRequest and keeps the quirk off', (_name, value) => {
+    ['null', null],
+    ['an object', {}],
+  ])('rejects submitFails as %s with InvalidRequest and keeps the quirk off', (_name, value) => {
     const target: InstallTarget = {};
     const control = installWallet(testConfig(), target);
-    expect(() => control.setQuirk('submitRejected', value as never)).toThrow(
-      expect.objectContaining({ code: APIErrorCode.InvalidRequest, info: expect.stringContaining('quirks.submitRejected must be a non-empty string') }),
+    expect(() => control.setQuirk('submitFails', value as never)).toThrow(
+      expect.objectContaining({ code: APIErrorCode.InvalidRequest, info: expect.stringContaining('quirks.submitFails must be true or a non-empty string') }),
     );
-    expect(control.quirks.submitRejected).toBeUndefined();
+    expect(control.quirks.submitFails).toBeUndefined();
   });
 
   it('rejects an unknown quirk name with InvalidRequest', () => {

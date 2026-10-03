@@ -12,20 +12,21 @@ import { enableChw } from './helpers/page.js';
 
 afterEach(() => vi.restoreAllMocks());
 
-describe('walletOptions.quirks.submitRejected', () => {
-  it('takes a non-empty string and is off without it', () => {
-    expect(prepareWallet({ quirks: { submitRejected: 'rejected' } }).config.quirks.submitRejected).toBe('rejected');
-    expect(prepareWallet({ quirks: {} }).config.quirks.submitRejected).toBeUndefined();
+describe('walletOptions.quirks.submitFails', () => {
+  it('takes true or a non-empty string, false is off and so is leaving it out', () => {
+    expect(prepareWallet({ quirks: { submitFails: true } }).config.quirks.submitFails).toBe(true);
+    expect(prepareWallet({ quirks: { submitFails: 'rejected' } }).config.quirks.submitFails).toBe('rejected');
+    expect(() => prepareWallet({ quirks: { submitFails: false as never } })).not.toThrow();
+    expect(prepareWallet({ quirks: {} }).config.quirks.submitFails).toBeUndefined();
   });
 
   it.each([
-    ['true', true],
     ['an empty string', ''],
     ['a number', 7],
     ['null', null],
   ])('refuses %s, it would silently do nothing or give an empty info', (_name, value) => {
-    expect(() => prepareWallet({ quirks: { submitRejected: value as never } })).toThrow(
-      `quirks.submitRejected must be a non-empty string, the info the dApp receives, got ${String(value)}`,
+    expect(() => prepareWallet({ quirks: { submitFails: value as never } })).toThrow(
+      `quirks.submitFails must be true or a non-empty string, the info the dApp receives, got ${String(value)}`,
     );
   });
 });

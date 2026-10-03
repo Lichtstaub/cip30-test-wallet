@@ -156,14 +156,14 @@ describe('submit answers through the binding', () => {
     expect(e).toMatchObject({ code: original.code, message: original.message });
   });
 
-  it('the submitRejected quirk rejects in the page, the host ledger never sees the transaction', async () => {
+  it('the submitFails quirk rejects in the page, the host ledger never sees the transaction', async () => {
     const w = prepareWallet();
     // Without checks the wallet ledger is the MemoryLedger, which counts what reached it.
     const node = walletLedger(w) as MemoryLedger;
     const submit = vi.spyOn(node, 'submit');
     const page = pageWith(node);
     const info = 'ConwayApplyTxError [ConwayMempoolFailure "All inputs are spent. Transaction has probably already been included"]';
-    installWallet({ ...w.config, quirks: { submitRejected: info }, ledger: { state: true, binding: LEDGER_BINDING } }, page);
+    installWallet({ ...w.config, quirks: { submitFails: info }, ledger: { state: true, binding: LEDGER_BINDING } }, page);
     await expect((await enableChw(page)).submitTx(standardUnsignedTx(w.config.name))).rejects.toEqual({ code: TxSendErrorCode.Failure, info });
     expect(submit).not.toHaveBeenCalled();
     expect(node.submitted).toHaveLength(0);

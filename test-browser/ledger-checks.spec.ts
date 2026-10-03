@@ -104,9 +104,9 @@ test.describe('a fee the node would refuse', () => {
   });
 });
 
-test.describe('the submitRejected quirk', () => {
+test.describe('the submitFails quirk with a node message', () => {
   const REASON = 'ConwayApplyTxError [ConwayUtxowFailure (UtxoFailure (FeeTooSmallUTxO (Mismatch (RelGTEQ) {supplied: Coin 150000, expected: Coin 170000})))]';
-  test.use({ walletOptions: { quirks: { submitRejected: REASON } } });
+  test.use({ walletOptions: { quirks: { submitFails: REASON } } });
 
   test('rejects with exactly the configured info until the test switches it off', async ({ page, wallet }) => {
     await open(page);
@@ -116,7 +116,7 @@ test.describe('the submitRejected quirk', () => {
     expect(await submitInPage(page, signed)).toMatchObject({ type: 'object', isError: false, code: 2, info: REASON });
     expect((await wallet.utxos()).map((u) => u.txId)).toEqual([bytesToHex(utxo0(wallet).input.txId)]);
 
-    await wallet.setQuirk('submitRejected', undefined);
+    await wallet.setQuirk('submitFails', undefined);
     expect(await submitInPage(page, signed)).toBeUndefined();
     expect(await wallet.utxos()).toHaveLength(1);
     expect((await wallet.utxos())[0]!.txId).not.toBe(bytesToHex(utxo0(wallet).input.txId));
