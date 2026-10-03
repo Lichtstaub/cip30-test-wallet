@@ -101,6 +101,16 @@ test.describe('quirks through the fixture', () => {
     await expect(page.locator('#commit-result')).toHaveText('declined');
   });
 
+  test.describe('submitFails', () => {
+    test.use({ walletOptions: { quirks: { submitFails: true } } });
+    test('the demo shows the send failure with its info text', async ({ page, wallet }) => {
+      await connect(page);
+      await page.locator('#commit').click();
+      await expect(page.locator('#commit-result')).toHaveText('send failed: the node refused the transaction');
+      expect(await wallet.lastSubmittedTx()).toBeUndefined();
+    });
+  });
+
   test('a failed reconnect resets the demo connection, so commit sees not connected', async ({ page, wallet }) => {
     await connect(page);
     await expect(page.locator('#connect-result')).toHaveText('network 0');

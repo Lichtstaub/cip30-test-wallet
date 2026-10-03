@@ -211,6 +211,8 @@ export function buildApi(ctx: WalletContext, extensions: { cip: number }[] = [])
         // A node refusing the transaction, on demand. Before the ledger, so nothing changes.
         const rejected = control.quirks.submitRejected;
         if (typeof rejected === 'string') throw txSendError(TxSendErrorCode.Failure, rejected);
+        // Before the ledger, so a refused transaction changes no UTxO.
+        if (control.quirks.submitFails) throw txSendError(TxSendErrorCode.Failure, 'the node refused the transaction');
         return bytesToHex(await ledger.submit(bytes));
       }),
     signData: (addr, payload) => control.record('signData', [addr, payload], () => signDataWith(ctx, addr, payload, 'cip30')),

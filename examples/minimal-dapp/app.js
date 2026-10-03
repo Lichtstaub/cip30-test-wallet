@@ -87,13 +87,20 @@
       return;
     }
     out.textContent = 'signing';
+    var phase = 'signTx';
     connectedApi.signTx(demoTx.unsignedHex, false).then(function (witnessSetHex) {
       var signed = demoTx.unsignedHex.slice(0, demoTx.bodyEndHex) + witnessSetHex + demoTx.unsignedHex.slice(demoTx.bodyEndHex + 2);
+      phase = 'submitTx';
       return connectedApi.submitTx(signed);
     }).then(function (hash) {
       out.textContent = 'submitted ' + hash;
     }).catch(function (e) {
-      out.textContent = e && e.code === 2 ? 'declined' : 'error ' + (e && e.code);
+      // CIP-30 codes depend on the call: code 2 is TxSignError UserDeclined for signTx,
+      // but TxSendError Failure for submitTx, where the node refused the transaction.
+      var code = e && e.code;
+      if (phase === 'signTx' && code === 2) out.textContent = 'declined';
+      else if (phase === 'submitTx' && code === 2) out.textContent = 'send failed: ' + e.info;
+      else out.textContent = 'error ' + code;
     });
   }
 

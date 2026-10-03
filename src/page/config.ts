@@ -37,6 +37,7 @@ export const QUIRK_NAMES = [
   'signRejected',
   'signHangs',
   'signDataRejected',
+  'submitFails',
   'noCip95',
   'cip95NamespaceMissing',
   'cip95SignData',
@@ -63,6 +64,8 @@ export interface QuirkConfig {
   signHangs?: boolean;
   /** signData() and cip95.signData() throw DataSignError UserDeclined, like a user cancelling the message prompt. */
   signDataRejected?: boolean;
+  /** submitTx() throws TxSendError Failure, like a node refusing the transaction. */
+  submitFails?: boolean;
   /** The wallet does not support CIP-95: no extension announced, no namespace, like an older wallet. */
   noCip95?: boolean;
   /** supportedExtensions and getExtensions claim CIP-95, but the enabled api has no cip95 namespace. */

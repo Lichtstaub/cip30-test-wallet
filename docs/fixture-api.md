@@ -35,7 +35,7 @@ The wallet is an automatic fixture: it is installed for every test in a file tha
 | `drepPublicKeyHex`, `drepKeyHashHex` | `string` | Raw 32-byte DRep public key and its hash, both hex |
 | `drepId` | `string` | CIP-129 DRep id, bech32 with prefix `drep` |
 | `calls(method?)` | `Promise<JournalEntry[]>` | Journal, optionally filtered |
-| `lastSubmittedTx()` | `Promise<string \| undefined>` | Hex CBOR handed to `submitTx` |
+| `lastSubmittedTx()` | `Promise<string \| undefined>` | Hex CBOR of the last `submitTx` call that succeeded |
 | `utxos()` | `Promise<LedgerUtxo[]>` | The wallet's unspent outputs after every submitted transaction of the test, in the shape of `foreignUtxos`. Kept in Node, it survives reloads and origin changes |
 | `setQuirk(name, value)` | `Promise<void>` | Flip a quirk at runtime. Rejects with `InvalidRequest` for an unknown quirk name, and for `lateInjection` or `answersEveryKey` after install, they only apply at install time through `walletOptions.quirks` |
 | `release('signTx')`, `reject('signTx')` | `Promise<number>` | End a hanging `signTx`, resolving to how many calls it settled. Nothing pending resolves to `0` |

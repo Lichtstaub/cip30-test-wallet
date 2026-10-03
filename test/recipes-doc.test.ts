@@ -52,6 +52,13 @@ describe('docs/recipes.md user-side failure table', () => {
     await expect(api.submitTx(standardUnsignedTx('chw'))).rejects.toEqual({ code: promisedCode('submitRejected'), info });
   });
 
+  it('submitFails rejects submitTx with the code the table names', async () => {
+    const target: InstallTarget = {};
+    installWallet(testConfig({ quirks: { submitFails: true } }), target);
+    const api = await enableChw(target);
+    await expect(api.submitTx(standardUnsignedTx('chw'))).rejects.toMatchObject({ code: promisedCode('submitFails') });
+  });
+
   it('noCip95 leaves supportedExtensions empty as the table says', () => {
     const target: InstallTarget = {};
     installWallet(testConfig({ quirks: { noCip95: true } }), target);

@@ -13,6 +13,7 @@ No switch without a note. A quirk nobody can trace is the stale wallet profile t
 | `signRejected` | confirmed | [sign-rejected.md](sign-rejected.md) |
 | `signHangs` | confirmed | [sign-hangs.md](sign-hangs.md) |
 | `signDataRejected` | confirmed | [sign-data-rejected.md](sign-data-rejected.md) |
+| `submitFails` | reported | [submit-fails.md](submit-fails.md) |
 | `noCip95` | confirmed | [no-cip95.md](no-cip95.md) |
 | `cip95NamespaceMissing` | reported | [cip95-namespace-missing.md](cip95-namespace-missing.md) |
 | `cip95SignData` | reported | [cip95-sign-data.md](cip95-sign-data.md) |
