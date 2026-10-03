@@ -20,6 +20,64 @@ export interface DoctorOptions {
   fetchImpl?: typeof fetch;
   /** A Browser to reuse instead of launching one. The caller owns its lifetime, doctor closes only what it created. */
   browserImpl?: Browser;
+  /** Test seam for the sandbox checks, defaults to process.platform. */
+  platform?: NodeJS.Platform;
+  /** Test seam for the sandbox checks, defaults to process.env. */
+  env?: NodeJS.ProcessEnv;
+}
+
+type Host = Required<Pick<DoctorOptions, 'platform' | 'env'>>;
+
+const SANDBOX_FIX =
+  'Run doctor --deep outside the sandbox, or let the agent run this one command with escalated permissions ' +
+  '(an approval prompt, or Codex with --sandbox danger-full-access).';
+
+/**
+ * The agent sandbox this process runs in, read from the variables Codex and Claude Code set for
+ * sandboxed commands. refusesLaunch marks the one where every browser is known to abort on macOS.
+ */
+function detectSandbox(env: Host['env']): { name: string; refusesLaunch: boolean } | null {
+  if (env['CODEX_SANDBOX'] === 'seatbelt') return { name: 'the Codex sandbox (CODEX_SANDBOX=seatbelt)', refusesLaunch: true };
+  if (env['SANDBOX_RUNTIME'] === '1') return { name: 'the Claude Code sandbox (SANDBOX_RUNTIME=1)', refusesLaunch: false };
+  return null;
+}
+
+/**
+ * Why the deep run must not launch a browser here, or null when it may. Inside the Codex seatbelt
+ * sandbox on macOS every Playwright browser aborts at launch because it cannot register with the
+ * window server, and each abort opens a crash dialog. Not launching avoids the dialog.
+ */
+export function sandboxPreflight(host: Host): string | null {
+  const sandbox = host.platform === 'darwin' ? detectSandbox(host.env) : null;
+  if (!sandbox?.refusesLaunch) return null;
+  return (
+    `no browser was started because this process runs in ${sandbox.name} on macOS. ` +
+    'Playwright browsers cannot reach the window server there, they abort at launch and each abort opens a macOS crash dialog. ' +
+    SANDBOX_FIX
+  );
+}
+
+/**
+ * Adds the likely cause to a browser startup failure on macOS, which Playwright reports only as a
+ * closed browser. Inside a known agent sandbox the cause leads, elsewhere Playwright's message
+ * stays first and the hint follows. Pure for unit testing.
+ */
+export function explainStartupFailure(message: string, host: Host): string {
+  if (host.platform !== 'darwin') return message;
+  const sandbox = detectSandbox(host.env);
+  if (sandbox) return `the browser closed right after it started, likely because ${sandbox.name} has no window server access. ${SANDBOX_FIX} Playwright reported: ${message}`;
+  return `${message} On macOS a browser that closes right after it starts usually runs inside a sandbox without window server access, such as a coding agent sandbox. ${SANDBOX_FIX}`;
+}
+
+/** Marks a failure of the browser launch or its first context, the two steps that fail when the browser aborts at start. */
+class BrowserStartupError extends Error {}
+
+function messageOf(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
+
+function startupFailure(e: unknown): never {
+  throw new BrowserStartupError(messageOf(e), { cause: e });
 }
 
 const DEFAULT_TIMEOUT_MS = 15000;
@@ -93,7 +151,7 @@ export async function runDoctor(url: string, options: DoctorOptions = {}): Promi
     if (e instanceof Error && e.name === 'TimeoutError') {
       report.errors.push(`fetch of ${url} timed out after ${timeoutMs} ms`);
     } else {
-      report.errors.push(`could not fetch ${url}: ${e instanceof Error ? e.message : String(e)}`);
+      report.errors.push(`could not fetch ${url}: ${messageOf(e)}`);
     }
     return report;
   }
@@ -129,10 +187,17 @@ export async function runDoctor(url: string, options: DoctorOptions = {}): Promi
   }
 
   if (options.deep) {
+    const host: Host = { platform: options.platform ?? process.platform, env: options.env ?? process.env };
+    const refusal = options.browserImpl ? null : sandboxPreflight(host);
+    if (refusal) {
+      report.errors.push(`deep run skipped: ${refusal}`);
+      return report;
+    }
     try {
       await deepRun(report, policies, options);
     } catch (e) {
-      report.errors.push(`deep run failed: ${e instanceof Error ? e.message : String(e)}`);
+      const message = messageOf(e);
+      report.errors.push(`deep run failed: ${e instanceof BrowserStartupError ? explainStartupFailure(message, host) : message}`);
     }
   }
   return report;
@@ -151,7 +216,7 @@ async function tryClick(page: Page, selector: string): Promise<string | null> {
     await page.click(selector, { timeout: CLICK_TIMEOUT_MS });
     return null;
   } catch (e) {
-    return e instanceof Error ? e.message : String(e);
+    return messageOf(e);
   }
 }
 
@@ -275,11 +340,11 @@ async function deepRun(report: DoctorReport, policies: Policy[], options: Doctor
     } catch {
       throw new Error('--deep needs @playwright/test installed (npm i -D @playwright/test && npx playwright install)');
     }
-    browser = await pw[browserName].launch();
+    browser = await pw[browserName].launch().catch(startupFailure);
     ownsBrowser = true;
   }
   try {
-    const context = await browser.newContext();
+    const context = await browser.newContext().catch(startupFailure);
     try {
       const observation = await observationLoad(context, url, options);
 

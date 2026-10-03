@@ -485,3 +485,9 @@ test('signs in with a message the wallet really signed', async ({ page, wallet }
 ## Without the test runner
 
 An agent that drives a browser through Playwright MCP, or any code that is not a Playwright test, loads the wallet from a script file. See [init-script.md](init-script.md).
+
+## Running inside an agent sandbox
+
+On macOS a coding agent's sandbox keeps every Playwright browser from starting. Under Codex with `--sandbox workspace-write` or `read-only`, Chromium, Firefox and WebKit abort at launch because they cannot register with the window server. Playwright reports only that the browser closed, and macOS opens a "quit unexpectedly" dialog for each abort, so a test run with retries and workers can stack dozens of them. No launch flag or environment variable avoids it. Outside the sandbox all three engines run normally.
+
+Run `npx playwright test`, any test that starts a browser and `doctor --deep` outside the sandbox, or through the agent's escalation for that one command (an approval prompt, or Codex with `--sandbox danger-full-access`). Writing tests, tests that start no browser and a static `doctor` run work inside the sandbox. `doctor --deep` reads `CODEX_SANDBOX=seatbelt`, which Codex sets for sandboxed commands, and stops before it launches a browser. When a browser fails to start on macOS anyway, doctor adds the likely cause to Playwright's message.
