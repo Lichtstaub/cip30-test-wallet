@@ -22,13 +22,13 @@ Connect through Evolution's `cip30Wallet` helper against any wallet installed by
 
 ## Evolution SDK: a declined signature hides its CIP-30 code
 
-**What CIP-30 says.** A wallet that refuses to sign rejects `signTx` with a `TxSignError`, the plain object `{ code: 2, info }` for UserDeclined. The code is how a dApp tells a declined prompt from a failure.
+**What CIP-30 says.** A wallet that refuses to sign rejects `signTx` with a `TxSignError`, the plain object `{ code: 2, info }` for UserDeclined. The code is how a dApp tells a declined prompt from a failure. From `submitTx` the same code 2 is TxSendError Failure, the node refused the transaction, so code 2 only means a decline together with the call it came from.
 
 **What Evolution does.** Evolution SDK 0.5.14, `sdk/client/internal/Wallets.js`, builds its error from `cause.message ?? cause`. A CIP-30 error has `info`, not `message`, so the text becomes `Failed to sign transaction: Failed to sign transaction: [object Object]`. Through `signAndSubmit` the rejection is an Effect `FiberFailure`. Its `message` and its `cause` property do not carry the code, it only survives under the symbol `Symbol.for('effect/Runtime/FiberFailure/Cause')`, in `.error.cause.cause`. Real wallets that follow CIP-30 trip the same path.
 
 **How to reproduce with this wallet.** `test.use({ walletOptions: { quirks: { signRejected: true } } })`, then build with a client made by `withCip30(api)` and call `built.signAndSubmit()`. It rejects with the message above.
 
-**Workaround.** Read the code through the Effect symbol with the `cip30Code` helper, or sign with the wallet directly, `api.signTx(Transaction.toCBORHex(await built.toTransaction()), false)`, which rejects with the CIP-30 object itself. Both are in the Evolution recipe in [recipes.md](recipes.md#evolution-sdk).
+**Workaround.** Sign with `built.sign()` and submit afterwards with `signed.submit()`, then read the code of the signing call through the Effect symbol with the `cip30Code` helper. Or sign with the wallet directly, `api.signTx(Transaction.toCBORHex(await built.toTransaction()), false)`, which rejects with the CIP-30 object itself. Both are in the Evolution recipe in [recipes.md](recipes.md#evolution-sdk).
 
 **Status.** Reported upstream: not yet.
 
@@ -38,7 +38,7 @@ Connect through Evolution's `cip30Wallet` helper against any wallet installed by
 
 **How to reproduce with this wallet.** `test.use({ walletOptions: { quirks: { signRejected: true } } })`, select the wallet with `lucid.selectWallet.fromAPI(api)` and call `tx.sign.withWallet().complete()`.
 
-**Workaround.** The `cip30Code` helper from the Evolution recipe, or `tx.sign.withWallet().completeSafe()`, whose `left.cause` is the CIP-30 object. See the Lucid Evolution recipe in [recipes.md](recipes.md#lucid-evolution).
+**Workaround.** The `cip30Code` helper from the Evolution recipe, or `tx.sign.withWallet().completeSafe()`, whose `left.cause` is the CIP-30 object. Either way, read the code only around the signing call: `signed.submit()` goes through the wallet's `submitTx`, where code 2 is TxSendError Failure. See the Lucid Evolution recipe in [recipes.md](recipes.md#lucid-evolution).
 
 **Status.** Reported upstream: not yet.
 
