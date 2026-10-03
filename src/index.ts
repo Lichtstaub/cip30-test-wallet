@@ -6,7 +6,7 @@ export type { PreparedWallet, WalletOptions } from './host/config.js';
 export { initScript } from './host/bundle.js';
 export { expectSignedBy, expectSignedData } from './host/assert.js';
 export type { SignedDataExpectation, SignerRole } from './host/assert.js';
-export { APIErrorCode, ChwError, DataSignErrorCode, TxSignErrorCode } from './core/errors.js';
+export { APIErrorCode, ChwError, DataSignErrorCode, TxSendErrorCode, TxSignErrorCode } from './core/errors.js';
 export type { ChwErrorCode, Cip30Error } from './core/errors.js';
 export { QUIRK_NAMES } from './page/config.js';
 export type { JournalEntry, PageConfig, QuirkConfig, QuirkName } from './page/config.js';

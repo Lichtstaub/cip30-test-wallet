@@ -101,24 +101,14 @@ test.describe('quirks through the fixture', () => {
     await expect(page.locator('#commit-result')).toHaveText('declined');
   });
 
-  test('a send failure with code 2 is shown as a failure, not as a decline', async ({ page }) => {
-    await page.goto('/strict/');
-    await expect(page.locator('#wallets')).toHaveText('chw');
-    // The wallet never fails a submit on its own, so the API the demo connects to
-    // gets a submitTx that rejects with TxSendError Failure.
-    await page.evaluate(() => {
-      const chw = (window as unknown as { cardano: Record<string, { enable: (o?: unknown) => Promise<Record<string, unknown>> }> }).cardano.chw!;
-      const enable = chw.enable.bind(chw);
-      chw.enable = async (o) => {
-        const api = await enable(o);
-        api.submitTx = () => Promise.reject({ code: 2, info: 'node refused the transaction' });
-        return api;
-      };
+  test.describe('submitFails', () => {
+    test.use({ walletOptions: { quirks: { submitFails: true } } });
+    test('the demo shows the send failure with its info text', async ({ page, wallet }) => {
+      await connect(page);
+      await page.locator('#commit').click();
+      await expect(page.locator('#commit-result')).toHaveText('send failed: the node refused the transaction');
+      expect(await wallet.lastSubmittedTx()).toBeUndefined();
     });
-    await page.locator('#connect').click();
-    await expect(page.locator('#connect-result')).toHaveText('network 0');
-    await page.locator('#commit').click();
-    await expect(page.locator('#commit-result')).toHaveText('send failed: node refused the transaction');
   });
 
   test('a failed reconnect resets the demo connection, so commit sees not connected', async ({ page, wallet }) => {
