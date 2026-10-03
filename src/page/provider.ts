@@ -2,7 +2,7 @@ import { bytesToHex, hexToBytes } from '../core/bytes.js';
 import { decode, type CborValue } from '../core/cbor/decode.js';
 import { encode } from '../core/cbor/encode.js';
 import { signCose } from '../core/cose.js';
-import { APIErrorCode, apiError, DataSignErrorCode, dataSignError, TxSignErrorCode, txSignError } from '../core/errors.js';
+import { APIErrorCode, apiError, DataSignErrorCode, dataSignError, TxSendErrorCode, txSendError, TxSignErrorCode, txSignError } from '../core/errors.js';
 import type { SigningKey } from '../core/keys.js';
 import { encodeUtxo, type Ledger } from '../core/ledger.js';
 import { parseAddressArg, parseHexArg, resolveDataSigner } from '../core/sign-data.js';
@@ -208,6 +208,8 @@ export function buildApi(ctx: WalletContext, extensions: { cip: number }[] = [])
     submitTx: (tx) =>
       control.record('submitTx', [tx], async () => {
         const { bytes } = parseTxHex(tx);
+        // Before the ledger, so a refused transaction changes no UTxO.
+        if (control.quirks.submitFails) throw txSendError(TxSendErrorCode.Failure, 'the node refused the transaction');
         return bytesToHex(await ledger.submit(bytes));
       }),
     signData: (addr, payload) => control.record('signData', [addr, payload], () => signDataWith(ctx, addr, payload, 'cip30')),

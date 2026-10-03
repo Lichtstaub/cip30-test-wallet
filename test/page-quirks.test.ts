@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { bytesToHex } from '../src/core/bytes.js';
-import { APIErrorCode, TxSignErrorCode } from '../src/core/errors.js';
+import { APIErrorCode, TxSendErrorCode, TxSignErrorCode } from '../src/core/errors.js';
 import { keyHash } from '../src/core/hash.js';
 import { publicKey } from '../src/core/keys.js';
 import { deriveAccount } from '../src/derive/index.js';
@@ -129,6 +129,40 @@ describe('signHangs', () => {
     const pending = api.signTx(unsigned(), false);
     control.reject('signTx');
     await expect(pending).rejects.toEqual(expect.objectContaining({ code: TxSignErrorCode.UserDeclined }));
+  });
+});
+
+describe('submitFails', () => {
+  it('throws TxSendError Failure as a plain object and leaves the UTxO set as it was', async () => {
+    const target: InstallTarget = {};
+    const control = installWallet(testConfig({ quirks: { submitFails: true } }), target);
+    const api = await enableChw(target);
+    const before = await api.getUtxos();
+    let caught: unknown;
+    try {
+      await api.submitTx(unsigned());
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toEqual({ code: TxSendErrorCode.Failure, info: expect.any(String) });
+    expect(caught).not.toBeInstanceOf(Error);
+    expect(await api.getUtxos()).toEqual(before);
+    expect(control.journal.find((e) => e.method === 'submitTx')!.error).toEqual(caught);
+  });
+
+  it('reports malformed input as InvalidRequest first', async () => {
+    const target: InstallTarget = {};
+    installWallet(testConfig({ quirks: { submitFails: true } }), target);
+    const api = await enableChw(target);
+    await expect(api.submitTx('nope')).rejects.toEqual(expect.objectContaining({ code: APIErrorCode.InvalidRequest }));
+  });
+
+  it('can be switched on at runtime through setQuirk', async () => {
+    const target: InstallTarget = {};
+    const control = installWallet(testConfig(), target);
+    const api = await enableChw(target);
+    control.setQuirk('submitFails', true);
+    await expect(api.submitTx(unsigned())).rejects.toEqual(expect.objectContaining({ code: TxSendErrorCode.Failure }));
   });
 });
 

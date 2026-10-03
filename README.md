@@ -86,6 +86,7 @@ test.use({ walletOptions: { networkId: 1 } });                        // wallet 
 test.use({ walletOptions: { quirks: { enableRejected: true } } });    // the user declines the connection
 test.use({ walletOptions: { quirks: { lateInjection: 1500 } } });     // the wallet appears after 1.5 seconds
 test.use({ walletOptions: { quirks: { signRejected: true } } });      // the user declines the signature
+test.use({ walletOptions: { quirks: { submitFails: true } } });       // the node refuses the transaction
 ```
 
 A user who never answers the signing prompt, answered by the test when your assertion is done:

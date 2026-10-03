@@ -17,6 +17,11 @@ export const TxSignErrorCode = {
   DeprecatedCertificate: 3,
 } as const;
 
+export const TxSendErrorCode = {
+  Refused: 1,
+  Failure: 2,
+} as const;
+
 export const DataSignErrorCode = {
   ProofGeneration: 1,
   AddressNotPK: 2,
@@ -33,6 +38,10 @@ export function apiError(code: (typeof APIErrorCode)[keyof typeof APIErrorCode],
 }
 
 export function txSignError(code: (typeof TxSignErrorCode)[keyof typeof TxSignErrorCode], info: string): Cip30Error {
+  return { code, info };
+}
+
+export function txSendError(code: (typeof TxSendErrorCode)[keyof typeof TxSendErrorCode], info: string): Cip30Error {
   return { code, info };
 }
 
