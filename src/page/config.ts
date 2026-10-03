@@ -70,7 +70,7 @@ export interface QuirkConfig {
    * The ledger never sees the transaction, so its state stays as it was. A
    * malformed transaction is still InvalidRequest. Undefined or false switches it off.
    */
-  submitFails?: true | string;
+  submitFails?: boolean | string;
   /** The wallet does not support CIP-95: no extension announced, no namespace, like an older wallet. */
   noCip95?: boolean;
   /** supportedExtensions and getExtensions claim CIP-95, but the enabled api has no cip95 namespace. */

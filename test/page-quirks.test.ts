@@ -206,7 +206,7 @@ describe('submitFails', () => {
     const target: InstallTarget = {};
     const control = installWallet(testConfig({ quirks: { submitFails: info } }), target);
     const api = await enableChw(target);
-    control.setQuirk('submitFails', false as never);
+    control.setQuirk('submitFails', false);
     expect(control.quirks.submitFails).toBe(false);
     expect(await api.submitTx(unsigned())).toMatch(/^[0-9a-f]{64}$/);
   });

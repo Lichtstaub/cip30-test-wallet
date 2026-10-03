@@ -16,7 +16,7 @@ describe('walletOptions.quirks.submitFails', () => {
   it('takes true or a non-empty string, false is off and so is leaving it out', () => {
     expect(prepareWallet({ quirks: { submitFails: true } }).config.quirks.submitFails).toBe(true);
     expect(prepareWallet({ quirks: { submitFails: 'rejected' } }).config.quirks.submitFails).toBe('rejected');
-    expect(() => prepareWallet({ quirks: { submitFails: false as never } })).not.toThrow();
+    expect(() => prepareWallet({ quirks: { submitFails: false } })).not.toThrow();
     expect(prepareWallet({ quirks: {} }).config.quirks.submitFails).toBeUndefined();
   });
 
