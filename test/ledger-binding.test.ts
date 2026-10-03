@@ -2,23 +2,18 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import CSL from '@emurgo/cardano-serialization-lib-nodejs';
 import { bytesToHex, hexToBytes } from '../src/core/bytes.js';
 import { txHash } from '../src/core/cbor/tx.js';
+import { APIErrorCode, apiError, ChwError, TxSendErrorCode, txSendError } from '../src/core/errors.js';
+import type { MemoryLedger } from '../src/core/ledger.js';
 import { parseAddressArg } from '../src/core/sign-data.js';
 import { prepareWallet } from '../src/host/config.js';
 import { LEDGER_BINDING, ledgerBinding, walletLedger } from '../src/host/ledger.js';
 import { installWallet, syntheticOwnedUtxo, type InstallTarget } from '../src/page/install.js';
 import { utxoFromConfig, utxoToConfig } from '../src/page/utxo-config.js';
-import { buildTx, spliceWitnessSet, TEST_ADDRESS } from './helpers/build-tx.js';
-import { enableChw } from './helpers/page.js';
+import { buildTx, spliceWitnessSet, standardUnsignedTx, TEST_ADDRESS } from './helpers/build-tx.js';
+import { enableChw, pageWith, rejectionOf } from './helpers/page.js';
 import { hash28 as h, syntheticInput } from './helpers/synthetic.js';
 
 afterEach(() => vi.restoreAllMocks());
-
-/** A page window whose binding goes through JSON like Playwright's, so nothing the page receives is a bigint or a Uint8Array. */
-function pageWith(ledger: ReturnType<typeof walletLedger>): InstallTarget & Record<string, unknown> {
-  const handler = ledgerBinding(ledger);
-  const json = (v: unknown) => JSON.parse(JSON.stringify(v ?? null));
-  return { [LEDGER_BINDING]: async (op: string, arg?: unknown) => json(await handler(undefined, op, json(arg))) };
-}
 
 describe('JSON shape of ledger UTxOs', () => {
   it('round trips assets above 2^53, datum hash, inline datum and script ref', () => {
@@ -117,5 +112,66 @@ describe('a page wallet on a host ledger', () => {
 
   it('rejects an unknown operation', async () => {
     await expect(ledgerBinding(walletLedger(prepareWallet()))(undefined, 'mint')).rejects.toThrow(/unknown ledger operation mint/);
+  });
+});
+
+describe('submit answers through the binding', () => {
+  const setup = () => {
+    const w = prepareWallet();
+    const node = walletLedger(w);
+    const page = pageWith(node);
+    installWallet({ ...w.config, ledger: { state: true, binding: LEDGER_BINDING } }, page);
+    return { node, page, tx: standardUnsignedTx(w.config.name) };
+  };
+  const caught = (run: () => Promise<unknown>) => rejectionOf(run());
+
+  it('answers an accepted transaction with its id', async () => {
+    const { node, tx } = setup();
+    expect(await ledgerBinding(node)(undefined, 'submit', tx)).toEqual({ txId: bytesToHex(txHash(hexToBytes(tx))) });
+  });
+
+  it('carries a CIP-30 error as a value, the page throws it as the plain object', async () => {
+    const { node, page, tx } = setup();
+    const info = 'ConwayApplyTxError [ConwayUtxowFailure (UtxoFailure (BadInputsUTxO (fromList [])))]';
+    vi.spyOn(node, 'submit').mockRejectedValue(txSendError(TxSendErrorCode.Failure, info));
+    expect(await ledgerBinding(node)(undefined, 'submit', tx)).toEqual({ error: { code: 2, info } });
+    const e = await caught(async () => (await enableChw(page)).submitTx(tx));
+    expect(e).toEqual({ code: TxSendErrorCode.Failure, info });
+    expect(e).not.toBeInstanceOf(Error);
+  });
+
+  it('keeps only code and info of a CIP-30 error', async () => {
+    const { node, tx } = setup();
+    vi.spyOn(node, 'submit').mockRejectedValue({ ...apiError(APIErrorCode.InvalidRequest, 'fee is missing'), stack: 'host' });
+    expect(await ledgerBinding(node)(undefined, 'submit', tx)).toEqual({ error: { code: APIErrorCode.InvalidRequest, info: 'fee is missing' } });
+  });
+
+  it('carries a ChwError as code and message, the page rebuilds it with the same message', async () => {
+    const { node, page, tx } = setup();
+    const original = new ChwError('CHW_UNSUPPORTED_TX_FORM', 'bootstrap witnesses');
+    vi.spyOn(node, 'submit').mockRejectedValue(original);
+    expect(await ledgerBinding(node)(undefined, 'submit', tx)).toEqual({ chwError: { code: 'CHW_UNSUPPORTED_TX_FORM', message: 'bootstrap witnesses' } });
+    const e = await caught(async () => (await enableChw(page)).submitTx(tx));
+    expect(e).toBeInstanceOf(ChwError);
+    expect(e).toMatchObject({ code: original.code, message: original.message });
+  });
+
+  it('the submitFails quirk rejects in the page, the host ledger never sees the transaction', async () => {
+    const w = prepareWallet();
+    // Without checks the wallet ledger is the MemoryLedger, which counts what reached it.
+    const node = walletLedger(w) as MemoryLedger;
+    const submit = vi.spyOn(node, 'submit');
+    const page = pageWith(node);
+    const info = 'ConwayApplyTxError [ConwayMempoolFailure "All inputs are spent. Transaction has probably already been included"]';
+    installWallet({ ...w.config, quirks: { submitFails: info }, ledger: { state: true, binding: LEDGER_BINDING } }, page);
+    await expect((await enableChw(page)).submitTx(standardUnsignedTx(w.config.name))).rejects.toEqual({ code: TxSendErrorCode.Failure, info });
+    expect(submit).not.toHaveBeenCalled();
+    expect(node.submitted).toHaveLength(0);
+  });
+
+  it('throws anything else as it is', async () => {
+    const { node, tx } = setup();
+    vi.spyOn(node, 'submit').mockRejectedValue(new Error('ledger broke'));
+    await expect(ledgerBinding(node)(undefined, 'submit', tx)).rejects.toThrow('ledger broke');
   });
 });

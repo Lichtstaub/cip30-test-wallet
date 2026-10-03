@@ -49,6 +49,13 @@ export function dataSignError(code: (typeof DataSignErrorCode)[keyof typeof Data
   return { code, info };
 }
 
+/** A plain CIP-30 error object: numeric code, string info, not an Error instance. */
+export function isCip30Error(value: unknown): value is Cip30Error {
+  if (typeof value !== 'object' || value === null || value instanceof Error) return false;
+  const { code, info } = value as { code?: unknown; info?: unknown };
+  return typeof code === 'number' && typeof info === 'string';
+}
+
 export type ChwErrorCode = 'CHW_UNRESOLVED_INPUT' | 'CHW_UNRESOLVED_SCRIPT' | 'CHW_UNSUPPORTED_TX_FORM';
 
 export class ChwError extends Error {

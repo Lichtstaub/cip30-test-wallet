@@ -276,7 +276,7 @@ Each quirk reproduces one thing a real user or wallet does. The wallet answers w
 | declines the connection | `quirks: { enableRejected: true }` | `enable()` rejects with `{ code: -3 }` (APIError Refused) |
 | declines the signature | `quirks: { signRejected: true }` | `signTx` rejects with `{ code: 2 }` (TxSignError UserDeclined) |
 | declines to sign a message | `quirks: { signDataRejected: true }` | `signData` rejects with `{ code: 3 }` (DataSignError UserDeclined) |
-| sends a transaction the node refuses | `quirks: { submitFails: true }` | `submitTx` rejects with `{ code: 2 }` (TxSendError Failure), the same code a declined signature has |
+| sends a transaction the node refuses | `quirks: { submitFails: true }` | `submitTx` rejects with `{ code: 2 }` (TxSendError Failure), the same code a declined signature has. A string in place of `true` becomes the `info` |
 | never answers the signature prompt | `quirks: { signHangs: true }` | `signTx` stays pending until the test calls `wallet.release('signTx')` or `wallet.reject('signTx')` |
 | has the wallet on the other network | `networkId: 1` (dApp on a testnet) | `getNetworkId()` returns 1, addresses are mainnet addresses |
 | has a wallet that injects late | `quirks: { lateInjection: 1500 }` | `window.cardano[name]` appears after 1.5 seconds |
@@ -368,6 +368,27 @@ test('the commit spends UTxO 0 and pays back to the wallet', async ({ page, wall
 ```
 
 `test.use({ walletOptions: { ledger: { state: false } } })` keeps the configured UTxOs and stake registration, as before 0.8.0.
+
+## Seeing the node's rejection offline
+
+A node refuses a transaction whose fee is too low, whose inputs are gone or whose value does not balance, and a dApp has to show that to the user. With `ledger: { checks: true }` the wallet refuses such a transaction the same way, as `{ code: 2, info }` with the node's rule names in `info`. The dApp's builder computes its fee from the parameters it fetched, the wallet checks against its own. Raising `minFeeB` for the wallet reproduces a fee a node would refuse without touching the dApp:
+
+```ts
+test.use({ walletOptions: { ledger: { checks: true, protocolParams: { minFeeB: 1_000_000 } } } });
+
+test('the dApp shows the node rejection of a fee that is too low', async ({ page, wallet }) => {
+  await page.goto('/checkout');
+  await page.getByRole('button', { name: 'Connect' }).click();
+  await page.getByRole('button', { name: 'Pay' }).click();
+  await expect(page.getByText(/FeeTooSmallUTxO/)).toBeVisible(); // whatever your app shows for a refused submit
+
+  const [call] = await wallet.calls('submitTx');
+  expect(call!.error).toMatchObject({ code: 2, info: expect.stringContaining('FeeTooSmallUTxO') });
+  expect(await wallet.lastSubmittedTx()).toBeUndefined();
+});
+```
+
+The wallet's UTxOs stay as they were, a corrected transaction over the same inputs goes through afterwards. For a rejection without a failing transaction, `quirks: { submitFails: 'ConwayApplyTxError [...]' }` answers every `submitTx` with that string as `info`, see [User-side failures](#user-side-failures).
 
 ## A dApp that spends from a script
 

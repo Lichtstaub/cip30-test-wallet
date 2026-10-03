@@ -32,7 +32,7 @@ Coding agents start with [AGENTS.md](https://github.com/Lichtstaub/cip30-test-wa
 
 ## Not in the box yet
 
-This release is a CIP-30 subset for transaction tests plus CIP-95, including governance and script transactions. Every transaction form outside the supported set below is missing on purpose and tracked for later milestones. `submitTx` is simulated: it records the transaction, applies it to the wallet's UTxOs and stake registration, and returns its id. It never talks to a node. Fees, validity and Plutus script execution are not checked.
+This release is a CIP-30 subset for transaction tests plus CIP-95, including governance and script transactions. Every transaction form outside the supported set below is missing on purpose and may come in a later release. `submitTx` is simulated: it records the transaction, applies it to the wallet's UTxOs and stake registration, and returns its id. It never talks to a node. Fees, balance, witnesses and certificates are checked only with `walletOptions.ledger: { checks: true }`, see [Ledger checks](#ledger-checks). Plutus scripts are never run.
 
 ## Getting started
 
@@ -251,7 +251,42 @@ Errors are plain `{ code, info }` objects, as CIP-30 requires, never `Error` ins
 
 One compatibility exception: `getCollateral()` without an argument means 5 ADA. CIP-30 calls that form possible but not specified, Mesh calls it this way and Lace answers it this way. An amount of 0 or above 5 ADA is InvalidRequest. Collateral comes from pure ADA UTxOs without datum or reference script, at most three: first in configuration order, then the largest ones if that is not enough. `null` when even that does not cover the amount.
 
-State after submit: a submitted transaction spends its inputs and creates its outputs, a phase 2 invalid one spends only its collateral. `getUtxos`, `getBalance` and `getCollateral` show the result, CIP-95 reflects stake registration and unregistration certificates. In the Playwright fixture this state lives in Node for the whole test and survives reloads, navigations and origin changes. `wallet.utxos()` reads it. The journal still starts fresh with every page load. `walletOptions.ledger: { state: false }` keeps the configured UTxOs and stake registration as before 0.8.0. A spent output stays known for `signTx`. A node would refuse a second spend of it. The wallet accepts one and creates its outputs.
+State after submit: a submitted transaction spends its inputs and creates its outputs, a phase 2 invalid one spends only its collateral. `getUtxos`, `getBalance` and `getCollateral` show the result, CIP-95 reflects stake registration and unregistration certificates. In the Playwright fixture this state lives in Node for the whole test and survives reloads, navigations and origin changes. `wallet.utxos()` reads it. The journal still starts fresh with every page load. `walletOptions.ledger: { state: false }` keeps the configured UTxOs and stake registration as before 0.8.0. A spent output stays known for `signTx`. Without the ledger checks the wallet also accepts a second spend of it, which a node would refuse.
+
+## Ledger checks
+
+With `walletOptions.ledger: { checks: true }` the wallet's `submitTx` refuses a transaction a Conway node would refuse, before anything changes. The dApp receives `TxSendError` Failure, the plain object `{ code: 2, info }`, and `info` names every failed rule the way a node reports it:
+
+```text
+ConwayApplyTxError [ConwayUtxowFailure (UtxoFailure (FeeTooSmallUTxO (Mismatch (RelGTEQ) {supplied: Coin 150000, expected: Coin 170000})))]
+```
+
+Match on the rule name. Ogmios and Blockfrost wrap the same rules in formats of their own, so the whole string differs between providers. A refused transaction leaves the UTxOs, the stake registration and `wallet.utxos()` as they were, and `lastSubmittedTx()` skips it. `signTx` checks nothing, the checks run at `submitTx`.
+
+| Check | Rule a node names |
+|---|---|
+| Inputs, collateral inputs and reference inputs exist and are unspent | `BadInputsUTxO`, or only `ConwayMempoolFailure` when every spend input is already spent |
+| Inputs, withdrawals and refunds equal outputs, fee, deposits and donation, mint included | `ValueNotConservedUTxO` |
+| Fee at least the minimum from size, declared ExUnits and reference scripts | `FeeTooSmallUTxO` |
+| Size, ExUnits, output value size and minimum UTxO value | `MaxTxSizeUTxO`, `ExUnitsTooBigUTxO`, `OutputTooBigUTxO`, `BabbageOutputTooSmallUTxO` |
+| Validity interval, when `currentSlot` is set | `OutsideValidityIntervalUTxO` |
+| Network of outputs, withdrawals and the body | `WrongNetwork`, `WrongNetworkWithdrawal`, `WrongNetworkInTxBody` |
+| Collateral | `TooManyCollateralInputs`, and with redeemers `NoCollateralInputs`, `InsufficientCollateral`, `CollateralContainsNonADA`, `IncorrectTotalCollateralField`, `ScriptsNotPaidUTxO` |
+| Witnesses and scripts, native scripts evaluated | `MissingVKeyWitnessesUTXOW`, `InvalidWitnessesUTXOW`, `MissingScriptWitnessesUTXOW`, `ExtraneousScriptWitnessesUTXOW`, `ScriptWitnessNotValidatingUTXOW` |
+| Metadata hash in the body against the auxiliary data | `MissingTxBodyMetadataHash`, `MissingTxMetadata`, `ConflictingMetadataHash` |
+| Stake, pool and DRep certificates and their deposits | `StakeKeyRegisteredDELEG`, `StakeKeyNotRegisteredDELEG`, `DepositIncorrectDELEG`, `RefundIncorrectDELEG`, `StakePoolNotRegisteredOnKeyPOOL`, `ConwayDRepAlreadyRegistered`, `ConwayDRepNotRegistered`, `ConwayDRepIncorrectDeposit`, `ConwayDRepIncorrectRefund` |
+| Proposal deposits, and the account a proposal returns its deposit to is registered and on the wallet's network | `ProposalDepositIncorrect`, `ProposalReturnAccountDoesNotExist`, `ProposalProcedureNetworkIdMismatch` |
+| Reference scripts at most 200 KiB | `ConwayTxRefScriptsSizeTooBig` |
+
+Left unchecked: pool parameters (cost, reward account network, VRF key, retirement epoch), network IDs inside governance actions, the accounts of a treasury withdrawal proposal (their network and whether they are registered), duplicate certificates or proposals, withdrawal amounts against reward balances and whether the reward account is registered, a reward balance left at unregistration, whether a delegation target (pool or DRep) is registered, whether voters and governance actions exist, committee certificates, the treasury value, a validity interval reaching past what a node can map to time (`OutsideForecast`, there is no slot calendar), Plutus scripts inside the auxiliary data, metadata strings or byte strings longer than 64 bytes, anchor URLs longer than 128 bytes, the content of governance actions beyond their deposit and return account, such as the previous action id and the guardrail script hash, and everything that runs Plutus: redeemers, datums, the script data hash and `is_valid`. The value balance still counts withdrawals.
+
+The wallet's own stake key starts registered with the key deposit when `stakeRegistered` is `true`, its DRep key when `ledger.drepRegistered` is `true`. Every other credential and every pool starts unregistered, so a delegation of another wallet's stake key, the retirement of a pool the test did not register and a proposal that returns its deposit to another wallet's reward account are refused, even where a node would accept them because that account is registered on chain. The protocol parameters default to mainnet or preprod by `networkId`, recorded on 2026-09-30, the preprod values also hold for preview. `ledger.protocolParams` overrides single values, `ledger.currentSlot` sets the slot the validity interval is checked against. Every option is in [docs/fixture-api.md](docs/fixture-api.md):
+
+```ts
+test.use({ walletOptions: { ledger: { checks: true, currentSlot: 110_000_000, protocolParams: { keyDeposit: 3_000_000, priceMem: [577, 10_000] } } } });
+```
+
+A form the checks cannot judge (Byron addresses, bootstrap witnesses, the deprecated certificates 5 and 6 and everything `signTx` reports as unsupported except unknown certificate numbers, which are `APIError` InvalidRequest) makes `submitTx` raise `CHW_UNSUPPORTED_TX_FORM`, a harness diagnosis. The checks run in Node, with the fixture and with `attachWallet`. `init-script` has no Node side and refuses `checks`.
 
 ## Supported transaction forms
 

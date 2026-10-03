@@ -15,6 +15,7 @@ import { encode } from '../../src/core/cbor/encode.js';
 import { Tagged, type CborValue } from '../../src/core/cbor/decode.js';
 import { parseTransaction, type TxInput } from '../../src/core/cbor/tx.js';
 import { bytesToHex, concat, hexToBytes } from '../../src/core/bytes.js';
+import type { Utxo } from '../../src/core/ledger.js';
 import { syntheticOwnedUtxo } from '../../src/page/install.js';
 
 export interface BuildTxOptions {
@@ -33,6 +34,9 @@ export interface BuildTxOptions {
   /** The is_valid flag of the transaction, true when left out. */
   isValid?: boolean;
 }
+
+/** The outpoints of these UTxOs as a tag 258 set, for the input fields of extraBodyEntries. */
+export const outpoints = (...utxos: Utxo[]) => new Tagged(258n, utxos.map((u) => [u.input.txId, u.input.index]));
 
 export function buildTx(opts: BuildTxOptions): string {
   const set = (items: CborValue[]) => (opts.plainArraySets ? items : new Tagged(258n, items));
@@ -66,10 +70,10 @@ export function standardUnsignedTx(walletName: string, address: Uint8Array = TES
   return buildTx({ inputs: [utxo.input], outputs: [{ address, lovelace: 9_800_000n }], fee: 200_000n });
 }
 
-/** Replaces the witness set of a transaction with the given one, keeping the body bytes exactly. */
+/** Replaces the witness set of a transaction with the given one, keeping the body bytes and the is_valid flag exactly. */
 export function spliceWitnessSet(txHex: string, witnessSetHex: string): string {
-  const { bodyBytes } = parseTransaction(hexToBytes(txHex));
-  return bytesToHex(concat(Uint8Array.of(0x84), bodyBytes, hexToBytes(witnessSetHex), encode(true), encode(null)));
+  const { bodyBytes, isValid } = parseTransaction(hexToBytes(txHex));
+  return bytesToHex(concat(Uint8Array.of(0x84), bodyBytes, hexToBytes(witnessSetHex), encode(isValid), encode(null)));
 }
 
 /** Hex vkeys of a witness set, in witness order. */

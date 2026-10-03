@@ -81,6 +81,20 @@ describe('state after submit', () => {
     expect(ledger.submitted).toHaveLength(2);
   });
 
+  it('unspent finds owned and foreign outputs, never a spent one, while resolveInput still does', async () => {
+    const a = mine('unspent-owned');
+    const f: Utxo = { input: syntheticInput('unspent-foreign', 0n), address: otherAddress, lovelace: 3_000_000n };
+    const ledger = new MemoryLedger({ owned: [a], foreign: [f], wallet });
+    expect(ledger.unspent(a.input)).toEqual(a);
+    expect(ledger.unspent(f.input)).toEqual(f);
+    expect(ledger.unspent(syntheticInput('unspent-nowhere', 0n))).toBeUndefined();
+    await ledger.submit(hexToBytes(buildTx({ inputs: [a.input, f.input], outputs: [{ address: myAddress, lovelace: 12_800_000n }], fee: 200_000n })));
+    expect(ledger.unspent(a.input)).toBeUndefined();
+    expect(ledger.unspent(f.input)).toBeUndefined();
+    expect(await ledger.resolveInput(a.input)).toEqual(a);
+    expect(await ledger.resolveInput(f.input)).toEqual(f);
+  });
+
   it('state: false keeps the configured UTxOs', async () => {
     const a = mine('state-off');
     const ledger = new MemoryLedger({ owned: [a], wallet, state: false });

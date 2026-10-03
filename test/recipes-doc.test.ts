@@ -12,10 +12,14 @@ import { chwProvider, enableChw, testConfig } from './helpers/page.js';
 const doc = readFileSync('docs/recipes.md', 'utf8');
 const table = doc.slice(doc.indexOf('## User-side failures'), doc.indexOf('## Reading the journal'));
 
-function promisedCode(quirk: string): number {
-  const row = table.split('\n').find((line) => line.includes(`quirks: { ${quirk}: true }`));
+function tableRow(quirk: string): string {
+  const row = table.split('\n').find((line) => line.includes(`quirks: { ${quirk}: `));
   expect(row, `a table row for ${quirk}`).toBeDefined();
-  return Number(/\{ code: (-?\d+) \}/.exec(row!)![1]);
+  return row!;
+}
+
+function promisedCode(quirk: string): number {
+  return Number(/\{ code: (-?\d+) \}/.exec(tableRow(quirk))![1]);
 }
 
 describe('docs/recipes.md user-side failure table', () => {

@@ -1,0 +1,62 @@
+// Rule failures in the shape a Conway node reports them on submit:
+// ConwayApplyTxError with a list of ConwayLedgerPredFailure (Conway.hs), each one
+// wrapped in the constructors of the rules it passed through (Rules/Ledger.hs,
+// Rules/Utxow.hs, Rules/Certs.hs, Rules/Cert.hs). The details are readable, they
+// do not reproduce Haskell Show exactly. A dApp should look at the rule name.
+
+export interface Failure {
+  path: readonly string[];
+  rule: string;
+  detail?: string;
+}
+
+export const PATH = {
+  UTXO: ['ConwayUtxowFailure', 'UtxoFailure'],
+  UTXOW: ['ConwayUtxowFailure'],
+  DELEG: ['ConwayCertsFailure', 'CertFailure', 'DelegFailure'],
+  POOL: ['ConwayCertsFailure', 'CertFailure', 'PoolFailure'],
+  GOVCERT: ['ConwayCertsFailure', 'CertFailure', 'GovCertFailure'],
+  GOV: ['ConwayGovFailure'],
+  LEDGER: [],
+} as const;
+
+/** Pushes a failure under one path onto failures. A failure without detail has no detail key. */
+export function failer(path: readonly string[], failures: Failure[]): (rule: string, detail?: string) => void {
+  return (rule, detail) => {
+    failures.push(detail === undefined ? { path, rule } : { path, rule, detail });
+  };
+}
+
+/** '[a, b]', the bracketed list the details use for sets and lists. */
+export function list(items: Iterable<string>): string {
+  return `[${[...items].join(', ')}]`;
+}
+
+/** 'Coin 5'. */
+export function coin(c: bigint): string {
+  return `Coin ${c}`;
+}
+
+/** Mainnet for 1, Testnet for 0, as Show writes a Network. */
+export function network(id: bigint | number): string {
+  const n = BigInt(id);
+  return n === 1n ? 'Mainnet' : n === 0n ? 'Testnet' : `Network ${id}`;
+}
+
+/** 'Mismatch (RelGTEQ) {supplied: X, expected: Y}', the Show of Mismatch in BaseTypes.hs. */
+export function mismatch(relation: 'RelEQ' | 'RelGTEQ' | 'RelLTEQ', supplied: string, expected: string): string {
+  return `Mismatch (${relation}) {supplied: ${supplied}, expected: ${expected}}`;
+}
+
+/** 'ConwayUtxowFailure (UtxoFailure (FeeTooSmallUTxO (<detail>)))'. A detail that is a quoted string stays without parentheses, as Show writes a Text argument. */
+export function renderFailure(f: Failure): string {
+  let text = f.rule;
+  if (f.detail !== undefined) text += f.detail.startsWith('"') ? ` ${f.detail}` : ` (${f.detail})`;
+  for (const wrapper of [...f.path].reverse()) text = `${wrapper} (${text})`;
+  return text;
+}
+
+/** 'ConwayApplyTxError [a, b]'. */
+export function formatFailures(failures: readonly Failure[]): string {
+  return `ConwayApplyTxError [${failures.map(renderFailure).join(', ')}]`;
+}

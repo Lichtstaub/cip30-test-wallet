@@ -63,8 +63,14 @@ export interface QuirkConfig {
   signHangs?: boolean;
   /** signData() and cip95.signData() throw DataSignError UserDeclined, like a user cancelling the message prompt. */
   signDataRejected?: boolean;
-  /** submitTx() throws TxSendError Failure, like a node refusing the transaction. */
-  submitFails?: boolean;
+  /**
+   * submitTx() throws TxSendError Failure, like a node refusing the transaction.
+   * true gives the info 'the node refused the transaction', a non-empty string
+   * becomes the info itself, for reproducing a node message with its rule names.
+   * The ledger never sees the transaction, so its state stays as it was. A
+   * malformed transaction is still InvalidRequest. Undefined or false switches it off.
+   */
+  submitFails?: boolean | string;
   /** The wallet does not support CIP-95: no extension announced, no namespace, like an older wallet. */
   noCip95?: boolean;
   /** supportedExtensions and getExtensions claim CIP-95, but the enabled api has no cip95 namespace. */
@@ -75,6 +81,12 @@ export interface QuirkConfig {
   coseAddress?: 'bareKeyHash';
   /** The api has neither getCollateral nor experimental.getCollateral, which the CIP-30 deprecation allows. Read at enable(). */
   noCollateral?: boolean;
+}
+
+/** Why value cannot be quirks.submitFails, undefined when it can. Undefined and false are fine, they switch the quirk off. */
+export function submitFailsProblem(value: unknown): string | undefined {
+  if (value === undefined || value === false || value === true || (typeof value === 'string' && value !== '')) return undefined;
+  return `quirks.submitFails must be true or a non-empty string, the info the dApp receives, got ${String(value)}`;
 }
 
 export type HangableMethod = 'signTx';
@@ -95,9 +107,11 @@ export interface PageConfig {
   /**
    * Ledger behaviour. state: apply every submitted transaction (default true).
    * binding: name of a host function the page calls instead of keeping its own
-   * ledger, set by the Playwright fixture. Absent means both defaults.
+   * ledger, set by the Playwright fixture. checks: the host ledger checks every
+   * submitted transaction, the page only warns when it has no binding to reach
+   * it. Absent means the defaults.
    */
-  ledger?: { state: boolean; binding?: string };
+  ledger?: { state: boolean; binding?: string; checks?: boolean };
 }
 
 export interface JournalEntry {
