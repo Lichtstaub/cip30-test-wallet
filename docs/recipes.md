@@ -109,7 +109,7 @@ test('pays 5 ADA with a transaction the wallet really signed', async ({ page, wa
 });
 ```
 
-When the user declines, `signAndSubmit` rejects with an Effect `FiberFailure` whose message ends in `[object Object]`, see [known consumer issues](known-consumer-issues.md#evolution-sdk-a-declined-signature-hides-its-cip-30-code). The CIP-30 code is still inside, under an Effect symbol:
+When the user declines, `sign` and `signAndSubmit` reject with an Effect `FiberFailure` whose message ends in `[object Object]`, see [known consumer issues](known-consumer-issues.md#evolution-sdk-a-declined-signature-hides-its-cip-30-code). The CIP-30 code is still inside, under an Effect symbol. Sign and submit in two steps, so the code is only read for the signing call: code 2 means UserDeclined from `signTx` but TxSendError Failure from `submitTx`.
 
 ```ts
 // The CIP-30 code of a wallet error, also inside an Effect FiberFailure.
@@ -119,12 +119,15 @@ function cip30Code(e: any): number | undefined {
   return undefined;
 }
 
+let signed;
 try {
-  await built.signAndSubmit();
+  signed = await built.sign();
 } catch (e) {
-  if (cip30Code(e) === 2) showMessage('You declined the signature in your wallet.');
-  else throw e;
+  if (cip30Code(e) === 2) return showMessage('You declined the signature in your wallet.');
+  throw e;
 }
+// A failed submit is a failure, never a decline.
+const txHash = TransactionHash.toHex(await signed.submit());
 ```
 
 Or sign with the wallet directly, then the rejection is the CIP-30 object itself:
@@ -133,14 +136,15 @@ Or sign with the wallet directly, then the rejection is the CIP-30 object itself
 import { Transaction } from '@evolution-sdk/evolution';
 
 const unsigned = Transaction.toCBORHex(await built.toTransaction());
+let witnessSet: string;
 try {
-  const witnessSet = await api.signTx(unsigned, false);
-  const signed = Transaction.addVKeyWitnessesHex(unsigned, witnessSet);
-  // hand `signed` to api.submitTx or to your backend
+  witnessSet = await api.signTx(unsigned, false);
 } catch (e) {
-  if ((e as { code?: unknown } | null)?.code === 2) showMessage('You declined the signature in your wallet.');
-  else throw e;
+  if ((e as { code?: unknown } | null)?.code === 2) return showMessage('You declined the signature in your wallet.');
+  throw e;
 }
+const signed = Transaction.addVKeyWitnessesHex(unsigned, witnessSet);
+// Hand `signed` to api.submitTx or to your backend. A code 2 from submitTx is TxSendError Failure, the node refused the transaction.
 ```
 
 ## Mesh
@@ -174,7 +178,7 @@ test('pays 5 ADA with Mesh', async ({ page, wallet }) => {
 });
 ```
 
-A declined signature reaches the dApp as the CIP-30 object `{ code: 2, info }`. The browser bundle needs polyfills for Node's `Buffer` and `process`, a bundler plugin for Node built-ins covers both.
+A declined signature reaches the dApp as the CIP-30 object `{ code: 2, info }` from `wallet.signTx`. Code 2 from `wallet.submitTx` is TxSendError Failure, the node refused the transaction, so map the code together with the call it came from. The browser bundle needs polyfills for Node's `Buffer` and `process`, a bundler plugin for Node built-ins covers both.
 
 ## Lucid Evolution
 
@@ -206,7 +210,7 @@ test('pays 5 ADA with Lucid Evolution', async ({ page, wallet }) => {
 });
 ```
 
-A declined signature becomes a `(FiberFailure) TxSignerError` with the message `[object Object]`, the same wrapping as in Evolution SDK. The `cip30Code` helper from the Evolution recipe reads the code from it. Alternatively `tx.sign.withWallet().completeSafe()` returns the failure instead of throwing, its `left.cause` is the CIP-30 object. The browser bundle embeds WebAssembly and needs polyfills for Node built-ins. A page with a Content Security Policy has to allow `'wasm-unsafe-eval'` in `script-src`, plain `'unsafe-eval'` is not needed.
+A declined signature becomes a `(FiberFailure) TxSignerError` with the message `[object Object]`, the same wrapping as in Evolution SDK. The `cip30Code` helper from the Evolution recipe reads the code from it. Alternatively `tx.sign.withWallet().completeSafe()` returns the failure instead of throwing, its `left.cause` is the CIP-30 object. Read the code only around the signing call: `signed.submit()` goes through the wallet's `submitTx`, where code 2 is TxSendError Failure. The browser bundle embeds WebAssembly and needs polyfills for Node built-ins. A page with a Content Security Policy has to allow `'wasm-unsafe-eval'` in `script-src`, plain `'unsafe-eval'` is not needed.
 
 ## Protocol parameters offline
 
