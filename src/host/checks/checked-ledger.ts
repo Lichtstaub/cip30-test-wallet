@@ -93,8 +93,8 @@ export class CheckedLedger implements Ledger {
       );
     }
     // Babbage/Rules/Utxos.hs runs the scripts only when nothing else failed (whenFailureFree). Without
-    // a script and with is_valid true there is nothing to run, and scalus is never loaded.
-    if (failures.length === 0 && (needs.length > 0 || !ctx.parsed.isValid)) {
+    // a script evaluateScripts runs nothing and never loads scalus.
+    if (failures.length === 0) {
       failures.push(...phaseTwoFailures(ctx, needs, await evaluateScripts(ctx, needs)));
     }
     if (failures.length > 0) throw txSendError(TxSendErrorCode.Failure, formatFailures(failures));

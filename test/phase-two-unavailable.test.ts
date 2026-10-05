@@ -2,20 +2,12 @@
 // failure names no needed redeemer, in its own file: vi.doMock and vi.resetModules replace the module graph, and
 // phase-two.ts is imported afresh after each.
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { baseAddressBytes } from '../src/core/addresses.js';
-import { keyHash, publicKey } from '../src/core/keys.js';
-import type { Utxo } from '../src/core/ledger.js';
-import { deriveAccount } from '../src/derive/index.js';
 import { plutusNeeds } from '../src/host/checks/plutus-purposes.js';
 import { checkContext } from './helpers/check-context.js';
 import { plutusScript } from './helpers/plutus-fixtures.js';
-import { lockedUtxo, plutusSpend } from './helpers/plutus-spend.js';
-import { syntheticInput } from './helpers/synthetic.js';
-import { MNEMONIC } from './fixtures/vectors.js';
+import { lockedUtxo, myWallet, plutusSpend } from './helpers/plutus-spend.js';
 
-const me = deriveAccount(MNEMONIC);
-const myAddress = baseAddressBytes(0, keyHash(publicKey(me.payment)), keyHash(publicKey(me.stake)));
-const wallet: Utxo = { input: syntheticInput('unavailable-wallet', 0n), address: myAddress, lovelace: 50_000_000n };
+const { myAddress, wallet } = myWallet('unavailable-wallet');
 const script = plutusScript('v3_always_succeeds');
 const locked = lockedUtxo(script, 'unavailable-locked');
 const ctx = checkContext(plutusSpend({ spends: [{ utxo: locked, script }], wallet, changeAddress: myAddress }), [wallet, locked]);

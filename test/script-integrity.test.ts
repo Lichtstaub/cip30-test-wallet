@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import CSL from '@emurgo/cardano-serialization-lib-nodejs';
-import { Address, Assets, Data, InlineDatum, PlutusV3, ScriptHash, TransactionHash, UTxO } from '@evolution-sdk/evolution';
+import { Data, PlutusV3, ScriptHash } from '@evolution-sdk/evolution';
 import { blake2b } from '@noble/hashes/blake2.js';
 import { bytesToHex, concat, hexToBytes } from '../src/core/bytes.js';
 import { encode } from '../src/core/cbor/encode.js';
@@ -8,18 +8,17 @@ import type { Utxo } from '../src/core/ledger.js';
 import { plutusNeeds } from '../src/host/checks/plutus-purposes.js';
 import { expectedScriptDataHash, languageViews } from '../src/host/checks/script-integrity.js';
 import { DEFAULT_COST_MODELS, type CostModels } from '../src/host/cost-models.js';
-import { DEFAULT_PROTOCOL_PARAMS } from '../src/host/protocol-params.js';
-import { buildTx, spliceWitnessSet, TEST_ADDRESS } from './helpers/build-tx.js';
-import { checkContext } from './helpers/check-context.js';
-import { evolutionBuild, evolutionUtxo, fixedBudgetEvaluator } from './helpers/evolution-build.js';
+import { buildTx, redeemerMap, spliceWitnessSet, TEST_ADDRESS } from './helpers/build-tx.js';
+import { checkContext, paramsWith } from './helpers/check-context.js';
+import { big } from './helpers/csl.js';
+import { evolutionBuild, evolutionLocked, evolutionUtxo, fixedBudgetEvaluator } from './helpers/evolution-build.js';
 import { plutusScript } from './helpers/plutus-fixtures.js';
-import { scriptAddress, syntheticInput } from './helpers/synthetic.js';
+import { inlineDatum, lockedUtxo } from './helpers/plutus-spend.js';
+import { syntheticInput } from './helpers/synthetic.js';
 
 const ALWAYS = plutusScript('v3_always_succeeds');
 
-const big = (n: bigint | number) => CSL.BigNum.from_str(n.toString());
 const own: Utxo = { input: syntheticInput('integrity-own', 0n), address: TEST_ADDRESS, lovelace: 50_000_000n };
-const paramsWith = (costModels: Partial<CostModels>) => ({ ...DEFAULT_PROTOCOL_PARAMS[0], costModels: { ...DEFAULT_COST_MODELS, ...costModels } });
 const expectedOf = (ctx: ReturnType<typeof checkContext>) => expectedScriptDataHash(ctx, plutusNeeds(ctx));
 
 /** A CSL cost model with exactly these parameters. */
@@ -74,16 +73,8 @@ describe('languageViews', () => {
 describe('expectedScriptDataHash', () => {
   it('equals body key 11 of a Plutus V3 spend Evolution built with the preprod cost models', async () => {
     const plutus = new PlutusV3.PlutusV3({ bytes: ALWAYS.bytes });
-    const hash = ScriptHash.fromScript(plutus);
-    const lockedInput = syntheticInput('integrity-locked', 0n);
-    const locked: Utxo = { input: lockedInput, address: scriptAddress(ALWAYS.hash), lovelace: 5_000_000n, datum: { kind: 'inline', cbor: hexToBytes('01') } };
-    const lockedEvo = new UTxO.UTxO({
-      transactionId: TransactionHash.fromBytes(lockedInput.txId),
-      index: 0n,
-      address: new Address.Address({ networkId: 0, paymentCredential: hash }),
-      assets: Assets.fromLovelace(5_000_000n),
-      datumOption: new InlineDatum.InlineDatum({ data: Data.int(1n) }),
-    });
+    const locked = lockedUtxo(ALWAYS, 'integrity-locked', inlineDatum(1n));
+    const lockedEvo = evolutionLocked(locked, ScriptHash.fromScript(plutus), Data.int(1n));
     const tx = await evolutionBuild(
       (b) => b.collectFrom({ inputs: [lockedEvo], redeemer: Data.constr(0n, []) }).attachScript({ script: plutus }),
       TEST_ADDRESS,
@@ -101,7 +92,7 @@ describe('expectedScriptDataHash', () => {
   ] as const)('equals CSL.hash_script_data for a Plutus %s spend with a datum hash and its witness datum', (_name, fixture, language, key) => {
     const script = CSL.PlutusScript.from_bytes_with_version(CSL.PlutusData.new_bytes(fixture.bytes).to_bytes(), language());
     const datum = CSL.PlutusData.new_integer(CSL.BigInt.from_str('42'));
-    const locked: Utxo = { input: syntheticInput(`integrity-${key}`, 0n), address: scriptAddress(fixture.hash), lovelace: 5_000_000n, datum: { kind: 'hash', hash: CSL.hash_plutus_data(datum).to_bytes() } };
+    const locked = lockedUtxo(fixture, `integrity-${key}`, { kind: 'hash', hash: CSL.hash_plutus_data(datum).to_bytes() });
     const inputs = CSL.TransactionInputs.new();
     inputs.add(CSL.TransactionInput.new(CSL.TransactionHash.from_bytes(locked.input.txId), 0));
     const outputs = CSL.TransactionOutputs.new();
@@ -143,10 +134,10 @@ describe('expectedScriptDataHash', () => {
   });
 
   it('takes the languages from needed and provided scripts, with the cost models of the parameters', async () => {
-    const locked: Utxo = { input: syntheticInput('integrity-views', 0n), address: scriptAddress(ALWAYS.hash), lovelace: 5_000_000n, datum: { kind: 'inline', cbor: hexToBytes('01') } };
-    const witnessSet = new Map<bigint, unknown>([[7n, [ALWAYS.bytes]], [5n, new Map([[[0n, 0n], [0n, [1n, 1n]]]])]]);
+    const locked = lockedUtxo(ALWAYS, 'integrity-views', inlineDatum(1n));
+    const witnessSet = new Map<bigint, unknown>([[7n, [ALWAYS.bytes]], [5n, redeemerMap([0n, 0n])]]);
     const tx = buildTx({ inputs: [locked.input], outputs: [], fee: 200_000n, witnessSet });
-    const redeemers = bytesToHex(encode(new Map([[[0n, 0n], [0n, [1n, 1n]]]]) as never));
+    const redeemers = bytesToHex(encode(redeemerMap([0n, 0n]) as never));
     const views = (models: CostModels) => bytesToHex(languageViews(new Set([3]), models));
     expect(bytesToHex(expectedOf(checkContext(tx, [locked]))!)).toBe(bytesToHex(blake2b(hexToBytes(redeemers + views(DEFAULT_COST_MODELS)), { dkLen: 32 })));
     const other = paramsWith({ PlutusV3: [1n, 2n, 3n] });

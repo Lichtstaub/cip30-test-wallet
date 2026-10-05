@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import CSL from '@emurgo/cardano-serialization-lib-nodejs';
-import { Address, Assets, Credential, Data, InlineDatum, PlutusV3, ScriptHash, TransactionHash, UTxO } from '@evolution-sdk/evolution';
+import { Credential, Data, PlutusV3, ScriptHash } from '@evolution-sdk/evolution';
 import { bytesToHex, concat, hexToBytes } from '../src/core/bytes.js';
 import { Tagged } from '../src/core/cbor/decode.js';
 import { encode } from '../src/core/cbor/encode.js';
@@ -10,10 +10,12 @@ import { scriptHash } from '../src/core/scripts.js';
 import type { CheckContext } from '../src/host/checks/context.js';
 import { plutusNeeds } from '../src/host/checks/plutus-purposes.js';
 import { redeemerFailures } from '../src/host/checks/plutus-rules.js';
-import { buildTx, spliceWitnessSet, TEST_ADDRESS } from './helpers/build-tx.js';
+import { buildTx, redeemerMap, spliceWitnessSet, TEST_ADDRESS } from './helpers/build-tx.js';
+import { big } from './helpers/csl.js';
 import { checkContext } from './helpers/check-context.js';
-import { evolutionBuild, evolutionUtxo, fixedBudgetEvaluator } from './helpers/evolution-build.js';
+import { evolutionBuild, evolutionLocked, evolutionUtxo, fixedBudgetEvaluator } from './helpers/evolution-build.js';
 import { plutusScript } from './helpers/plutus-fixtures.js';
+import { inlineDatum } from './helpers/plutus-spend.js';
 import { hash28, scriptAddress, syntheticInput } from './helpers/synthetic.js';
 
 const ALWAYS = plutusScript('v3_always_succeeds');
@@ -23,11 +25,9 @@ const ALWAYS_HASH = ALWAYS.hash;
 const plutus = new PlutusV3.PlutusV3({ bytes: ALWAYS.bytes });
 
 const own: Utxo = { input: syntheticInput('purposes-own', 0n), address: TEST_ADDRESS, lovelace: 50_000_000n };
-const inlineOne = { kind: 'inline' as const, cbor: hexToBytes('01') };
-const lockedAt = (input: TxInput, hash: Uint8Array = ALWAYS_HASH): Utxo => ({ input, address: scriptAddress(hash), lovelace: 5_000_000n, datum: inlineOne });
+const lockedAt = (input: TxInput, hash: Uint8Array = ALWAYS_HASH): Utxo => ({ input, address: scriptAddress(hash), lovelace: 5_000_000n, datum: inlineDatum(1n) });
 /** Witness set keys 3, 6 and 7 with the V1, V2 and V3 fixture scripts. */
 const allPlutus = (): Array<[bigint, unknown]> => [[3n, [V1.bytes]], [6n, [V2.bytes]], [7n, [ALWAYS.bytes]]];
-const redeemerMap = (...pointers: Array<[bigint, bigint]>) => new Map(pointers.map(([tag, index]) => [[tag, index], [0n, [1n, 1n]]]));
 const anchor = ['https://example.com/a.json', new Uint8Array(32)];
 
 const pointers = (ctx: CheckContext) => plutusNeeds(ctx).map((n) => [n.tag, n.index, bytesToHex(n.scriptHash)]);
@@ -45,14 +45,7 @@ describe('plutusNeeds: spend', () => {
   const high = lockedAt({ txId: new Uint8Array(32).fill(0xee), index: 0n });
   const low = lockedAt({ txId: new Uint8Array(32).fill(0x01), index: 1n });
   const lowZero = lockedAt({ txId: new Uint8Array(32).fill(0x01), index: 0n });
-  const evo = (u: Utxo) =>
-    new UTxO.UTxO({
-      transactionId: TransactionHash.fromBytes(u.input.txId),
-      index: u.input.index,
-      address: new Address.Address({ networkId: 0, paymentCredential: ScriptHash.fromScript(plutus) }),
-      assets: Assets.fromLovelace(5_000_000n),
-      datumOption: new InlineDatum.InlineDatum({ data: Data.int(1n) }),
-    });
+  const evo = (u: Utxo) => evolutionLocked(u, ScriptHash.fromScript(plutus), Data.int(1n));
 
   it('counts the set of all spend inputs, the redeemers of an Evolution spend stay valid in unsorted wire order', async () => {
     const tx = await evolutionBuild(
@@ -72,7 +65,9 @@ describe('plutusNeeds: spend', () => {
     expect(pointers(sorted)).toEqual(expected);
     expect(redeemerRules(sorted)).toEqual([]);
     // The low input carries redeemer 8, the high one 7. Evolution writes the map in collectFrom order.
-    expect(sorted.facts.redeemerData.map((r) => [r.tag, r.index, bytesToHex(r.data)])).toEqual([
+    const wire = CSL.Transaction.from_hex(tx).witness_set().redeemers()!;
+    const redeemers = Array.from({ length: wire.len() }, (_, i) => wire.get(i));
+    expect(redeemers.map((r) => [BigInt(r.tag().kind()), BigInt(r.index().to_str()), r.data().to_hex()])).toEqual([
       [0n, 1n, '07'],
       [0n, 0n, '08'],
     ]);
@@ -118,7 +113,7 @@ describe('plutusNeeds: reward, where the ledger order differs from the wire orde
     const tx = await evolutionBuild(
       (b) =>
         b
-          .withdraw({ stakeCredential: Credential.makeKeyHash(new Uint8Array(28).fill(0xff)), amount: 0n })
+          .withdraw({ stakeCredential: Credential.makeKeyHash(hash28(0xff)), amount: 0n })
           .withdraw({ stakeCredential: Credential.makeScriptHash(ALWAYS_HASH), amount: 0n, redeemer: Data.constr(0n, []) })
           .attachScript({ script: plutus }),
       TEST_ADDRESS,
@@ -138,7 +133,6 @@ describe('plutusNeeds: reward, where the ledger order differs from the wire orde
     withdrawals.add(CSL.RewardAddress.new(0, CSL.Credential.from_keyhash(CSL.Ed25519KeyHash.from_bytes(new Uint8Array(28)))), CSL.BigNum.zero());
     const redeemer = CSL.Redeemer.new(CSL.RedeemerTag.new_reward(), CSL.BigNum.zero(), CSL.PlutusData.new_empty_constr_plutus_data(CSL.BigNum.zero()), CSL.ExUnits.new(CSL.BigNum.from_str('1000'), CSL.BigNum.from_str('1000')));
     withdrawals.add_with_plutus_witness(CSL.RewardAddress.new(0, CSL.Credential.from_scripthash(script.hash())), CSL.BigNum.zero(), CSL.PlutusWitness.new_without_datum(script, redeemer));
-    const big = (n: number) => CSL.BigNum.from_str(String(n));
     const config = CSL.TransactionBuilderConfigBuilder.new()
       .fee_algo(CSL.LinearFee.new(big(44), big(155_381)))
       .pool_deposit(big(500_000_000))

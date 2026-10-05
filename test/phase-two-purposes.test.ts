@@ -4,12 +4,10 @@
 // ledger gives its redeemer (Conway UTxO.hs getConwayScriptsNeeded).
 import { blake2b } from '@noble/hashes/blake2.js';
 import { describe, expect, it } from 'vitest';
-import { baseAddressBytes } from '../src/core/addresses.js';
 import { bytesToHex, concat, hexToBytes } from '../src/core/bytes.js';
 import { encode } from '../src/core/cbor/encode.js';
 import { keyHash, publicKey } from '../src/core/keys.js';
 import { encodeOutput, type Utxo } from '../src/core/ledger.js';
-import { deriveAccount } from '../src/derive/index.js';
 import { renderFailure } from '../src/host/checks/failure.js';
 import { checkTransaction } from '../src/host/checks/index.js';
 import { evaluateScripts, phaseTwoFailures } from '../src/host/checks/phase-two.js';
@@ -18,13 +16,10 @@ import { DEFAULT_COST_MODELS } from '../src/host/cost-models.js';
 import { outpoints } from './helpers/build-tx.js';
 import { checkContext } from './helpers/check-context.js';
 import { plutusScript } from './helpers/plutus-fixtures.js';
-import { inlineDatum, lockedUtxo, scriptWitnesses, UNIT_DATA, withVKeys } from './helpers/plutus-spend.js';
+import { inlineDatum, lockedUtxo, myWallet, scriptWitnesses, UNIT_DATA, withVKeys } from './helpers/plutus-spend.js';
 import { syntheticInput } from './helpers/synthetic.js';
-import { MNEMONIC } from './fixtures/vectors.js';
 
-const me = deriveAccount(MNEMONIC);
-const myAddress = baseAddressBytes(0, keyHash(publicKey(me.payment)), keyHash(publicKey(me.stake)));
-const wallet: Utxo = { input: syntheticInput('purposes-wallet', 0n), address: myAddress, lovelace: 50_000_000n };
+const { me, myAddress, wallet } = myWallet('purposes-wallet');
 const V3 = plutusScript('v3_always_succeeds');
 const V2 = plutusScript('v2_always_succeeds');
 const EX_UNITS = [100_000n, 10_000_000n];

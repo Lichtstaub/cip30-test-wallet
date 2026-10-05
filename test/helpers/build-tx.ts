@@ -36,6 +36,9 @@ export interface BuildTxOptions {
 }
 
 /** The outpoints of these UTxOs as a tag 258 set, for the input fields of extraBodyEntries. */
+/** Witness set key 5 in the Conway map form: a redeemer for each (tag, index) pointer, data 0 and ExUnits 1 and 1. */
+export const redeemerMap = (...pointers: Array<[bigint, bigint]>) => new Map(pointers.map(([tag, index]) => [[tag, index], [0n, [1n, 1n]]]));
+
 export const outpoints = (...utxos: Utxo[]) => new Tagged(258n, utxos.map((u) => [u.input.txId, u.input.index]));
 
 export function buildTx(opts: BuildTxOptions): string {

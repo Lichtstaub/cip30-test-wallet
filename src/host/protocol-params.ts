@@ -84,11 +84,16 @@ function show(value: unknown): string {
   return String(value);
 }
 
+/** A bigint, a safe integer number or a string of these digits as bigint, undefined for anything else. */
+function coerceInteger(value: unknown, digits: RegExp): bigint | undefined {
+  if (typeof value === 'bigint') return value;
+  if (typeof value === 'number' && Number.isSafeInteger(value)) return BigInt(value);
+  if (typeof value === 'string' && digits.test(value)) return BigInt(value);
+  return undefined;
+}
+
 function parseInteger(value: unknown, what: string): bigint {
-  let n: bigint | undefined;
-  if (typeof value === 'bigint') n = value;
-  else if (typeof value === 'number' && Number.isSafeInteger(value)) n = BigInt(value);
-  else if (typeof value === 'string' && /^\d+$/.test(value)) n = BigInt(value);
+  const n = coerceInteger(value, /^\d+$/);
   if (n === undefined || n < 0n || n > MAX_UINT64) {
     throw new Error(`${what} must be a non-negative integer as number, bigint or decimal string, got ${show(value)}`);
   }
@@ -102,10 +107,7 @@ function parseCostModel(value: unknown, what: string): bigint[] {
   if (!Array.isArray(value) || value.length === 0) throw new Error(`${what} must be a non-empty array of integers, got ${show(value)}`);
   // Array.from visits holes too, a sparse array fails on its first hole.
   return Array.from(value as unknown[], (entry, i) => {
-    let n: bigint | undefined;
-    if (typeof entry === 'bigint') n = entry;
-    else if (typeof entry === 'number' && Number.isSafeInteger(entry)) n = BigInt(entry);
-    else if (typeof entry === 'string' && /^-?\d+$/.test(entry)) n = BigInt(entry);
+    const n = coerceInteger(entry, /^-?\d+$/);
     if (n === undefined || n < MIN_INT64 || n > MAX_INT64) {
       throw new Error(`${what}[${i}] must be an integer from -2^63 to 2^63 - 1 as number, bigint or decimal string, got ${show(entry)}`);
     }

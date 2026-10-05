@@ -27,7 +27,7 @@ import { buildTx, outpoints, spliceWitnessSet } from './helpers/build-tx.js';
 import { budgetEvaluator, evolutionBuild, evolutionUtxo, fixedBudgetEvaluator } from './helpers/evolution-build.js';
 import { enableChw, pageWith, rejectionOf } from './helpers/page.js';
 import { plutusScript, type PlutusFixture } from './helpers/plutus-fixtures.js';
-import { inlineDatum, lockedUtxo, plutusSpend, scriptWitnesses, UNIT_DATA, withVKeys } from './helpers/plutus-spend.js';
+import { foreignConfig, inlineDatum, lockedUtxo, plutusSpend, scriptWitnesses, UNIT_DATA, withVKeys } from './helpers/plutus-spend.js';
 import { syntheticInput } from './helpers/synthetic.js';
 
 type DemoTx = { unsignedHex: string; bodyEndHex: number };
@@ -127,9 +127,6 @@ describe('a rejected transaction', () => {
     expect(await snapshot(ledger)).toEqual(before);
   });
 });
-
-/** walletOptions.foreignUtxos entry for a UTxO without datum or reference script. */
-const foreignConfig = (u: Utxo) => ({ txId: bytesToHex(u.input.txId), index: Number(u.input.index), addressHex: bytesToHex(u.address), lovelace: Number(u.lovelace) });
 
 /** A UTxO at a script address, known to the wallet's ledger as foreign and to Evolution as available. */
 function lockedBy(hash: ScriptHash.ScriptHash, seed: string) {

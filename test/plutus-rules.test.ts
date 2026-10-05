@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import CSL from '@emurgo/cardano-serialization-lib-nodejs';
-import { Address, Assets, Data, InlineDatum, PlutusV3, ScriptHash, TransactionHash, UTxO } from '@evolution-sdk/evolution';
+import { Data, PlutusV3, ScriptHash } from '@evolution-sdk/evolution';
 import { blake2b } from '@noble/hashes/blake2.js';
 import { bytesToHex, concat, hexToBytes } from '../src/core/bytes.js';
 import { Tagged } from '../src/core/cbor/decode.js';
@@ -12,13 +12,14 @@ import { PATH, type Failure } from '../src/host/checks/failure.js';
 import { plutusNeeds } from '../src/host/checks/plutus-purposes.js';
 import { collectFailures, datumFailures, redeemerFailures, scriptIntegrityFailures } from '../src/host/checks/plutus-rules.js';
 import { expectedScriptDataHash } from '../src/host/checks/script-integrity.js';
-import { DEFAULT_COST_MODELS, type CostModels } from '../src/host/cost-models.js';
+import { DEFAULT_COST_MODELS } from '../src/host/cost-models.js';
 import { DEFAULT_PROTOCOL_PARAMS } from '../src/host/protocol-params.js';
-import { buildTx, TEST_ADDRESS } from './helpers/build-tx.js';
-import { checkContext, type CheckOptions } from './helpers/check-context.js';
-import { evolutionBuild, evolutionUtxo, fixedBudgetEvaluator } from './helpers/evolution-build.js';
+import { buildTx, redeemerMap, TEST_ADDRESS } from './helpers/build-tx.js';
+import { checkContext, paramsWith, type CheckOptions } from './helpers/check-context.js';
+import { evolutionBuild, evolutionLocked, evolutionUtxo, fixedBudgetEvaluator } from './helpers/evolution-build.js';
 import { plutusScript } from './helpers/plutus-fixtures.js';
-import { scriptAddress, syntheticInput } from './helpers/synthetic.js';
+import { inlineDatum, lockedUtxo } from './helpers/plutus-spend.js';
+import { hash28, scriptAddress, syntheticInput } from './helpers/synthetic.js';
 
 const V3 = plutusScript('v3_always_succeeds');
 const V2 = plutusScript('v2_always_succeeds');
@@ -35,17 +36,10 @@ const DATUM_HASH = bytesToHex(datumHash(DATUM));
 const OTHER_DATUM = encode(43n);
 const OTHER_VALUE = 43n;
 const OTHER_HASH = bytesToHex(datumHash(OTHER_DATUM));
-const locked = (seed: string, hash: Uint8Array, datum?: Datum): Utxo => ({
-  input: syntheticInput(seed, 0n),
-  address: scriptAddress(hash),
-  lovelace: 5_000_000n,
-  ...(datum ? { datum } : {}),
-});
+const locked = (seed: string, hash: Uint8Array, datum?: Datum): Utxo => lockedUtxo({ hash }, seed, datum);
 const byHash = (cbor: Uint8Array): Datum => ({ kind: 'hash', hash: datumHash(cbor) });
-const inline: Datum = { kind: 'inline', cbor: hexToBytes('01') };
-const redeemerMap = (...pointers: Array<[bigint, bigint]>) => new Map(pointers.map(([tag, index]) => [[tag, index], [0n, [1n, 1n]]]));
+const inline = inlineDatum(1n);
 const outpoint = (u: Utxo) => `${bytesToHex(u.input.txId)}#${u.input.index}`;
-const paramsWith = (costModels: Partial<CostModels>) => ({ ...DEFAULT_PROTOCOL_PARAMS[0], costModels: { ...DEFAULT_COST_MODELS, ...costModels } });
 
 interface PlutusTx {
   inputs?: Utxo[];
@@ -88,21 +82,15 @@ const collectErrors = (first: string, ...rest: string[]): Failure[] => [{ path: 
 describe('consistent Plutus transactions pass both phases', () => {
   it('a V3 spend with an inline datum built by Evolution', async () => {
     const plutus = new PlutusV3.PlutusV3({ bytes: V3.bytes });
-    const lockedUtxo = locked('rules-evolution', V3_HASH, inline);
-    const lockedEvo = new UTxO.UTxO({
-      transactionId: TransactionHash.fromBytes(lockedUtxo.input.txId),
-      index: 0n,
-      address: new Address.Address({ networkId: 0, paymentCredential: ScriptHash.fromScript(plutus) }),
-      assets: Assets.fromLovelace(5_000_000n),
-      datumOption: new InlineDatum.InlineDatum({ data: Data.int(1n) }),
-    });
+    const spent = locked('rules-evolution', V3_HASH, inline);
+    const lockedEvo = evolutionLocked(spent, ScriptHash.fromScript(plutus), Data.int(1n));
     const tx = await evolutionBuild(
       (b) => b.collectFrom({ inputs: [lockedEvo], redeemer: Data.constr(0n, []) }).attachScript({ script: plutus }),
       TEST_ADDRESS,
       [evolutionUtxo(own, TEST_ADDRESS)],
       { evaluator: fixedBudgetEvaluator },
     );
-    const ctx = checkContext(tx, [own, lockedUtxo]);
+    const ctx = checkContext(tx, [own, spent]);
     expect(plutusNeeds(ctx)).toHaveLength(1);
     expect(witness(ctx)).toEqual([]);
     expect(collect(ctx)).toEqual([]);
@@ -111,9 +99,9 @@ describe('consistent Plutus transactions pass both phases', () => {
   it('a V2 spend with a datum hash and its witness datum built by CSL', () => {
     const script = CSL.PlutusScript.from_bytes_with_version(CSL.PlutusData.new_bytes(V2.bytes).to_bytes(), CSL.Language.new_plutus_v2());
     const datum = CSL.PlutusData.from_bytes(DATUM);
-    const lockedUtxo = locked('rules-csl', V2_HASH, byHash(DATUM));
+    const spent = locked('rules-csl', V2_HASH, byHash(DATUM));
     const inputs = CSL.TransactionInputs.new();
-    inputs.add(CSL.TransactionInput.new(CSL.TransactionHash.from_bytes(lockedUtxo.input.txId), 0));
+    inputs.add(CSL.TransactionInput.new(CSL.TransactionHash.from_bytes(spent.input.txId), 0));
     const body = CSL.TransactionBody.new_tx_body(inputs, CSL.TransactionOutputs.new(), CSL.BigNum.from_str('400000'));
     const witnesses = CSL.TransactionWitnessSet.new();
     const scripts = CSL.PlutusScripts.new();
@@ -130,7 +118,7 @@ describe('consistent Plutus transactions pass both phases', () => {
     DEFAULT_COST_MODELS.PlutusV2.forEach((p, i) => model.set(i, CSL.Int.from_str(p.toString())));
     costModels.insert(CSL.Language.new_plutus_v2(), model);
     body.set_script_data_hash(CSL.hash_script_data(redeemers, costModels, datums));
-    const ctx = checkContext(CSL.Transaction.new(body, witnesses).to_hex(), [lockedUtxo]);
+    const ctx = checkContext(CSL.Transaction.new(body, witnesses).to_hex(), [spent]);
     expect(witness(ctx)).toEqual([]);
     expect(collect(ctx)).toEqual([]);
   });
@@ -329,7 +317,7 @@ describe('collect phase: script contexts the ledger cannot build', () => {
 
   it('PlutusV1 and V2 refuse votes, proposals, a treasury donation and the current treasury, in that order', () => {
     // A DRep key votes, no script is needed for it.
-    const drepKey = new Uint8Array(28).fill(5);
+    const drepKey = hash28(5);
     const voters: Array<[bigint, unknown]> = [[19n, new Map([[[2n, drepKey], new Map([[[new Uint8Array(32), 0n], [1n, null]]])]])]];
     const proposals: Array<[bigint, unknown]> = [[20n, [[100_000_000_000n, concat(Uint8Array.of(0xe0), V2_HASH), [6n], [`https://example.com/a.json`, new Uint8Array(32)]]]]];
     const donation: Array<[bigint, unknown]> = [[22n, 5n]];
@@ -353,12 +341,12 @@ describe('collect phase: script contexts the ledger cannot build', () => {
   });
 
   it('PlutusV1 and V2 translate certificates 0, 1, 2, 3, 4, 7 and 8 only, V3 every one', () => {
-    const key = [0n, new Uint8Array(28).fill(7)];
+    const key = [0n, hash28(7)];
     const translatable = [
       [0n, key],
       [1n, key],
-      [2n, key, new Uint8Array(28).fill(8)],
-      [4n, new Uint8Array(28).fill(9), 300n],
+      [2n, key, hash28(8)],
+      [4n, hash28(9), 300n],
       [7n, key, 2_000_000n],
       [8n, key, 2_000_000n],
     ];

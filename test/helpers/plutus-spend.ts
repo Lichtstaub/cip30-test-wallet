@@ -2,25 +2,38 @@
 // integrity hash covers is known: the redeemers as encode() writes them, the
 // witness datums likewise, and the language views of the default cost models.
 import { blake2b } from '@noble/hashes/blake2.js';
+import { baseAddressBytes } from '../../src/core/addresses.js';
 import { bytesToHex, concat, hexToBytes } from '../../src/core/bytes.js';
 import { Tagged, type CborValue } from '../../src/core/cbor/decode.js';
 import { encode } from '../../src/core/cbor/encode.js';
 import { parseTransaction } from '../../src/core/cbor/tx.js';
-import { publicKey, sign, type SigningKey } from '../../src/core/keys.js';
+import { keyHash, publicKey, sign, type SigningKey } from '../../src/core/keys.js';
 import { encodeOutput, type Datum, type Utxo } from '../../src/core/ledger.js';
+import { deriveAccount, type DerivedAccount } from '../../src/derive/index.js';
 import { DEFAULT_COST_MODELS } from '../../src/host/cost-models.js';
 import { languageViews } from '../../src/host/checks/script-integrity.js';
 import { buildTx, type BuildTxOptions } from './build-tx.js';
 import type { PlutusFixture } from './plutus-fixtures.js';
 import { scriptAddress, syntheticInput } from './synthetic.js';
+import { MNEMONIC } from '../fixtures/vectors.js';
 
 /** Constr 0 [], the unit-like redeemer and datum most tests pass. */
 export const UNIT_DATA = new Tagged(121n, []);
 
+/** The account of the test mnemonic, its testnet base address and a 50 ADA UTxO there that pays the fee and is the collateral. */
+export function myWallet(seed: string): { me: DerivedAccount; myAddress: Uint8Array; wallet: Utxo } {
+  const me = deriveAccount(MNEMONIC);
+  const myAddress = baseAddressBytes(0, keyHash(publicKey(me.payment)), keyHash(publicKey(me.stake)));
+  return { me, myAddress, wallet: { input: syntheticInput(seed, 0n), address: myAddress, lovelace: 50_000_000n } };
+}
+
 /** A 5 ADA output at the testnet script address of this fixture, with an optional datum. */
-export function lockedUtxo(script: PlutusFixture, seed: string, datum?: Datum, lovelace = 5_000_000n): Utxo {
+export function lockedUtxo(script: Pick<PlutusFixture, 'hash'>, seed: string, datum?: Datum, lovelace = 5_000_000n): Utxo {
   return { input: syntheticInput(seed, 0n), address: scriptAddress(script.hash), lovelace, ...(datum ? { datum } : {}) };
 }
+
+/** walletOptions.foreignUtxos entry for a UTxO without datum or reference script. */
+export const foreignConfig = (u: Utxo) => ({ txId: bytesToHex(u.input.txId), index: Number(u.input.index), addressHex: bytesToHex(u.address), lovelace: Number(u.lovelace) });
 
 /** An inline datum holding this plutus_data. */
 export const inlineDatum = (data: CborValue): Datum => ({ kind: 'inline', cbor: encode(data) });

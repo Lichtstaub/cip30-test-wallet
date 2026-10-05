@@ -2,8 +2,8 @@ import { isScriptPayment, paymentHash } from '../../core/addresses.js';
 import { bytesToHex } from '../../core/bytes.js';
 import type { TxInput } from '../../core/cbor/tx.js';
 import type { Utxo } from '../../core/ledger.js';
-import { scriptsProvided } from '../../core/scripts.js';
-import { knownInputs, type CheckContext } from './context.js';
+import { knownInputs, providedScripts, type CheckContext } from './context.js';
+import { compare, compareInputs } from './order.js';
 import { headerNetwork } from './read-tx.js';
 
 // The Plutus scripts a transaction runs and the redeemer pointer each one
@@ -40,6 +40,9 @@ export interface PlutusNeed {
 // reward purpose ConwayRewarding, cardano-ledger-conway 1.23.0.0 renames it ConwayWithdrawing.
 const PURPOSES = ['ConwaySpending', 'ConwayMinting', 'ConwayCertifying', 'ConwayRewarding', 'ConwayVoting', 'ConwayProposing'] as const;
 
+/** A redeemer pointer as the failures write it, e.g. 'ConwaySpending (AsIx 0)'. */
+export const pointerName = (tag: bigint, index: number | bigint): string => `${PURPOSES[Number(tag)]} (AsIx ${index})`;
+
 // Certificates that never need a script: 0 (registration without deposit, Conway TxCert.hs
 // getScriptWitnessConwayTxCert), 3 and 4 (pool ids are key hashes), 5 and 6 (gone in Conway).
 const NO_SCRIPT_CERTIFICATES = new Set<bigint>([0n, 3n, 4n, 5n, 6n]);
@@ -49,18 +52,14 @@ const NO_SCRIPT_CERTIFICATES = new Set<bigint>([0n, 3n, 4n, 5n, 6n]);
 // 3 DRep script, 4 pool.
 const VOTER_RANK: Record<string, number> = { '1': 0, '0': 1, '3': 2, '2': 3, '4': 4 };
 
-const compareHex = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
-const compareBigint = (a: bigint, b: bigint) => (a < b ? -1 : a > b ? 1 : 0);
-
 /** Every redeemer the transaction needs: Plutus scripts that are needed and provided (witness or reference script). Native scripts never. */
 export function plutusNeeds(ctx: CheckContext): PlutusNeed[] {
   const { parsed, facts } = ctx;
   const { body } = parsed;
 
   // Babbage UTxO.hs getBabbageScriptsProvided: the witness set and the reference scripts of spend and reference inputs.
-  const sources = knownInputs(ctx).flatMap(({ label, utxo }) => (utxo ? [{ label, utxo }] : []));
   const plutus = new Map<string, 1 | 2 | 3>();
-  for (const script of scriptsProvided(parsed.scripts, sources).scripts) {
+  for (const script of providedScripts(ctx)) {
     if (script.language !== 0) plutus.set(bytesToHex(script.hash), script.language);
   }
 
@@ -68,15 +67,13 @@ export function plutusNeeds(ctx: CheckContext): PlutusNeed[] {
   const need = (tag: RedeemerTag, index: number, scriptHash: Uint8Array, spend?: PlutusNeed['spend']) => {
     const language = plutus.get(bytesToHex(scriptHash));
     if (language === undefined) return;
-    const purpose = `${PURPOSES[Number(tag)]} (AsIx ${index})`;
-    needs.push({ tag, index: BigInt(index), scriptHash, language, ...(spend ? { spend } : {}), purpose });
+    needs.push({ tag, index: BigInt(index), scriptHash, language, ...(spend ? { spend } : {}), purpose: pointerName(tag, index) });
   };
 
   // Alonzo UTxO.hs getSpendingScriptsNeeded over the set of spend inputs. A repeated input counts once.
-  const spends = new Map<string, { input: TxInput; utxo: Utxo | undefined }>();
-  body.inputs.forEach((input, i) => spends.set(`${bytesToHex(input.txId)}#${input.index}`, { input, utxo: ctx.resolved[i] }));
+  const spends = new Map(knownInputs(ctx).flatMap((k) => (k.label === 'input' ? [[k.key, k] as const] : [])));
   [...spends.values()]
-    .sort((a, b) => compareHex(bytesToHex(a.input.txId), bytesToHex(b.input.txId)) || compareBigint(a.input.index, b.input.index))
+    .sort((a, b) => compareInputs(a.input, b.input))
     .forEach(({ input, utxo }, i) => {
       if (utxo && isScriptPayment(utxo.address)) need(0n, i, paymentHash(utxo.address), { input, utxo });
     });
@@ -88,7 +85,7 @@ export function plutusNeeds(ctx: CheckContext): PlutusNeed[] {
       (a, b) =>
         headerNetwork(a.rewardAddress) - headerNetwork(b.rewardAddress) ||
         Number(b.credential.isScript) - Number(a.credential.isScript) ||
-        compareHex(bytesToHex(a.credential.hash), bytesToHex(b.credential.hash)),
+        compare(bytesToHex(a.credential.hash), bytesToHex(b.credential.hash)),
     )
     .forEach((w, i) => {
       if (w.credential.isScript) need(3n, i, w.credential.hash);
@@ -103,12 +100,12 @@ export function plutusNeeds(ctx: CheckContext): PlutusNeed[] {
 
   // Alonzo UTxO.hs getMintingScriptsNeeded over the set of policy ids.
   const policies = new Map(body.mintPolicies.map((p) => [bytesToHex(p), p]));
-  [...policies].sort(([a], [b]) => compareHex(a, b)).forEach(([, policy], i) => need(1n, i, policy));
+  [...policies].sort(([a], [b]) => compare(a, b)).forEach(([, policy], i) => need(1n, i, policy));
 
   // getConwayScriptsNeeded votingScriptsNeeded over the keys of the voting procedures map. A pool votes with its key hash, never with a script.
   const voters = new Map(body.voters.map((v) => [`${v.type}:${bytesToHex(v.hash)}`, v]));
   [...voters.values()]
-    .sort((a, b) => (VOTER_RANK[a.type.toString()] ?? 5) - (VOTER_RANK[b.type.toString()] ?? 5) || compareHex(bytesToHex(a.hash), bytesToHex(b.hash)))
+    .sort((a, b) => (VOTER_RANK[a.type.toString()] ?? 5) - (VOTER_RANK[b.type.toString()] ?? 5) || compare(bytesToHex(a.hash), bytesToHex(b.hash)))
     .forEach((voter, i) => {
       if (voter.type === 1n || voter.type === 3n) need(4n, i, voter.hash);
     });

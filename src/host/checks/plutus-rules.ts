@@ -1,9 +1,10 @@
-import { bytesEqual, bytesToHex } from '../../core/bytes.js';
+import { bytesToHex } from '../../core/bytes.js';
 import type { TxInput } from '../../core/cbor/tx.js';
 import { certificateName } from '../../core/requirements.js';
 import { knownInputs, type CheckContext } from './context.js';
 import { coin, failer, list, mismatch, PATH, type Failure } from './failure.js';
-import type { PlutusNeed } from './plutus-purposes.js';
+import { compare, compareInputs, outpoint } from './order.js';
+import { pointerName, type PlutusNeed } from './plutus-purposes.js';
 import { expectedScriptDataHash } from './script-integrity.js';
 
 // The Plutus part of UTXOW (Babbage Rules/Utxow.hs babbageUtxowTransition with
@@ -14,14 +15,6 @@ import { expectedScriptDataHash } from './script-integrity.js';
 // everywhere, where MissingRedeemers and NoRedeemer in the node show the item
 // (the TxIn, the policy id, the certificate) instead of its index.
 
-// Conway Scripts.hs ConwayPlutusPurpose in tag order, the published names (see plutus-purposes.ts).
-const PURPOSES = ['ConwaySpending', 'ConwayMinting', 'ConwayCertifying', 'ConwayRewarding', 'ConwayVoting', 'ConwayProposing'];
-
-const outpoint = (input: TxInput) => `${bytesToHex(input.txId)}#${input.index}`;
-const compareInputs = (a: TxInput, b: TxInput) => {
-  const [x, y] = [bytesToHex(a.txId), bytesToHex(b.txId)];
-  return x < y ? -1 : x > y ? 1 : a.index < b.index ? -1 : a.index > b.index ? 1 : 0;
-};
 /** Hex hashes in Set order, which for hashes of one length is byte order. */
 const sortedHashes = (hashes: Iterable<string>) => [...new Set(hashes)].sort();
 const redeemerKey = (tag: bigint, index: bigint) => `${tag}:${index}`;
@@ -73,8 +66,8 @@ export function redeemerFailures(ctx: CheckContext, needs: readonly PlutusNeed[]
   const present = new Set(facts.redeemers.map((r) => redeemerKey(r.tag, r.index)));
   const extra = [...facts.redeemers]
     .filter((r) => !needed.has(redeemerKey(r.tag, r.index)))
-    .sort((a, b) => (a.tag !== b.tag ? (a.tag < b.tag ? -1 : 1) : a.index < b.index ? -1 : a.index > b.index ? 1 : 0))
-    .map((r) => `${PURPOSES[Number(r.tag)]} (AsIx ${r.index})`);
+    .sort((a, b) => compare(a.tag, b.tag) || compare(a.index, b.index))
+    .map((r) => pointerName(r.tag, r.index));
   const missing = needs.filter((n) => !present.has(redeemerKey(n.tag, n.index))).map((n) => `(${n.purpose}, ${bytesToHex(n.scriptHash)})`);
   if (extra.length > 0) fail('ExtraRedeemers', list(extra));
   if (missing.length > 0) fail('MissingRedeemers', list(missing));
@@ -91,9 +84,9 @@ export function redeemerFailures(ctx: CheckContext, needs: readonly PlutusNeed[]
 export function scriptIntegrityFailures(ctx: CheckContext, needs: readonly PlutusNeed[]): Failure[] {
   const expected = expectedScriptDataHash(ctx, needs);
   const supplied = ctx.facts.scriptDataHash;
-  const same = expected === undefined || supplied === undefined ? expected === supplied : bytesEqual(expected, supplied);
   const show = (hash: Uint8Array | undefined) => (hash === undefined ? 'SNothing' : `SJust ${bytesToHex(hash)}`);
-  return same ? [] : [{ path: PATH.UTXOW, rule: 'ScriptIntegrityHashMismatch', detail: mismatch('RelEQ', show(supplied), show(expected)) }];
+  if (show(supplied) === show(expected)) return [];
+  return [{ path: PATH.UTXOW, rule: 'ScriptIntegrityHashMismatch', detail: mismatch('RelEQ', show(supplied), show(expected)) }];
 }
 
 // Conway TxInfo.hs transTxCertV1V2 with Alonzo TxInfo.hs transTxCertCommon: the certificates a PlutusV1
@@ -134,8 +127,9 @@ function txInfoError(ctx: CheckContext, language: 1 | 2 | 3): string | undefined
     // Conway transTxOutV1: no inline datum in a spend input, then a reference input, each in Set order, then an
     // output by position. The collateral return is no part of the TxInfo. An input the UTxO set does not know
     // is skipped here, the node stops at it with TranslationLogicMissingInput.
+    const known = knownInputs(ctx);
     for (const label of ['input', 'reference input'] as const) {
-      const inline = knownInputs(ctx).filter((k) => k.label === label && k.utxo?.datum?.kind === 'inline').map((k) => k.input);
+      const inline = known.filter((k) => k.label === label && k.utxo?.datum?.kind === 'inline').map((k) => k.input);
       if (inline.length > 0) return `BabbageContextError (InlineDatumsNotSupported (TxOutFromInput ${outpoint(inline.sort(compareInputs)[0]!)}))`;
     }
     const output = facts.outputs.findIndex((o) => o.output.datum?.kind === 'inline');
@@ -152,8 +146,7 @@ function txInfoError(ctx: CheckContext, language: 1 | 2 | 3): string | undefined
  * mkPlutusWithContext). Alonzo transPlutusPurpose has no PlutusV1 or V2 purpose for a vote or a proposal. In
  * Conway the guard of the TxInfo refuses both fields first, so this only keeps the node's order.
  */
-function translationError(ctx: CheckContext, need: PlutusNeed): string | undefined {
-  const txInfo = txInfoError(ctx, need.language);
+function translationError(need: PlutusNeed, txInfo: string | undefined): string | undefined {
   if (txInfo !== undefined) return txInfo;
   return need.language < 3 && need.tag >= 4n ? `PlutusPurposeNotSupported (${need.purpose})` : undefined;
 }
@@ -174,6 +167,8 @@ function translationError(ctx: CheckContext, need: PlutusNeed): string | undefin
  */
 export function collectFailures(ctx: CheckContext, needs: readonly PlutusNeed[]): Failure[] {
   const present = new Set(ctx.facts.redeemers.map((r) => redeemerKey(r.tag, r.index)));
+  // The TxInfo of a language is the same for every script of it, built once.
+  const txInfos = new Map<1 | 2 | 3, string | undefined>();
   let errors: string[] | undefined;
   for (const need of needs) {
     if (!present.has(redeemerKey(need.tag, need.index))) {
@@ -181,7 +176,8 @@ export function collectFailures(ctx: CheckContext, needs: readonly PlutusNeed[])
       continue;
     }
     if (errors) continue;
-    const error = translationError(ctx, need);
+    if (!txInfos.has(need.language)) txInfos.set(need.language, txInfoError(ctx, need.language));
+    const error = translationError(need, txInfos.get(need.language));
     if (error !== undefined) errors = [`BadTranslation (${error})`];
   }
   return errors ? [{ path: PATH.UTXOS, rule: 'CollectErrors', detail: nonEmpty(errors) }] : [];

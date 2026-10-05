@@ -28,3 +28,6 @@ export function cslDerive(mnemonic: string, networkId = 0, accountIndex = 0) {
     signWith: (message: Uint8Array) => payment.sign(message).to_bytes(),
   };
 }
+
+/** A CSL BigNum of this integer. */
+export const big = (n: bigint | number) => CSL.BigNum.from_str(n.toString());

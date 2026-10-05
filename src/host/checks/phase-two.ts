@@ -1,7 +1,7 @@
 import { bytesToHex } from '../../core/bytes.js';
-import { ChwError } from '../../core/errors.js';
-import { encodeUtxo, type Utxo } from '../../core/ledger.js';
-import type { CheckContext } from './context.js';
+import { ChwError, type ChwErrorCode } from '../../core/errors.js';
+import { encodeUtxo } from '../../core/ledger.js';
+import { knownInputs, type CheckContext } from './context.js';
 import { PATH, type Failure } from './failure.js';
 import type { PlutusNeed, RedeemerTag } from './plutus-purposes.js';
 
@@ -52,29 +52,37 @@ const TAGS: ReadonlyMap<string, RedeemerTag> = new Map([
 // The codes of a PlutusScriptEvaluationError that name a failing script. INTERNAL_ERROR is a defect in scalus.
 const SCRIPT_FAILURES: ReadonlySet<string> = new Set(['SCRIPT_FAILURE', 'BUILTIN_FAILURE', 'INVALID_RETURN_VALUE', 'OUT_OF_BUDGET']);
 
+/** '<what> (<the message of cause>). <advice>', with cause attached to the error. */
+function chwError(code: ChwErrorCode, what: string, advice: string, cause: unknown): ChwError {
+  const error = new ChwError(code, `${what} (${cause instanceof Error ? cause.message : String(cause)}). ${advice}`);
+  error.cause = cause;
+  return error;
+}
+
 /** Not cached here. Node keeps a loaded module and tries a failed resolve again on the next submit, a module that threw while loading stays failed. */
 async function loadScalus(): Promise<Scalus> {
   try {
     return await import('scalus');
   } catch (cause) {
-    const error = new ChwError(
+    throw chwError(
       'CHW_EVALUATOR_UNAVAILABLE',
-      `the ledger checks could not load the Plutus evaluator scalus (${cause instanceof Error ? cause.message : String(cause)}). Reinstall cip30-test-wallet with its dependencies, or submit this transaction in a test without walletOptions.ledger.checks`,
+      'the ledger checks could not load the Plutus evaluator scalus',
+      'Reinstall cip30-test-wallet with its dependencies, or submit this transaction in a test without walletOptions.ledger.checks',
+      cause,
     );
-    error.cause = cause;
-    throw error;
   }
 }
 
 /** scalus stopped other than with a failing script, a harness diagnosis that carries the scalus text and the error itself. */
 function evaluatorFailed(cause: unknown): ChwError {
-  const error = new ChwError(
-    'CHW_EVALUATOR_FAILED',
-    `the Plutus evaluator scalus could not evaluate this transaction (${cause instanceof Error ? cause.message : String(cause)}). Submit this transaction in a test without walletOptions.ledger.checks`,
-  );
-  error.cause = cause;
-  return error;
+  return chwError('CHW_EVALUATOR_FAILED', 'the Plutus evaluator scalus could not evaluate this transaction', 'Submit this transaction in a test without walletOptions.ledger.checks', cause);
 }
+
+/** Whether an entry names the redeemer pointer (tag, index) of the given one. */
+const samePointer =
+  (pointer: { tag: bigint; index: bigint }) =>
+  (entry: { tag: bigint; index: bigint }): boolean =>
+    entry.tag === pointer.tag && entry.index === pointer.index;
 
 function tagOf(name: string): RedeemerTag {
   const tag = TAGS.get(name);
@@ -93,9 +101,7 @@ function scriptFailure(scalus: Scalus, error: unknown, needs: readonly PlutusNee
   const { redeemer } = error;
   let need: PlutusNeed | undefined;
   if (redeemer) {
-    const tag = tagOf(redeemer.tag);
-    const index = BigInt(redeemer.index);
-    need = needs.find((n) => n.tag === tag && n.index === index);
+    need = needs.find(samePointer({ tag: tagOf(redeemer.tag), index: BigInt(redeemer.index) }));
   }
   const scriptHash = need === undefined && typeof error.scriptHash === 'string' ? { scriptHash: error.scriptHash } : {};
   return { kind: 'failed', need, ...scriptHash, code: error.code, logs: [...error.logs], message: error.message };
@@ -109,11 +115,8 @@ function scriptFailure(scalus: Scalus, error: unknown, needs: readonly PlutusNee
 export async function evaluateScripts(ctx: CheckContext, needs: readonly PlutusNeed[]): Promise<EvaluationOutcome> {
   if (needs.length === 0) return { kind: 'passed', runs: [] };
   const scalus = await loadScalus();
-  const { body } = ctx.parsed;
   // Spend inputs and reference inputs, the UTxOs the script context is built from. Collateral is never part of it.
-  const inputs = body.inputs.length;
-  const resolved = [...ctx.resolved.slice(0, inputs), ...ctx.resolved.slice(inputs + body.collateralInputs.length)];
-  const utxos = resolved.filter((u): u is Utxo => u !== undefined).map(encodeUtxo);
+  const utxos = knownInputs(ctx).flatMap(({ label, utxo }) => (label !== 'collateral input' && utxo ? [encodeUtxo(utxo)] : []));
   const { params, slotConfig } = ctx;
   try {
     const budgets = scalus.evaluator.evaluateTx(
@@ -197,10 +200,10 @@ export function phaseTwoFailures(ctx: CheckContext, needs: readonly PlutusNeed[]
     // The declared ExUnits are each script's budget. A script that needs more fails, in the node with
     // the CEK machine's out of budget error, here with the units both sides name.
     for (const need of needs) {
-      const run = outcome.runs.find((r) => r.tag === need.tag && r.index === need.index);
+      const run = outcome.runs.find(samePointer(need));
       if (!run) throw evaluatorFailed(new Error(`scalus reported no ExUnits for ${need.purpose}, a script the transaction needs`));
       // MissingRedeemers has refused a need without a redeemer before anything runs.
-      const declared = ctx.facts.redeemers.find((r) => r.tag === need.tag && r.index === need.index);
+      const declared = ctx.facts.redeemers.find(samePointer(need));
       if (!declared || (run.mem <= declared.mem && run.steps <= declared.steps)) continue;
       const error = `OUT_OF_BUDGET: ${need.purpose} needs ExUnits {mem: ${run.mem}, steps: ${run.steps}}, its redeemer declares ExUnits {mem: ${declared.mem}, steps: ${declared.steps}}`;
       failure = failureText(need, bytesToHex(need.scriptHash), error, []);
@@ -212,10 +215,7 @@ export function phaseTwoFailures(ctx: CheckContext, needs: readonly PlutusNeed[]
   // every script passing is PassedUnexpectedly, also when there is no script. Alonzo/Rules/Utxos.hs
   // scriptFailureToFailureDescription puts the base64 of the script and its arguments in the second
   // field of PlutusFailure, which stays empty here.
-  if (ctx.parsed.isValid) {
-    if (failure === undefined) return [];
-    return [{ path: PATH.UTXOS, rule: 'ValidationTagMismatch', detail: `(IsValid True) (FailedUnexpectedly (PlutusFailure ${showText(failure)} "" :| []))` }];
-  }
-  if (failure !== undefined) return [];
-  return [{ path: PATH.UTXOS, rule: 'ValidationTagMismatch', detail: '(IsValid False) PassedUnexpectedly' }];
+  const tagMismatch = (detail: string): Failure[] => [{ path: PATH.UTXOS, rule: 'ValidationTagMismatch', detail }];
+  if (ctx.parsed.isValid) return failure === undefined ? [] : tagMismatch(`(IsValid True) (FailedUnexpectedly (PlutusFailure ${showText(failure)} "" :| []))`);
+  return failure === undefined ? tagMismatch('(IsValid False) PassedUnexpectedly') : [];
 }

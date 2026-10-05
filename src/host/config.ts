@@ -11,7 +11,7 @@ import { submitFailsProblem, type OwnedUtxoConfig, type PageConfig, type QuirkCo
 import { isPlutusDataBytes } from '../core/cbor-shapes.js';
 import { isScriptRef } from '../core/scripts.js';
 import { resolveProtocolParams, type ProtocolParams, type ProtocolParamsInput } from './protocol-params.js';
-import { defaultNetwork, SLOT_CONFIGS, type CardanoNetwork } from './slot-config.js';
+import { defaultNetwork, networkIdOf, SLOT_CONFIGS, type CardanoNetwork } from './slot-config.js';
 
 /** Public test vector from the CSL documentation. Holds no funds, safe to ship. */
 export const DEFAULT_MNEMONIC = 'test walk nut penalty hip pave soap entry language right filter choice';
@@ -184,7 +184,7 @@ function ledgerNetwork(value: unknown, networkId: 0 | 1): CardanoNetwork {
   const known = Object.keys(SLOT_CONFIGS);
   if (typeof value !== 'string' || !known.includes(value)) throw new Error(`ledger.network must be one of ${known.join(', ')}, got ${String(value)}`);
   const network = value as CardanoNetwork;
-  const expected = network === 'mainnet' ? 1 : 0;
+  const expected = networkIdOf(network);
   if (networkId !== expected) throw new Error(`ledger.network ${network} needs networkId ${expected}, got networkId ${networkId}`);
   return network;
 }

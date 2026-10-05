@@ -26,3 +26,8 @@ export const SLOT_CONFIGS: Readonly<Record<CardanoNetwork, SlotConfig>> = Object
 export function defaultNetwork(networkId: 0 | 1): CardanoNetwork {
   return networkId === 1 ? 'mainnet' : 'preprod';
 }
+
+/** The networkId a network's addresses carry: 1 mainnet, 0 the test networks. */
+export function networkIdOf(network: CardanoNetwork): 0 | 1 {
+  return network === 'mainnet' ? 1 : 0;
+}

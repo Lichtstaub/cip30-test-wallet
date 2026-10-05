@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import CSL from '@emurgo/cardano-serialization-lib-nodejs';
 import { Effect } from 'effect';
-import { Address, Assets, Redeemer, Transaction, TransactionHash, UTxO } from '@evolution-sdk/evolution';
+import { Address, Assets, Data, InlineDatum, Redeemer, ScriptHash, Transaction, TransactionHash, UTxO } from '@evolution-sdk/evolution';
 import { makeTxBuilder, type Evaluator } from '@evolution-sdk/evolution/sdk/builders/TransactionBuilder';
 import type { EvalRedeemer } from '@evolution-sdk/evolution/sdk/EvalRedeemer';
 import type { Utxo } from '../../src/core/ledger.js';
@@ -81,4 +81,15 @@ export async function evolutionBuild(
 /** A coin-only wallet UTxO as Evolution's UTxO at the given address, for availableUtxos. */
 export function evolutionUtxo(u: Utxo, address: Uint8Array): UTxO.UTxO {
   return new UTxO.UTxO({ transactionId: TransactionHash.fromBytes(u.input.txId), index: u.input.index, address: Address.fromBytes(address), assets: Assets.fromLovelace(u.lovelace) });
+}
+
+/** A UTxO at the testnet address of this script hash as Evolution's UTxO, with an optional inline datum, for collectFrom. */
+export function evolutionLocked(u: Utxo, hash: ScriptHash.ScriptHash, datum?: Data.Data): UTxO.UTxO {
+  return new UTxO.UTxO({
+    transactionId: TransactionHash.fromBytes(u.input.txId),
+    index: u.input.index,
+    address: new Address.Address({ networkId: 0, paymentCredential: hash }),
+    assets: Assets.fromLovelace(u.lovelace),
+    ...(datum === undefined ? {} : { datumOption: new InlineDatum.InlineDatum({ data: datum }) }),
+  });
 }

@@ -2,8 +2,7 @@
 // mock factory runs when something imports scalus, so it counts the loads and
 // hands out the real module.
 import { describe, expect, it, vi } from 'vitest';
-import { bytesToHex, hexToBytes } from '../src/core/bytes.js';
-import type { Utxo } from '../src/core/ledger.js';
+import { hexToBytes } from '../src/core/bytes.js';
 import { parseAddressArg } from '../src/core/sign-data.js';
 import { signWithKeys } from '../src/core/sign-tx.js';
 import { deriveAccount } from '../src/derive/index.js';
@@ -13,7 +12,7 @@ import { walletLedger } from '../src/host/ledger.js';
 import { syntheticOwnedUtxo } from '../src/page/install.js';
 import { buildTx, spliceWitnessSet } from './helpers/build-tx.js';
 import { plutusScript } from './helpers/plutus-fixtures.js';
-import { lockedUtxo, plutusSpend } from './helpers/plutus-spend.js';
+import { foreignConfig, lockedUtxo, plutusSpend } from './helpers/plutus-spend.js';
 
 const loads = vi.hoisted(() => ({ count: 0 }));
 vi.mock('scalus', async (importOriginal) => {
@@ -24,11 +23,10 @@ vi.mock('scalus', async (importOriginal) => {
 const account = deriveAccount(DEFAULT_MNEMONIC);
 const script = plutusScript('v3_always_succeeds');
 const locked = lockedUtxo(script, 'lazy-locked');
-const foreign = (u: Utxo) => ({ txId: bytesToHex(u.input.txId), index: Number(u.input.index), addressHex: bytesToHex(u.address), lovelace: Number(u.lovelace) });
 
 describe('loading the Plutus evaluator', () => {
   it('prepareWallet, walletLedger and submits without a script never load it, the first Plutus spend does', async () => {
-    const w = prepareWallet({ utxos: [{ lovelace: 10_000_000 }, { lovelace: 10_000_000 }, { lovelace: 10_000_000 }], foreignUtxos: [foreign(locked)], ledger: { checks: true } });
+    const w = prepareWallet({ utxos: [{ lovelace: 10_000_000 }, { lovelace: 10_000_000 }, { lovelace: 10_000_000 }], foreignUtxos: [foreignConfig(locked)], ledger: { checks: true } });
     const ledger = walletLedger(w);
     expect(ledger).toBeInstanceOf(CheckedLedger);
     const address = parseAddressArg(w.addresses.payment);

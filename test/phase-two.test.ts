@@ -5,14 +5,11 @@
 import { createRequire } from 'node:module';
 import { blake2b } from '@noble/hashes/blake2.js';
 import { describe, expect, it } from 'vitest';
-import { baseAddressBytes } from '../src/core/addresses.js';
 import { bytesToHex } from '../src/core/bytes.js';
 import { decode, type CborValue } from '../src/core/cbor/decode.js';
 import { encode } from '../src/core/cbor/encode.js';
 import { ChwError } from '../src/core/errors.js';
 import { encodeOutput, type Datum, type Utxo } from '../src/core/ledger.js';
-import { keyHash, publicKey } from '../src/core/keys.js';
-import { deriveAccount } from '../src/derive/index.js';
 import type { CheckContext } from '../src/host/checks/context.js';
 import { renderFailure } from '../src/host/checks/failure.js';
 import { evaluateScripts, phaseTwoFailures, type EvaluationOutcome } from '../src/host/checks/phase-two.js';
@@ -23,14 +20,11 @@ import { DEFAULT_PROTOCOL_PARAMS } from '../src/host/protocol-params.js';
 import { SLOT_CONFIGS, type CardanoNetwork } from '../src/host/slot-config.js';
 import { checkContext } from './helpers/check-context.js';
 import { PLUTUS_FIXTURE_NAMES, plutusScript, type PlutusFixture, type PlutusFixtureName } from './helpers/plutus-fixtures.js';
-import { inlineDatum, lockedUtxo, plutusSpend, UNIT_DATA, type PlutusSpendOptions } from './helpers/plutus-spend.js';
-import { syntheticInput } from './helpers/synthetic.js';
-import { MNEMONIC } from './fixtures/vectors.js';
+import { inlineDatum, lockedUtxo, myWallet, plutusSpend, UNIT_DATA, type PlutusSpendOptions } from './helpers/plutus-spend.js';
+import { hash28 } from './helpers/synthetic.js';
 
-const me = deriveAccount(MNEMONIC);
-const myAddress = baseAddressBytes(0, keyHash(publicKey(me.payment)), keyHash(publicKey(me.stake)));
-const wallet: Utxo = { input: syntheticInput('phase-two-wallet', 0n), address: myAddress, lovelace: 50_000_000n };
-const SIGNER = new Uint8Array(28).fill(0x22);
+const { myAddress, wallet } = myWallet('phase-two-wallet');
+const SIGNER = hash28(0x22);
 
 const ALWAYS_SUCCEEDS = plutusScript('v3_always_succeeds');
 const ALWAYS_FAILS = plutusScript('v3_always_fails_traced');

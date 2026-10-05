@@ -1,8 +1,8 @@
 import { bytesEqual, bytesToHex } from '../../core/bytes.js';
 import { keyHash, verifiesOver } from '../../core/keys.js';
 import type { Requirements } from '../../core/requirements.js';
-import { evaluateNativeScript, scriptsProvided } from '../../core/scripts.js';
-import { knownInputs, type CheckContext } from './context.js';
+import { evaluateNativeScript } from '../../core/scripts.js';
+import { providedScripts, type CheckContext } from './context.js';
 import { failer, list, mismatch, PATH, type Failure } from './failure.js';
 import type { PlutusNeed } from './plutus-purposes.js';
 import { datumFailures, redeemerFailures, scriptIntegrityFailures } from './plutus-rules.js';
@@ -34,8 +34,7 @@ export function witnessFailures(ctx: CheckContext, reqs: Requirements, needs: re
   const witnessKeySet = new Set(witnessKeys.map(bytesToHex));
 
   // Babbage getBabbageScriptsProvided: witness set, then the reference scripts of spend and reference inputs.
-  const sources = knownInputs(ctx).flatMap(({ label, utxo }) => (utxo ? [{ label, utxo }] : []));
-  const provided = scriptsProvided(parsed.scripts, sources).scripts;
+  const provided = providedScripts(ctx);
   // scriptsProvided appends the reference scripts after the witness scripts.
   const referenced = hashSet(provided.slice(parsed.scripts.length));
   const received = hashSet(parsed.scripts);

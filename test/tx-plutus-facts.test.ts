@@ -1,13 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import CSL from '@emurgo/cardano-serialization-lib-nodejs';
-import { Address, Assets, Data, InlineDatum, PlutusV3, ScriptHash, TransactionHash, UTxO } from '@evolution-sdk/evolution';
+import { Data, PlutusV3, ScriptHash } from '@evolution-sdk/evolution';
 import { blake2b } from '@noble/hashes/blake2.js';
-import { bytesToHex, concat, hexToBytes } from '../src/core/bytes.js';
+import { bytesToHex, hexToBytes } from '../src/core/bytes.js';
 import { parseTransaction } from '../src/core/cbor/tx.js';
 import { readTransaction } from '../src/host/checks/read-tx.js';
 import { buildTx, spliceWitnessSet, TEST_ADDRESS } from './helpers/build-tx.js';
-import { evolutionBuild, evolutionUtxo, fixedBudgetEvaluator } from './helpers/evolution-build.js';
+import { big } from './helpers/csl.js';
+import { evolutionBuild, evolutionLocked, evolutionUtxo, fixedBudgetEvaluator } from './helpers/evolution-build.js';
 import { plutusScript, type PlutusFixture } from './helpers/plutus-fixtures.js';
+import { lockedUtxo } from './helpers/plutus-spend.js';
 import { syntheticInput } from './helpers/synthetic.js';
 
 const ALWAYS = plutusScript('v3_always_succeeds');
@@ -22,7 +24,6 @@ const factsOf = (tx: string | Uint8Array) => {
 /** A one input transaction whose witness set is exactly these bytes, so a test controls every encoding detail. */
 const withWitnessSet = (witnessSetHex: string, body: Array<[bigint, unknown]> = []) =>
   spliceWitnessSet(buildTx({ inputs: [input], outputs: [{ address: TEST_ADDRESS, lovelace: 2_000_000n }], fee: 200_000n, extraBodyEntries: new Map(body) }), witnessSetHex);
-const big = (n: bigint | number) => CSL.BigNum.from_str(n.toString());
 const blake256 = (hex: string) => blake2b(hexToBytes(hex), { dkLen: 32 });
 /** The CBOR byte string around a script, the form CSL's from_bytes_with_version reads. */
 const cslScript = (s: PlutusFixture, language: CSL.Language) => CSL.PlutusScript.from_bytes_with_version(CSL.PlutusData.new_bytes(s.bytes).to_bytes(), language);
@@ -54,22 +55,20 @@ function cslDatumHashSpend(script: CSL.PlutusScript) {
   return { tx: CSL.Transaction.new(body, witnesses), datum, redeemer };
 }
 
-describe('readTransaction: Plutus scripts, redeemer data, datums and the script data hash', () => {
+describe('readTransaction: redeemers, datums and the script data hash', () => {
   it.each([
-    ['V1', V1, CSL.Language.new_plutus_v1(), 1],
-    ['V2', V2, CSL.Language.new_plutus_v2(), 2],
-  ] as const)('reads a Plutus %s spend with a datum hash and a witness datum that CSL built', (_name, fixture, language, tag) => {
+    ['V1', V1, CSL.Language.new_plutus_v1()],
+    ['V2', V2, CSL.Language.new_plutus_v2()],
+  ] as const)('reads a Plutus %s spend with a datum hash and a witness datum that CSL built', (_name, fixture, language) => {
     const script = cslScript(fixture, language);
     expect(script.hash().to_hex()).toBe(fixture.hashHex);
-    const { tx, datum, redeemer } = cslDatumHashSpend(script);
+    const { tx, datum } = cslDatumHashSpend(script);
     const facts = factsOf(tx.to_bytes());
-    expect(facts.plutusScripts).toEqual([{ language: tag, hash: fixture.hash, bytes: fixture.bytes }]);
-    expect(facts.datums).toEqual([{ hash: CSL.hash_plutus_data(datum).to_bytes(), bytes: datum.to_bytes() }]);
+    expect(facts.datums).toEqual([{ hash: CSL.hash_plutus_data(datum).to_bytes() }]);
     // CSL writes the datums as tag 258 around an indefinite list, the set form of the Conway CDDL.
     expect(bytesToHex(facts.datumsBytes!)).toBe('d90102' + tx.witness_set().plutus_data()!.to_hex());
     expect(tx.witness_set().plutus_data()!.to_hex().startsWith('9f')).toBe(true);
     expect(facts.redeemers).toEqual([{ tag: 0n, index: 0n, mem: 100_000n, steps: 10_000_000n }]);
-    expect(facts.redeemerData).toEqual([{ tag: 0n, index: 0n, data: redeemer.data().to_bytes() }]);
     expect(facts.redeemersBytes).toEqual(tx.witness_set().redeemers()!.to_bytes());
     expect(facts.scriptDataHash).toEqual(tx.body().script_data_hash()!.to_bytes());
   });
@@ -77,14 +76,7 @@ describe('readTransaction: Plutus scripts, redeemer data, datums and the script 
   it('reads a Plutus V3 spend with an inline datum that Evolution built', async () => {
     const plutus = new PlutusV3.PlutusV3({ bytes: ALWAYS.bytes });
     expect(ScriptHash.toHex(ScriptHash.fromScript(plutus))).toBe(ALWAYS.hashHex);
-    const lockedInput = syntheticInput('plutus-facts-locked', 0n);
-    const locked = new UTxO.UTxO({
-      transactionId: TransactionHash.fromBytes(lockedInput.txId),
-      index: 0n,
-      address: new Address.Address({ networkId: 0, paymentCredential: ScriptHash.fromScript(plutus) }),
-      assets: Assets.fromLovelace(5_000_000n),
-      datumOption: new InlineDatum.InlineDatum({ data: Data.int(1n) }),
-    });
+    const locked = evolutionLocked(lockedUtxo(ALWAYS, 'plutus-facts-locked'), ScriptHash.fromScript(plutus), Data.int(1n));
     const own = { input, address: TEST_ADDRESS, lovelace: 50_000_000n };
     const tx = await evolutionBuild(
       (b) => b.collectFrom({ inputs: [locked], redeemer: Data.int(7n) }).attachScript({ script: plutus }),
@@ -94,20 +86,16 @@ describe('readTransaction: Plutus scripts, redeemer data, datums and the script 
     );
     const csl = CSL.Transaction.from_hex(tx);
     const facts = factsOf(tx);
-    expect(facts.plutusScripts).toEqual([{ language: 3, hash: ALWAYS.hash, bytes: ALWAYS.bytes }]);
     expect(facts.datums).toEqual([]);
     expect(facts.datumsBytes).toBeUndefined();
     // Evolution writes the Conway map form.
     expect(bytesToHex(facts.redeemersBytes!).startsWith('a1')).toBe(true);
     expect(facts.redeemersBytes).toEqual(csl.witness_set().redeemers()!.to_bytes());
-    expect(facts.redeemerData).toEqual([{ tag: 0n, index: 0n, data: Data.toCBORBytes(Data.int(7n)) }]);
     expect(facts.scriptDataHash).toEqual(csl.body().script_data_hash()!.to_bytes());
   });
 
   it('leaves every Plutus field empty when the transaction carries none', () => {
     expect(factsOf(withWitnessSet('a0'))).toMatchObject({
-      plutusScripts: [],
-      redeemerData: [],
       redeemersBytes: undefined,
       datums: [],
       datumsBytes: undefined,
@@ -128,10 +116,6 @@ describe('readTransaction: Plutus scripts, redeemer data, datums and the script 
       { tag: 0n, index: 0n, mem: 3n, steps: 3n },
       { tag: 1n, index: 0n, mem: 2n, steps: 2n },
     ]);
-    expect(facts.redeemerData).toEqual([
-      { tag: 0n, index: 0n, data: hexToBytes('9f03ff') },
-      { tag: 1n, index: 0n, data: hexToBytes('02') },
-    ]);
     expect(facts.redeemersBytes).toEqual(hexToBytes(redeemers));
   });
 
@@ -145,20 +129,16 @@ describe('readTransaction: Plutus scripts, redeemer data, datums and the script 
         { tag: 0n, index: 0n, mem: 1n, steps: 1n },
         { tag: 3n, index: 2n, mem: 5n, steps: 6n },
       ]);
-      expect(facts.redeemerData).toEqual([
-        { tag: 0n, index: 0n, data: hexToBytes('9f01ff') },
-        { tag: 3n, index: 2n, data: hexToBytes('41ab') },
-      ]);
       expect(facts.redeemersBytes).toEqual(hexToBytes(redeemers));
     }
   });
 
-  it('a repeated key in the map form keeps the later data at the position of the first', () => {
+  it('a repeated key in the map form keeps the later entry at the position of the first', () => {
     // {[0, 0] => [1, [1, 1]], [1, 0] => [2, [2, 2]], [0, 0] => [3, [3, 3]]}
     const facts = factsOf(withWitnessSet('a105' + 'a3' + '820000820182010182010082028202028200008203820303'));
-    expect(facts.redeemerData).toEqual([
-      { tag: 0n, index: 0n, data: hexToBytes('03') },
-      { tag: 1n, index: 0n, data: hexToBytes('02') },
+    expect(facts.redeemers).toEqual([
+      { tag: 0n, index: 0n, mem: 3n, steps: 3n },
+      { tag: 1n, index: 0n, mem: 2n, steps: 2n },
     ]);
   });
 
@@ -167,7 +147,7 @@ describe('readTransaction: Plutus scripts, redeemer data, datums and the script 
     const items = ['182a', 'd87980', '9f01ff'];
     const plain = '84' + items.join('') + '182a';
     const tagged = 'd9010283' + items.join('');
-    const expected = items.map((hex) => ({ hash: blake256(hex), bytes: hexToBytes(hex) }));
+    const expected = items.map((hex) => ({ hash: blake256(hex) }));
     // CSL hashes a datum over the bytes it was read from as well.
     expect(expected.map((d) => d.hash)).toEqual(items.map((hex) => CSL.hash_plutus_data(CSL.PlutusData.from_hex(hex)).to_bytes()));
     for (const datums of [plain, tagged]) {
@@ -177,16 +157,6 @@ describe('readTransaction: Plutus scripts, redeemer data, datums and the script 
     }
   });
 
-  it('reads Plutus scripts of keys 3, 6 and 7 in key order, a tag 258 set included', () => {
-    const v3 = bytesToHex(concat(hexToBytes('585e'), ALWAYS.bytes));
-    // {3: [v1], 7: 258([v3]), 6: [v2]}: the map order differs from the key order.
-    const facts = factsOf(withWitnessSet('a3' + '0381' + '4e' + V1.cborHex + '07d9010281' + v3 + '0681' + '4e' + V2.cborHex));
-    expect(facts.plutusScripts.map((s) => [s.language, bytesToHex(s.hash), bytesToHex(s.bytes)])).toEqual([
-      [1, V1.hashHex, V1.cborHex],
-      [2, V2.hashHex, V2.cborHex],
-      [3, ALWAYS.hashHex, ALWAYS.cborHex],
-    ]);
-  });
 });
 
 describe('readTransaction: malformed Plutus fields', () => {
