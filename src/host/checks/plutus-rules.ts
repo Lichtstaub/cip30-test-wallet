@@ -107,8 +107,9 @@ const GOV_ACTIONS = ['ParameterChange', 'HardForkInitiation', 'TreasuryWithdrawa
 /**
  * The first ContextError the node meets while it builds the TxInfo of one Plutus language (Conway TxInfo.hs
  * toPlutusTxInfo of each EraPlutusTxInfo instance), undefined when the TxInfo can be built. Unchecked, see the
- * README: a missing input (BadInputsUTxO comes first anyway), a Byron address, a redeemer that points to
- * nothing (ExtraRedeemers) and the time horizon.
+ * README: a context input missing from the UTxO set (TranslationLogicMissingInput, BadInputsUTxO comes first
+ * anyway), a redeemer that points to nothing (RedeemerPointerPointsToNothing, ExtraRedeemers comes first anyway),
+ * a reference input at a Byron address and the time horizon.
  */
 function txInfoError(ctx: CheckContext, language: 1 | 2 | 3): string | undefined {
   const { parsed, facts } = ctx;

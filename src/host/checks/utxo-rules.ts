@@ -112,7 +112,7 @@ export function minUtxo(output: SizedOutput, params: ProtocolParams): bigint {
 /**
  * UTXO in the order of Babbage/Rules/Utxo.hs babbageUtxoValidation. Not
  * reported: InputSetEmptyUTxO (the mempool check catches every such
- * transaction first), OutsideForecast (no slot calendar), the Byron
+ * transaction first), OutsideForecast (the forecast horizon comes from consensus), the Byron
  * attribute size (Byron outputs are an unsupported form).
  */
 export function utxoFailures(ctx: CheckContext): Failure[] {
