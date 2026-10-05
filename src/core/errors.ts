@@ -56,7 +56,11 @@ export function isCip30Error(value: unknown): value is Cip30Error {
   return typeof code === 'number' && typeof info === 'string';
 }
 
-export type ChwErrorCode = 'CHW_UNRESOLVED_INPUT' | 'CHW_UNRESOLVED_SCRIPT' | 'CHW_UNSUPPORTED_TX_FORM';
+/**
+ * CHW_EVALUATOR_UNAVAILABLE: the ledger checks need the Plutus evaluator and could not load it.
+ * CHW_EVALUATOR_FAILED: the Plutus evaluator stopped on a transaction other than with a script failure.
+ */
+export type ChwErrorCode = 'CHW_UNRESOLVED_INPUT' | 'CHW_UNRESOLVED_SCRIPT' | 'CHW_UNSUPPORTED_TX_FORM' | 'CHW_EVALUATOR_UNAVAILABLE' | 'CHW_EVALUATOR_FAILED';
 
 export class ChwError extends Error {
   constructor(

@@ -11,6 +11,7 @@ import { submitFailsProblem, type OwnedUtxoConfig, type PageConfig, type QuirkCo
 import { isPlutusDataBytes } from '../core/cbor-shapes.js';
 import { isScriptRef } from '../core/scripts.js';
 import { resolveProtocolParams, type ProtocolParams, type ProtocolParamsInput } from './protocol-params.js';
+import { defaultNetwork, SLOT_CONFIGS, type CardanoNetwork } from './slot-config.js';
 
 /** Public test vector from the CSL documentation. Holds no funds, safe to ship. */
 export const DEFAULT_MNEMONIC = 'test walk nut penalty hip pave soap entry language right filter choice';
@@ -41,9 +42,17 @@ export interface WalletOptions {
    * the ledger in Node of the Playwright fixture or attachWallet (default false).
    * With checks only: protocolParams replaces single parameters of the network's defaults,
    * currentSlot is the slot the validity interval is checked against (no validity check without it),
-   * drepRegistered counts the wallet's DRep as registered with drepDeposit (default false).
+   * drepRegistered counts the wallet's DRep as registered with drepDeposit (default false),
+   * network picks the slot calendar Plutus scripts see (default preprod for networkId 0, mainnet for 1).
    */
-  ledger?: { state?: boolean; checks?: boolean; protocolParams?: ProtocolParamsInput; currentSlot?: number | bigint; drepRegistered?: boolean };
+  ledger?: {
+    state?: boolean;
+    checks?: boolean;
+    protocolParams?: ProtocolParamsInput;
+    currentSlot?: number | bigint;
+    drepRegistered?: boolean;
+    network?: CardanoNetwork;
+  };
 }
 
 /** What the ledger checks need beyond the page config, resolved and validated in Node. */
@@ -52,6 +61,8 @@ export interface LedgerChecksConfig {
   /** Undefined means no validity interval check. */
   currentSlot: bigint | undefined;
   drepRegistered: boolean;
+  /** The slot calendar, it never changes the parameter defaults, those follow networkId. */
+  network: CardanoNetwork;
 }
 
 export interface PreparedWallet {
@@ -164,8 +175,19 @@ function foreignUtxo(f: ForeignUtxoInput, i: number) {
   };
 }
 
-const LEDGER_OPTIONS = ['state', 'checks', 'protocolParams', 'currentSlot', 'drepRegistered'] as const;
-const CHECKS_ONLY_OPTIONS = ['protocolParams', 'currentSlot', 'drepRegistered'] as const;
+const LEDGER_OPTIONS = ['state', 'checks', 'protocolParams', 'currentSlot', 'drepRegistered', 'network'] as const;
+const CHECKS_ONLY_OPTIONS = ['protocolParams', 'currentSlot', 'drepRegistered', 'network'] as const;
+
+/** ledger.network, checked against networkId: a preprod calendar under mainnet addresses is a mistake in the options. */
+function ledgerNetwork(value: unknown, networkId: 0 | 1): CardanoNetwork {
+  if (value === undefined) return defaultNetwork(networkId);
+  const known = Object.keys(SLOT_CONFIGS);
+  if (typeof value !== 'string' || !known.includes(value)) throw new Error(`ledger.network must be one of ${known.join(', ')}, got ${String(value)}`);
+  const network = value as CardanoNetwork;
+  const expected = network === 'mainnet' ? 1 : 0;
+  if (networkId !== expected) throw new Error(`ledger.network ${network} needs networkId ${expected}, got networkId ${networkId}`);
+  return network;
+}
 
 /** Checked in Node, so a typo fails here instead of switching a check off without a word. */
 function ledgerOptions(ledger: unknown, networkId: 0 | 1): { state: boolean; checks: LedgerChecksConfig | undefined } {
@@ -194,9 +216,10 @@ function ledgerOptions(ledger: unknown, networkId: 0 | 1): { state: boolean; che
   const slotOk = (typeof slot === 'number' && Number.isSafeInteger(slot) && slot >= 0) || (typeof slot === 'bigint' && slot >= 0n);
   if (slot !== undefined && (!slotOk || BigInt(slot) > MAX_UINT64)) throw new Error(`ledger.currentSlot must be a non-negative integer slot number as number or bigint, got ${String(slot)}`);
   const drepRegistered = booleanOption('drepRegistered', false);
+  const network = ledgerNetwork(options.network, networkId);
   return {
     state,
-    checks: { params: resolveProtocolParams(networkId, options.protocolParams), currentSlot: slot === undefined ? undefined : BigInt(slot), drepRegistered },
+    checks: { params: resolveProtocolParams(networkId, options.protocolParams), currentSlot: slot === undefined ? undefined : BigInt(slot), drepRegistered, network },
   };
 }
 

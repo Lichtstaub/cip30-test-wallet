@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runInitScript } from '../src/cli/init-script.js';
 import { initScript } from '../src/host/bundle.js';
+import { DEFAULT_COST_MODELS } from '../src/host/cost-models.js';
 import { prepareWallet, type WalletOptions } from '../src/host/config.js';
 import { LEDGER_BINDING } from '../src/host/ledger.js';
 import { DEFAULT_PROTOCOL_PARAMS } from '../src/host/protocol-params.js';
@@ -42,8 +43,8 @@ describe('walletOptions.ledger', () => {
   it('checks: true marks the page config and resolves the defaults of the network', () => {
     const w = prepareWallet({ ledger: { checks: true } });
     expect(w.config.ledger).toEqual({ state: true, checks: true });
-    expect(w.ledgerChecks).toEqual({ params: DEFAULT_PROTOCOL_PARAMS[0], currentSlot: undefined, drepRegistered: false });
-    expect(prepareWallet({ networkId: 1, ledger: { checks: true } }).ledgerChecks!.params).toEqual(DEFAULT_PROTOCOL_PARAMS[1]);
+    expect(w.ledgerChecks).toEqual({ params: DEFAULT_PROTOCOL_PARAMS[0], currentSlot: undefined, drepRegistered: false, network: 'preprod' });
+    expect(prepareWallet({ networkId: 1, ledger: { checks: true } }).ledgerChecks).toMatchObject({ params: DEFAULT_PROTOCOL_PARAMS[1], network: 'mainnet' });
     // Only the flag reaches the page, the config stays JSON.
     expect(JSON.parse(JSON.stringify(w.config))).toEqual(w.config);
   });
@@ -54,15 +55,48 @@ describe('walletOptions.ledger', () => {
       params: { ...DEFAULT_PROTOCOL_PARAMS[0], minFeeA: 45n, priceMem: { numerator: 3n, denominator: 50n } },
       currentSlot: 110_000_000n,
       drepRegistered: true,
+      network: 'preprod',
     });
     expect(prepareWallet({ ledger: { checks: true, currentSlot: 2n ** 40n } }).ledgerChecks!.currentSlot).toBe(2n ** 40n);
     expect(prepareWallet({ ledger: { checks: true, currentSlot: 0 } }).ledgerChecks!.currentSlot).toBe(0n);
   });
 
+  it('network picks the slot calendar only, the parameters and the page config stay with networkId', () => {
+    const preview = prepareWallet({ ledger: { checks: true, network: 'preview' } });
+    expect(preview.ledgerChecks).toMatchObject({ params: DEFAULT_PROTOCOL_PARAMS[0], network: 'preview' });
+    expect(preview.config.ledger).toEqual({ state: true, checks: true });
+    expect(preview.config.networkId).toBe(0);
+    expect(prepareWallet({ ledger: { checks: true, network: 'preprod' } }).ledgerChecks!.network).toBe('preprod');
+    expect(prepareWallet({ networkId: 1, ledger: { checks: true, network: 'mainnet' } }).ledgerChecks!.network).toBe('mainnet');
+  });
+
+  it('takes cost models in the Koios form and the protocol version with checks', () => {
+    const w = prepareWallet({ ledger: { checks: true, protocolParams: { costModels: { PlutusV2: [1, -2, '3'] }, protocolMajorVersion: 10 } } });
+    expect(w.ledgerChecks!.params.costModels).toEqual({ ...DEFAULT_COST_MODELS, PlutusV2: [1n, -2n, 3n] });
+    expect(w.ledgerChecks!.params.protocolMajorVersion).toBe(10n);
+    // The page never sees parameters, the config stays JSON.
+    expect(JSON.parse(JSON.stringify(w.config))).toEqual(w.config);
+  });
+
+  it.each([
+    [0, 'mainnet', 'ledger.network mainnet needs networkId 1, got networkId 0'],
+    [1, 'preprod', 'ledger.network preprod needs networkId 0, got networkId 1'],
+    [1, 'preview', 'ledger.network preview needs networkId 0, got networkId 1'],
+  ] as const)('refuses networkId %s with network %s, the addresses and the calendar would disagree', (networkId, network, message) => {
+    expect(() => prepareWallet({ networkId, ledger: { checks: true, network } })).toThrow(message);
+  });
+
   it.each([
     ['ledger that is no object', true, 'ledger must be an object, got true'],
     ['ledger that is null', null, 'ledger must be an object, got null'],
-    ['an unknown ledger key', { check: true }, 'ledger.check is not a ledger option, known: state, checks, protocolParams, currentSlot, drepRegistered'],
+    ['an unknown ledger key', { check: true }, 'ledger.check is not a ledger option, known: state, checks, protocolParams, currentSlot, drepRegistered, network'],
+    ['network without checks', { network: 'preview' }, 'ledger.network only applies with ledger.checks: true'],
+    ['an unknown network', { checks: true, network: 'sanchonet' }, 'ledger.network must be one of mainnet, preprod, preview, got sanchonet'],
+    ['a network in capitals', { checks: true, network: 'Preview' }, 'ledger.network must be one of mainnet, preprod, preview, got Preview'],
+    ['a networkId as network', { checks: true, network: 0 }, 'ledger.network must be one of mainnet, preprod, preview, got 0'],
+    ['network that is null', { checks: true, network: null }, 'ledger.network must be one of mainnet, preprod, preview, got null'],
+    ['an inherited name as network', { checks: true, network: 'toString' }, 'ledger.network must be one of mainnet, preprod, preview, got toString'],
+    ['a bad cost model', { checks: true, protocolParams: { costModels: { PlutusV3: [] } } }, 'ledger.protocolParams.costModels.PlutusV3 must be a non-empty array of integers, got []'],
     ['state that is no boolean', { state: 'yes' }, 'ledger.state must be a boolean, got yes'],
     ['checks that is no boolean', { checks: 'true' }, 'ledger.checks must be a boolean, got true'],
     ['checks with state false', { checks: true, state: false }, 'ledger.checks: true needs ledger.state: true'],

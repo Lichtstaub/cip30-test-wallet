@@ -156,6 +156,15 @@ describe('submit answers through the binding', () => {
     expect(e).toMatchObject({ code: original.code, message: original.message });
   });
 
+  it.each(['CHW_EVALUATOR_UNAVAILABLE', 'CHW_EVALUATOR_FAILED'] as const)('carries %s into the page like every other harness diagnosis', async (code) => {
+    const { node, page, tx } = setup();
+    const original = new ChwError(code, 'the Plutus evaluator could not run');
+    vi.spyOn(node, 'submit').mockRejectedValue(original);
+    const e = await caught(async () => (await enableChw(page)).submitTx(tx));
+    expect(e).toBeInstanceOf(ChwError);
+    expect(e).toMatchObject({ code, message: original.message });
+  });
+
   it('the submitFails quirk rejects in the page, the host ledger never sees the transaction', async () => {
     const w = prepareWallet();
     // Without checks the wallet ledger is the MemoryLedger, which counts what reached it.

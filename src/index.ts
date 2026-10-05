@@ -3,6 +3,7 @@
 // scripts import internals by path.
 export { DEFAULT_MNEMONIC, prepareWallet } from './host/config.js';
 export type { PreparedWallet, WalletOptions } from './host/config.js';
+export type { CardanoNetwork } from './host/slot-config.js';
 export { initScript } from './host/bundle.js';
 export { expectSignedBy, expectSignedData } from './host/assert.js';
 export type { SignedDataExpectation, SignerRole } from './host/assert.js';
