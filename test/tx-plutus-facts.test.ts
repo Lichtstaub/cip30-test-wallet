@@ -177,11 +177,10 @@ describe('readTransaction: Plutus scripts, redeemer data, datums and the script 
     }
   });
 
-  it('reads Plutus scripts of keys 3, 6 and 7 in key order, a tag 258 set included, each hash once', () => {
+  it('reads Plutus scripts of keys 3, 6 and 7 in key order, a tag 258 set included', () => {
     const v3 = bytesToHex(concat(hexToBytes('585e'), ALWAYS.bytes));
-    const v1 = '4e' + V1.cborHex;
-    // {3: [v1, v1], 7: 258([v3]), 6: [v2]}: the map order differs from the key order.
-    const facts = factsOf(withWitnessSet('a3' + '0382' + v1 + v1 + '07d9010281' + v3 + '0681' + '4e' + V2.cborHex));
+    // {3: [v1], 7: 258([v3]), 6: [v2]}: the map order differs from the key order.
+    const facts = factsOf(withWitnessSet('a3' + '0381' + '4e' + V1.cborHex + '07d9010281' + v3 + '0681' + '4e' + V2.cborHex));
     expect(facts.plutusScripts.map((s) => [s.language, bytesToHex(s.hash), bytesToHex(s.bytes)])).toEqual([
       [1, V1.hashHex, V1.cborHex],
       [2, V2.hashHex, V2.cborHex],
@@ -191,13 +190,17 @@ describe('readTransaction: Plutus scripts, redeemer data, datums and the script 
 });
 
 describe('readTransaction: malformed Plutus fields', () => {
-  it.each<[string, string, Array<[bigint, unknown]>, string]>([
+  it.each<[string, string, Array<[bigint, unknown]>, string | RegExp]>([
     ['datums that are no array', 'a10401', [], 'malformed datums'],
     ['datums in a tag other than 258', 'a104d9010381182a', [], 'malformed datums'],
     ['an empty datum list', 'a10480', [], 'malformed datums'],
-    ['a datum that is a text string', 'a104816161', [], 'malformed datum'],
+    ['a datum that is a text string', 'a104816161', [], /^malformed datum$/],
     ['redeemer data that is a text string in the array form', 'a105818400006161820101', [], 'malformed redeemer data'],
     ['redeemer data that is a text string in the map form', 'a105a1820000826161820101', [], 'malformed redeemer data'],
+    ['an empty redeemer array', 'a10580', [], /^malformed redeemers$/],
+    ['an empty redeemer map', 'a105a0', [], /^malformed redeemers$/],
+    ['a repeated Plutus V1 script', 'a10382' + '4e' + V1.cborHex + '4e' + V1.cborHex, [], /^malformed Plutus V1 scripts$/],
+    ['a repeated Plutus V3 script in a tag 258 set', 'a107d9010282' + '585e' + ALWAYS.cborHex + '585e' + ALWAYS.cborHex, [], /^malformed Plutus V3 scripts$/],
     ['a script data hash of 31 bytes', 'a0', [[11n, new Uint8Array(31)]], 'malformed script data hash'],
   ])('refuses %s', (_name, witnessSet, body, message) => {
     expect(() => factsOf(withWitnessSet(witnessSet, body))).toThrow(message);

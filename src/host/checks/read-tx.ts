@@ -286,9 +286,11 @@ interface RedeemerEntry {
 // to one entry and the later wire entry wins. A JS Map keeps the position of the first
 // occurrence and takes the later value, which is the same set of entries. The data keeps
 // its original bytes, what a script receives and what the script integrity hash covers.
+// Both forms must be nonempty, TxWits.hs refuses an empty one while decoding.
 function readRedeemers(bytes: Uint8Array, at: number | undefined): RedeemerEntry[] {
   if (at === undefined) return [];
   const value = decodeItem(bytes, at).value;
+  if ((Array.isArray(value) && value.length === 0) || (value instanceof Map && value.size === 0)) malformed('redeemers');
   const byKey = new Map<string, RedeemerEntry>();
   const add = (fact: RedeemerFact, data: Uint8Array) => byKey.set(`${fact.tag}:${fact.index}`, { fact, data });
   if (Array.isArray(value)) {
@@ -319,10 +321,12 @@ function itemBytes(bytes: Uint8Array, at: number | undefined): Uint8Array | unde
 
 // plutus_v1_script = bytes, plutus_v2_script and plutus_v3_script likewise, as a
 // nonempty_set or a plain array. The page parser already refused an empty list
-// and an empty or non-bytes script. Alonzo TxWits.hs keeps the scripts in a map
-// by hash, so a repeated script counts once.
+// and an empty or non-bytes script. From protocol 9 Alonzo TxWits.hs decodes these
+// keys with decodeMapLikeEnforceNoDuplicates (scriptDecoderV9), so a repeated script
+// fails the deserialization. The language is part of the hash, so one set covers all keys.
 function readPlutusScripts(bytes: Uint8Array, offsets: Map<bigint, number>): TxFacts['plutusScripts'] {
-  const byHash = new Map<string, TxFacts['plutusScripts'][number]>();
+  const seen = new Set<string>();
+  const scripts: TxFacts['plutusScripts'] = [];
   for (const [key, language] of WITNESS_PLUTUS_SCRIPTS) {
     const at = offsets.get(key);
     if (at === undefined) continue;
@@ -331,10 +335,12 @@ function readPlutusScripts(bytes: Uint8Array, offsets: Map<bigint, number>): TxF
       if (!(content instanceof Uint8Array) || content.length === 0) malformed(`Plutus V${language} script`);
       const hash = scriptHash(language, content);
       const hex = bytesToHex(hash);
-      if (!byHash.has(hex)) byHash.set(hex, { language, hash, bytes: content });
+      if (seen.has(hex)) malformed(`Plutus V${language} scripts`);
+      seen.add(hex);
+      scripts.push({ language, hash, bytes: content });
     }
   }
-  return [...byHash.values()];
+  return scripts;
 }
 
 // plutus_data in witness set key 4: nonempty_set<plutus_data>, a plain array or tag 258.
