@@ -14,6 +14,7 @@ import { signWithKeys } from '../src/core/sign-tx.js';
 import { deriveAccount } from '../src/derive/index.js';
 import type { CheckContext } from '../src/host/checks/context.js';
 import { mismatch } from '../src/host/checks/failure.js';
+import { plutusNeeds } from '../src/host/checks/plutus-purposes.js';
 import { witnessFailures } from '../src/host/checks/witness-rules.js';
 import { buildTx, outpoints, spliceWitnessSet } from './helpers/build-tx.js';
 import { checkContext } from './helpers/check-context.js';
@@ -43,10 +44,10 @@ const mine: Utxo = { input: syntheticInput('witness-mine', 0n), address: myAddre
 const locked = (hash: Uint8Array, seed = 'witness-locked'): Utxo => ({ input: syntheticInput(seed, 0n), address: scriptAddress(hash), lovelace: 5_000_000n });
 const holding = (seed: string, scriptRef: Uint8Array): Utxo => ({ input: syntheticInput(seed, 0n), address: myAddress, lovelace: 20_000_000n, scriptRef });
 
-/** requirements over the spent inputs, the way checkTransaction calls it. */
+/** requirements over the spent inputs and the Plutus needs, the way checkTransaction calls it. */
 function witnessRules(ctx: CheckContext) {
   const reqs = requirements(ctx.parsed.body, ctx.resolved.slice(0, spentInputs(ctx.parsed.body).length));
-  return witnessFailures(ctx, reqs);
+  return witnessFailures(ctx, reqs, plutusNeeds(ctx));
 }
 const rules = (ctx: CheckContext) => witnessRules(ctx).map((f) => f.rule);
 
@@ -125,6 +126,8 @@ describe('native scripts', () => {
 
 describe('script presence', () => {
   const plutusHash = scriptHash(3, PLUTUS);
+  // The hand-built spends carry no redeemer: a script found by reference still needs one, and a script data hash.
+  const NO_REDEEMER = ['MissingRedeemers', 'ScriptIntegrityHashMismatch'];
 
   it('an Evolution Plutus spend with collateral passes, without its script MissingScriptWitnessesUTXOW', async () => {
     const plutus = new PlutusV3.PlutusV3({ bytes: PLUTUS });
@@ -148,16 +151,17 @@ describe('script presence', () => {
     witnessSet.delete(7n);
     const stripped = spliceWitnessSet(signed, bytesToHex(encode(witnessSet)));
     const failures = witnessRules(checkContext(stripped, [mine, lockedUtxo]));
-    expect(failures.map((f) => f.rule)).toEqual(['MissingScriptWitnessesUTXOW']);
+    // Without the script nothing needs the redeemer, and the script data hash still covers the PlutusV3 cost model.
+    expect(failures.map((f) => f.rule)).toEqual(['MissingScriptWitnessesUTXOW', 'ExtraRedeemers', 'ScriptIntegrityHashMismatch']);
     expect(failures[0]!.detail).toBe(`[${bytesToHex(plutusHash)}]`);
   });
 
   it('a script from the reference script of a spend or reference input needs no witness', () => {
     const u = locked(plutusHash);
     const holder = holding('witness-ref-holder', encode([3n, PLUTUS]));
-    expect(rules(checkContext(signedBy({ inputs: [mine, u], body: [[18n, outpoints(holder)]] }, me.payment), [mine, u, holder]))).toEqual([]);
+    expect(rules(checkContext(signedBy({ inputs: [mine, u], body: [[18n, outpoints(holder)]] }, me.payment), [mine, u, holder]))).toEqual(NO_REDEEMER);
     const spentHolder = holding('witness-spent-holder', encode([3n, PLUTUS]));
-    expect(rules(checkContext(signedBy({ inputs: [spentHolder, u] }, me.payment), [spentHolder, u]))).toEqual([]);
+    expect(rules(checkContext(signedBy({ inputs: [spentHolder, u] }, me.payment), [spentHolder, u]))).toEqual(NO_REDEEMER);
   });
 
   it('a reference script on a collateral input provides nothing', () => {
@@ -177,7 +181,7 @@ describe('script presence', () => {
     const u = locked(plutusHash);
     const holder = holding('witness-double', encode([3n, PLUTUS]));
     const tx = signedBy({ inputs: [mine, u], body: [[18n, outpoints(holder)]], plutus: [PLUTUS] }, me.payment);
-    expect(rules(checkContext(tx, [mine, u, holder]))).toEqual(['ExtraneousScriptWitnessesUTXOW']);
+    expect(rules(checkContext(tx, [mine, u, holder]))).toEqual(['ExtraneousScriptWitnessesUTXOW', ...NO_REDEEMER]);
   });
 });
 

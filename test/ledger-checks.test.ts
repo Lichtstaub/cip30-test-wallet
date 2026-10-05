@@ -6,12 +6,14 @@ import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import CSL from '@emurgo/cardano-serialization-lib-nodejs';
 import { Address, Assets, Data, PlutusV3, ScriptHash, Transaction, TransactionHash, UTxO } from '@evolution-sdk/evolution';
+import type { Evaluator } from '@evolution-sdk/evolution/sdk/builders/TransactionBuilder';
+import { blake2b } from '@noble/hashes/blake2.js';
 import { baseAddressBytes } from '../src/core/addresses.js';
 import { bytesToHex, hexToBytes } from '../src/core/bytes.js';
 import { encode } from '../src/core/cbor/encode.js';
 import { APIErrorCode, ChwError, isCip30Error, TxSendErrorCode, type Cip30Error } from '../src/core/errors.js';
 import { keyHash, publicKey, type SigningKey } from '../src/core/keys.js';
-import { MemoryLedger, type Ledger, type Utxo } from '../src/core/ledger.js';
+import { MemoryLedger, type Datum, type Ledger, type Utxo } from '../src/core/ledger.js';
 import { parseAddressArg } from '../src/core/sign-data.js';
 import { signWithKeys } from '../src/core/sign-tx.js';
 import { deriveAccount } from '../src/derive/index.js';
@@ -22,9 +24,11 @@ import { LEDGER_BINDING, walletLedger } from '../src/host/ledger.js';
 import { DEFAULT_PROTOCOL_PARAMS } from '../src/host/protocol-params.js';
 import { installWallet, syntheticOwnedUtxo } from '../src/page/install.js';
 import { buildTx, outpoints, spliceWitnessSet } from './helpers/build-tx.js';
-import { evolutionBuild, evolutionUtxo, fixedBudgetEvaluator } from './helpers/evolution-build.js';
+import { budgetEvaluator, evolutionBuild, evolutionUtxo, fixedBudgetEvaluator } from './helpers/evolution-build.js';
 import { enableChw, pageWith, rejectionOf } from './helpers/page.js';
-import { PLUTUS_V3, syntheticInput } from './helpers/synthetic.js';
+import { plutusScript, type PlutusFixture } from './helpers/plutus-fixtures.js';
+import { inlineDatum, lockedUtxo, plutusSpend, scriptWitnesses, UNIT_DATA, withVKeys } from './helpers/plutus-spend.js';
+import { syntheticInput } from './helpers/synthetic.js';
 
 type DemoTx = { unsignedHex: string; bodyEndHex: number };
 const DEMO = vm.runInNewContext(`${readFileSync('examples/minimal-dapp/demo-tx.js', 'utf8')}\n;({ DEMO_TX, DEMO_DELEG_TX })`) as Record<'DEMO_TX' | 'DEMO_DELEG_TX', DemoTx>;
@@ -124,6 +128,9 @@ describe('a rejected transaction', () => {
   });
 });
 
+/** walletOptions.foreignUtxos entry for a UTxO without datum or reference script. */
+const foreignConfig = (u: Utxo) => ({ txId: bytesToHex(u.input.txId), index: Number(u.input.index), addressHex: bytesToHex(u.address), lovelace: Number(u.lovelace) });
+
 /** A UTxO at a script address, known to the wallet's ledger as foreign and to Evolution as available. */
 function lockedBy(hash: ScriptHash.ScriptHash, seed: string) {
   const input = syntheticInput(seed, 0n);
@@ -142,21 +149,112 @@ describe('transactions a node accepts', () => {
     expect(now.length).toBeGreaterThan(0);
     expect(now.every((u) => bytesToHex(u.input.txId) === bytesToHex(id))).toBe(true);
   });
+});
 
-  it('a Plutus V3 spend with collateral: the script fee comes from the declared ExUnits, the collateral rules apply', async () => {
-    const plutus = new PlutusV3.PlutusV3({ bytes: hexToBytes(PLUTUS_V3) });
-    const locked = lockedBy(ScriptHash.fromScript(plutus), 'checks-plutus');
+describe('Plutus scripts run on submit', () => {
+  const plutus = new PlutusV3.PlutusV3({ bytes: plutusScript('v3_always_succeeds').bytes });
+
+  /** An Evolution-built spend of an always_succeeds output, the declared ExUnits from evaluator, signed by the wallet. */
+  async function evolutionSpend(seed: string, evaluator: Evaluator) {
+    const locked = lockedBy(ScriptHash.fromScript(plutus), seed);
     const { ledger, address, utxo } = checkedWallet({ utxos: [{ lovelace: 50_000_000 }, { lovelace: 10_000_000 }], foreignUtxos: [locked.config] });
     const tx = await evolutionBuild(
       (b) => b.collectFrom({ inputs: [locked.evo], redeemer: Data.constr(0n, []) }).attachScript({ script: plutus }),
       address,
       [utxo(0), utxo(1)].map((u) => evolutionUtxo(u, address)),
-      { evaluator: fixedBudgetEvaluator },
+      { evaluator },
     );
-    expect(CSL.Transaction.from_hex(tx).witness_set().redeemers()?.len()).toBe(1);
-    expect(CSL.Transaction.from_hex(tx).body().collateral()?.len()).toBeGreaterThan(0);
-    await ledger.submit(hexToBytes(Transaction.addVKeyWitnessesHex(tx, signWithKeys(tx, [account.payment]))));
+    return { ledger, locked, unsigned: tx, tx: hexToBytes(Transaction.addVKeyWitnessesHex(tx, signWithKeys(tx, [account.payment]))) };
+  }
+
+  it('an Evolution-built always_succeeds spend passes every check with the builder\'s script data hash, declared above or exactly at what it needs', async () => {
+    for (const [seed, evaluator] of [
+      ['checks-plutus-above', fixedBudgetEvaluator],
+      ['checks-plutus-exact', budgetEvaluator(9_751n, 2_836_913n)],
+    ] as const) {
+      const { ledger, locked, unsigned, tx } = await evolutionSpend(seed, evaluator);
+      const csl = CSL.Transaction.from_hex(unsigned);
+      expect(csl.witness_set().redeemers()?.len()).toBe(1);
+      expect(csl.body().collateral()?.len()).toBeGreaterThan(0);
+      expect(csl.body().script_data_hash()).toBeDefined();
+      await ledger.submit(tx);
+      expect(ledger.inner.unspent(locked.input)).toBeUndefined();
+    }
+  });
+
+  it('declared ExUnits one below what always_succeeds needs: ValidationTagMismatch FailedUnexpectedly, nothing changes', async () => {
+    const { ledger, locked, tx } = await evolutionSpend('checks-plutus-short', budgetEvaluator(9_750n, 2_836_913n));
+    const before = await snapshot(ledger);
+    const error = await rejection(ledger, tx);
+    expect(error.info).toContain('ConwayUtxowFailure (UtxoFailure (UtxosFailure (ValidationTagMismatch (IsValid True) (FailedUnexpectedly (PlutusFailure "');
+    expect(error.info).toContain('needs ExUnits {mem: 9751, steps: 2836913}, its redeemer declares ExUnits {mem: 9750, steps: 2836913}');
+    expect(await snapshot(ledger)).toEqual(before);
+    expect(ledger.inner.unspent(locked.input)).toBeDefined();
+  });
+
+  it('is_valid false with always_fails is accepted and takes only the collateral', async () => {
+    const script = plutusScript('v3_always_fails');
+    const locked = lockedUtxo(script, 'checks-invalid-fails');
+    const { ledger, address, utxo } = checkedWallet({ foreignUtxos: [foreignConfig(locked)] });
+    const tx = plutusSpend({ spends: [{ utxo: locked, script }], wallet: utxo(0), changeAddress: address, isValid: false, keys: [account.payment] });
+    await ledger.submit(hexToBytes(tx));
+    expect(ledger.inner.unspent(utxo(0).input)).toBeUndefined();
+    expect(ledger.inner.unspent(locked.input)).toBeDefined();
+    expect(await ledger.getWalletUtxos()).toEqual([]);
+    expect(ledger.inner.submitted).toHaveLength(1);
+  });
+
+  it('is_valid false with always_succeeds is ValidationTagMismatch PassedUnexpectedly and changes nothing', async () => {
+    const script = plutusScript('v3_always_succeeds');
+    const locked = lockedUtxo(script, 'checks-invalid-succeeds');
+    const { ledger, address, utxo } = checkedWallet({ foreignUtxos: [foreignConfig(locked)] });
+    const before = await snapshot(ledger);
+    const tx = plutusSpend({ spends: [{ utxo: locked, script }], wallet: utxo(0), changeAddress: address, isValid: false, keys: [account.payment] });
+    const error = await rejection(ledger, hexToBytes(tx));
+    expect(error.info).toBe('ConwayApplyTxError [ConwayUtxowFailure (UtxoFailure (UtxosFailure (ValidationTagMismatch (IsValid False) PassedUnexpectedly)))]');
+    expect(await snapshot(ledger)).toEqual(before);
+    // The same spend marked valid passes.
+    await ledger.submit(hexToBytes(plutusSpend({ spends: [{ utxo: locked, script }], wallet: utxo(0), changeAddress: address, keys: [account.payment] })));
     expect(ledger.inner.unspent(locked.input)).toBeUndefined();
+  });
+
+  it('a failing script with phase 1 failures: only the phase 1 failures, the script never runs', async () => {
+    const script = plutusScript('v3_always_fails');
+    const locked = lockedUtxo(script, 'checks-fails-unsigned');
+    const { ledger, address, utxo } = checkedWallet({ foreignUtxos: [foreignConfig(locked)] });
+    const error = await rejection(ledger, hexToBytes(plutusSpend({ spends: [{ utxo: locked, script }], wallet: utxo(0), changeAddress: address })));
+    expect(error.info).toContain('MissingVKeyWitnessesUTXOW');
+    expect(error.info).not.toContain('ValidationTagMismatch');
+  });
+
+  it('always_fails beside a V1 spend whose context cannot be built: CollectErrors in either script order and for either is_valid, nothing changes', async () => {
+    // The change output carries an inline datum, which a PlutusV1 context cannot show. scalus would stop at
+    // always_fails and never look at the V1 context. The collect phase refuses the transaction before anything runs.
+    const fails = plutusScript('v3_always_fails');
+    const v1 = plutusScript('v1_always_succeeds');
+    const unitHash = blake2b(encode(UNIT_DATA), { dkLen: 32 });
+    const at = (script: PlutusFixture, fill: number, datum?: Datum): Utxo => ({ ...lockedUtxo(script, `mixed-${fill}`, datum), input: { txId: new Uint8Array(32).fill(fill), index: 0n } });
+    for (const [failsFill, v1Fill] of [
+      [0x01, 0xfe],
+      [0xfe, 0x01],
+    ] as const) {
+      const failing = at(fails, failsFill);
+      const untranslatable = at(v1, v1Fill, { kind: 'hash', hash: unitHash });
+      const { ledger, address, utxo } = checkedWallet({ foreignUtxos: [foreignConfig(failing), { ...foreignConfig(untranslatable), datumHash: bytesToHex(unitHash) }] });
+      const before = await snapshot(ledger);
+      for (const isValid of [true, false]) {
+        const spends = [
+          { utxo: failing, script: fails },
+          { utxo: untranslatable, script: v1 },
+        ];
+        const tx = plutusSpend({ spends, wallet: utxo(0), changeAddress: address, changeDatum: inlineDatum(UNIT_DATA), witnessDatums: [UNIT_DATA], isValid, keys: [account.payment] });
+        const error = await rejection(ledger, hexToBytes(tx));
+        expect(error.info).toBe(
+          'ConwayApplyTxError [ConwayUtxowFailure (UtxoFailure (UtxosFailure (CollectErrors (BadTranslation (BabbageContextError (InlineDatumsNotSupported (TxOutFromOutput (TxIx 0)))) :| []))))]',
+        );
+        expect(await snapshot(ledger)).toEqual(before);
+      }
+    }
   });
 });
 
@@ -167,7 +265,9 @@ describe('stake registration in Node and in the certificate state', () => {
   const withStake = [account.payment, account.stake];
 
   it('agree after every submit: rejected delegation, invalid transaction, register and unregister at once, registration, delegation', async () => {
-    const { ledger, address, utxo } = checkedWallet({ utxos: [10_000_000, 10_000_000, 10_000_000, 10_000_000, 5_000_000].map((lovelace) => ({ lovelace })) });
+    const alwaysFails = plutusScript('v3_always_fails');
+    const locked = lockedUtxo(alwaysFails, 'agree-locked');
+    const { ledger, address, utxo } = checkedWallet({ utxos: [10_000_000, 10_000_000, 10_000_000, 10_000_000, 5_000_000].map((lovelace) => ({ lovelace })), foreignUtxos: [foreignConfig(locked)] });
     const agree = async (registered: boolean) => {
       expect(await ledger.getStakeRegistered()).toBe(registered);
       expect(ledger.certState.accounts.has(ownStake)).toBe(registered);
@@ -180,22 +280,27 @@ describe('stake registration in Node and in the certificate state', () => {
     expect(error.info).not.toContain('UtxoFailure');
     await agree(false);
 
-    // is_valid false: only the collateral is spent, the registration does not apply. The body still balances with the deposit.
-    // A node would refuse this transaction: it is marked invalid, yet no script fails, which Babbage/Rules/Utxos.hs
-    // reports as ValidationTagMismatch. The checks run no Plutus script and cannot tell yet. Once scripts are
-    // evaluated locally, this part of the test needs a script that fails.
-    const invalid = buildTx({
-      inputs: [utxo(1).input],
-      outputs: [{ address, lovelace: 7_800_000n }],
-      fee: 200_000n,
-      isValid: false,
-      extraBodyEntries: new Map<bigint, unknown>([
-        [4n, [registration]],
-        [13n, outpoints(utxo(4))],
-      ]),
-    });
-    await ledger.submit(signed(invalid, withStake));
+    // is_valid false with a script that fails: only the collateral is spent, the registration does not apply.
+    // The body still balances with the deposit.
+    const { witnessSet, scriptDataHash } = scriptWitnesses([{ utxo: locked, script: alwaysFails }], [utxo(1), locked]);
+    const invalid = withVKeys(
+      {
+        inputs: [utxo(1).input, locked.input],
+        outputs: [{ address, lovelace: 12_800_000n }],
+        fee: 200_000n,
+        isValid: false,
+        witnessSet,
+        extraBodyEntries: new Map<bigint, unknown>([
+          [4n, [registration]],
+          [11n, scriptDataHash],
+          [13n, outpoints(utxo(4))],
+        ]),
+      },
+      withStake,
+    );
+    await ledger.submit(hexToBytes(invalid));
     expect(ledger.inner.unspent(utxo(4).input)).toBeUndefined();
+    expect(ledger.inner.unspent(locked.input)).toBeDefined();
     await agree(false);
 
     // Registered and unregistered in one transaction: the refund equals the deposit paid in the same transaction.

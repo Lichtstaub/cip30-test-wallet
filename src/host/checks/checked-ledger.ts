@@ -7,6 +7,7 @@ import { applyCertificates, initialCertState, type CertState } from './cert-stat
 import { buildCheckContext } from './context.js';
 import { formatFailures } from './failure.js';
 import { checkTransaction } from './index.js';
+import { evaluateScripts, phaseTwoFailures } from './phase-two.js';
 
 export interface CheckedLedgerOptions {
   checks: LedgerChecksConfig;
@@ -84,12 +85,17 @@ export class CheckedLedger implements Ledger {
       // A spent output counts as unknown, a node no longer holds it. signTx still resolves it through resolveInput.
       buildCheckContext(tx, (input) => this.inner.unspent(input), { params: checks.params, networkId, currentSlot: checks.currentSlot, slotConfig: SLOT_CONFIGS[checks.network], certState: this.state }),
     );
-    const { failures, unsupported } = checkTransaction(ctx);
+    const { failures, unsupported, needs } = checkTransaction(ctx);
     if (unsupported.length > 0) {
       throw new ChwError(
         'CHW_UNSUPPORTED_TX_FORM',
         `the ledger checks cannot judge ${unsupported.join(', ')}. Submit this transaction in a test without walletOptions.ledger.checks`,
       );
+    }
+    // Babbage/Rules/Utxos.hs runs the scripts only when nothing else failed (whenFailureFree). Without
+    // a script and with is_valid true there is nothing to run, and scalus is never loaded.
+    if (failures.length === 0 && (needs.length > 0 || !ctx.parsed.isValid)) {
+      failures.push(...phaseTwoFailures(ctx, needs, await evaluateScripts(ctx, needs)));
     }
     if (failures.length > 0) throw txSendError(TxSendErrorCode.Failure, formatFailures(failures));
     const id = await this.inner.submit(tx);

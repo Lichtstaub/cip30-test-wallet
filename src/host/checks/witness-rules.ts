@@ -4,19 +4,25 @@ import type { Requirements } from '../../core/requirements.js';
 import { evaluateNativeScript, scriptsProvided } from '../../core/scripts.js';
 import { knownInputs, type CheckContext } from './context.js';
 import { failer, list, mismatch, PATH, type Failure } from './failure.js';
+import type { PlutusNeed } from './plutus-purposes.js';
+import { datumFailures, redeemerFailures, scriptIntegrityFailures } from './plutus-rules.js';
 
 // The witness part of the UTXOW rule of a Conway node: Babbage/Rules/Utxow.hs
 // babbageUtxowTransition with validators from Shelley/Rules/Utxow.hs. Plutus
-// scripts count for presence only, nothing here runs them. Datums, redeemers
-// and the script integrity hash are not checked.
+// scripts count for presence here. The datum, redeemer and script integrity
+// rules of plutus-rules.ts run where the node runs them, the scripts
+// themselves run in phase-two.ts.
 
 /** Hex hashes in first-seen order, each once. */
 function hashSet(scripts: ReadonlyArray<{ hash: Uint8Array }>): Set<string> {
   return new Set(scripts.map((s) => bytesToHex(s.hash)));
 }
 
-/** UTXOW: witnesses and script presence. reqs from requirements(body, resolved spent inputs). */
-export function witnessFailures(ctx: CheckContext, reqs: Requirements): Failure[] {
+/**
+ * UTXOW in node order: script presence, datums, redeemers, vkey witnesses, metadata, the script
+ * integrity hash. reqs from requirements(body, resolved spent inputs), needs from plutusNeeds.
+ */
+export function witnessFailures(ctx: CheckContext, reqs: Requirements, needs: readonly PlutusNeed[]): Failure[] {
   const { parsed } = ctx;
   const { body } = parsed;
   const failures: Failure[] = [];
@@ -51,6 +57,10 @@ export function witnessFailures(ctx: CheckContext, reqs: Requirements): Failure[
   const missing = [...neededNonRefs].filter((hex) => !received.has(hex));
   if (missing.length > 0) fail('MissingScriptWitnessesUTXOW', list(missing));
 
+  // babbageUtxowTransition checks the datums (missingRequiredDatums) and the redeemers
+  // (hasExactSetOfRedeemers) right after the scripts, before the key witnesses.
+  failures.push(...datumFailures(ctx, needs), ...redeemerFailures(ctx, needs));
+
   // Shelley/Rules/Utxow.hs validateVerifiedWits: every vkey witness verifies over the body hash.
   const invalid = parsed.vkeyWitnesses.filter((w) => !verifiesOver(w, parsed.hash)).map((w) => bytesToHex(w.vkey));
   if (invalid.length > 0) fail('InvalidWitnessesUTXOW', list(invalid));
@@ -69,6 +79,9 @@ export function witnessFailures(ctx: CheckContext, reqs: Requirements): Failure[
   else if (declaredHash && computedHash && !bytesEqual(declaredHash, computedHash)) {
     fail('ConflictingMetadataHash', mismatch('RelEQ', bytesToHex(declaredHash), bytesToHex(computedHash)));
   }
+
+  // Alonzo/Rules/Utxow.hs checkScriptIntegrityHash, the last check of UTXOW before UTXO.
+  failures.push(...scriptIntegrityFailures(ctx, needs));
 
   return failures;
 }

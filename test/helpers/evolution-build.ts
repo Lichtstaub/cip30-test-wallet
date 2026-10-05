@@ -36,25 +36,30 @@ const koios = (JSON.parse(readFileSync(new URL('../fixtures/koios-epoch-params-p
 const REDEEMER_TAGS = ['spend', 'mint', 'cert', 'reward', 'vote', 'propose'] as const;
 
 /**
- * Answers every redeemer of the transaction with the same fixed budget, so a
- * Plutus transaction builds offline. Nothing is executed here. 100000 memory
- * and 10000000 steps cover the always_succeeds fixture (9751 and 2836913).
+ * Answers every redeemer of the transaction with the same declared budget, so
+ * a Plutus transaction builds offline. Nothing is executed here, the checked
+ * ledger runs the scripts on submit and compares with this budget.
  */
-export const fixedBudgetEvaluator: Evaluator = {
-  evaluate: (tx) => {
-    const redeemers = CSL.Transaction.from_hex(Transaction.toCBORHex(tx)).witness_set().redeemers();
-    const answers: EvalRedeemer[] = [];
-    for (let i = 0; i < (redeemers?.len() ?? 0); i++) {
-      const redeemer = redeemers!.get(i);
-      answers.push({
-        ex_units: new Redeemer.ExUnits({ mem: 100_000n, steps: 10_000_000n }),
-        redeemer_index: Number(redeemer.index().to_str()),
-        redeemer_tag: REDEEMER_TAGS[redeemer.tag().kind()]!,
-      });
-    }
-    return Effect.succeed(answers);
-  },
-};
+export function budgetEvaluator(mem: bigint, steps: bigint): Evaluator {
+  return {
+    evaluate: (tx) => {
+      const redeemers = CSL.Transaction.from_hex(Transaction.toCBORHex(tx)).witness_set().redeemers();
+      const answers: EvalRedeemer[] = [];
+      for (let i = 0; i < (redeemers?.len() ?? 0); i++) {
+        const redeemer = redeemers!.get(i);
+        answers.push({
+          ex_units: new Redeemer.ExUnits({ mem, steps }),
+          redeemer_index: Number(redeemer.index().to_str()),
+          redeemer_tag: REDEEMER_TAGS[redeemer.tag().kind()]!,
+        });
+      }
+      return Effect.succeed(answers);
+    },
+  };
+}
+
+/** 100000 memory and 10000000 steps, more than the always_succeeds fixture needs (9751 and 2836913). */
+export const fixedBudgetEvaluator: Evaluator = budgetEvaluator(100_000n, 10_000_000n);
 
 export async function evolutionBuild(
   configure: (b: ReturnType<typeof makeTxBuilder>) => void,
