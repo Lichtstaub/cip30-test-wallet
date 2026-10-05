@@ -27,17 +27,32 @@ export interface ScriptRun {
 
 export type EvaluationOutcome =
   | { kind: 'passed'; runs: ScriptRun[] }
-  | { kind: 'failed'; need: PlutusNeed | undefined; code: string; logs: string[]; message: string };
+  | {
+      kind: 'failed';
+      need: PlutusNeed | undefined;
+      /** The hash scalus names for the failing script, hex, carried when no need matches its redeemer. */
+      scriptHash?: string;
+      code: string;
+      logs: string[];
+      message: string;
+    };
 
 type Scalus = typeof import('scalus');
 
-// RedeemerBudget.tag of scalus to the redeemer tags of the Conway CDDL.
-const TAGS: Readonly<Record<string, RedeemerTag>> = { Spend: 0n, Mint: 1n, Cert: 2n, Reward: 3n, Voting: 4n, Proposing: 5n };
+// RedeemerBudget.tag of scalus to the redeemer tags of the Conway CDDL. A Map, so no prototype key reads as a tag.
+const TAGS: ReadonlyMap<string, RedeemerTag> = new Map([
+  ['Spend', 0n],
+  ['Mint', 1n],
+  ['Cert', 2n],
+  ['Reward', 3n],
+  ['Voting', 4n],
+  ['Proposing', 5n],
+]);
 
 // The codes of a PlutusScriptEvaluationError that name a failing script. INTERNAL_ERROR is a defect in scalus.
 const SCRIPT_FAILURES: ReadonlySet<string> = new Set(['SCRIPT_FAILURE', 'BUILTIN_FAILURE', 'INVALID_RETURN_VALUE', 'OUT_OF_BUDGET']);
 
-/** Not cached here: Node keeps a loaded module, and a failed load is tried again on the next submit. */
+/** Not cached here. Node keeps a loaded module and tries a failed resolve again on the next submit, a module that threw while loading stays failed. */
 async function loadScalus(): Promise<Scalus> {
   try {
     return await import('scalus');
@@ -62,9 +77,28 @@ function evaluatorFailed(cause: unknown): ChwError {
 }
 
 function tagOf(name: string): RedeemerTag {
-  const tag = TAGS[name];
+  const tag = TAGS.get(name);
   if (tag === undefined) throw new Error(`scalus reported an unknown redeemer tag ${name}`);
   return tag;
+}
+
+/**
+ * The failed outcome when scalus stopped at a failing script, undefined for anything else. It may throw on an
+ * error it cannot read, such as an unknown redeemer tag, the caller turns that into CHW_EVALUATOR_FAILED.
+ */
+function scriptFailure(scalus: Scalus, error: unknown, needs: readonly PlutusNeed[]): EvaluationOutcome | undefined {
+  const ErrorClass: unknown = scalus.PlutusScriptEvaluationError;
+  if (typeof ErrorClass !== 'function' || !(error instanceof scalus.PlutusScriptEvaluationError)) return undefined;
+  if (error.code === undefined || !SCRIPT_FAILURES.has(error.code)) return undefined;
+  const { redeemer } = error;
+  let need: PlutusNeed | undefined;
+  if (redeemer) {
+    const tag = tagOf(redeemer.tag);
+    const index = BigInt(redeemer.index);
+    need = needs.find((n) => n.tag === tag && n.index === index);
+  }
+  const scriptHash = need === undefined && typeof error.scriptHash === 'string' ? { scriptHash: error.scriptHash } : {};
+  return { kind: 'failed', need, ...scriptHash, code: error.code, logs: [...error.logs], message: error.message };
 }
 
 /**
@@ -92,13 +126,16 @@ export async function evaluateScripts(ctx: CheckContext, needs: readonly PlutusN
     );
     return { kind: 'passed', runs: budgets.map((b) => ({ tag: tagOf(b.tag), index: BigInt(b.index), mem: BigInt(b.budget.memory), steps: BigInt(b.budget.steps) })) };
   } catch (error) {
-    if (error instanceof scalus.PlutusScriptEvaluationError && error.code !== undefined && SCRIPT_FAILURES.has(error.code)) {
-      const { redeemer } = error;
-      const need = redeemer ? needs.find((n) => n.tag === tagOf(redeemer.tag) && n.index === BigInt(redeemer.index)) : undefined;
-      return { kind: 'failed', need, code: error.code, logs: [...error.logs], message: error.message };
+    let failed: EvaluationOutcome | undefined;
+    try {
+      failed = scriptFailure(scalus, error, needs);
+    } catch {
+      failed = undefined;
     }
+    if (failed) return failed;
     // Anything else is a harness diagnosis: INTERNAL_ERROR, an evaluation error without a code, a TypeError for
-    // input scalus cannot read, a plain Error such as a script that does not decode. A node never reports these.
+    // input scalus cannot read, a plain Error such as a script that does not decode, an error the wallet cannot
+    // read. A node never reports these.
     throw evaluatorFailed(error);
   }
 }
@@ -147,19 +184,24 @@ function failureText(need: PlutusNeed | undefined, scriptHash: string | undefine
   return `${lines.join('\n')}\n`;
 }
 
-/** Computed against declared ExUnits per redeemer, then the outcome against the is_valid flag. Empty when the transaction is consistent. */
+/**
+ * Computed against declared ExUnits per redeemer, then the outcome against the is_valid flag. Empty when the transaction is consistent.
+ * Throws ChwError CHW_EVALUATOR_FAILED when scalus passed without ExUnits for a needed script.
+ */
 export function phaseTwoFailures(ctx: CheckContext, needs: readonly PlutusNeed[], outcome: EvaluationOutcome): Failure[] {
   let failure: string | undefined;
   if (outcome.kind === 'failed') {
     const firstLine = outcome.message.split('\n')[0]!;
-    failure = failureText(outcome.need, outcome.need ? bytesToHex(outcome.need.scriptHash) : undefined, `${outcome.code}: ${firstLine}`, outcome.logs);
+    failure = failureText(outcome.need, outcome.need ? bytesToHex(outcome.need.scriptHash) : outcome.scriptHash, `${outcome.code}: ${firstLine}`, outcome.logs);
   } else {
     // The declared ExUnits are each script's budget. A script that needs more fails, in the node with
     // the CEK machine's out of budget error, here with the units both sides name.
     for (const need of needs) {
       const run = outcome.runs.find((r) => r.tag === need.tag && r.index === need.index);
+      if (!run) throw evaluatorFailed(new Error(`scalus reported no ExUnits for ${need.purpose}, a script the transaction needs`));
+      // MissingRedeemers has refused a need without a redeemer before anything runs.
       const declared = ctx.facts.redeemers.find((r) => r.tag === need.tag && r.index === need.index);
-      if (!run || !declared || (run.mem <= declared.mem && run.steps <= declared.steps)) continue;
+      if (!declared || (run.mem <= declared.mem && run.steps <= declared.steps)) continue;
       const error = `OUT_OF_BUDGET: ${need.purpose} needs ExUnits {mem: ${run.mem}, steps: ${run.steps}}, its redeemer declares ExUnits {mem: ${declared.mem}, steps: ${declared.steps}}`;
       failure = failureText(need, bytesToHex(need.scriptHash), error, []);
       break;
