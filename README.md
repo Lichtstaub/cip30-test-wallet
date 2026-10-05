@@ -405,10 +405,10 @@ npm run bundle:check  # the page bundle must stand alone: no Node, no WASM, no e
 
 Releases are published to npm by the release workflow, never from a local machine.
 
-1. Bump the version on a branch with `npm version minor --no-git-tag-version` (or `patch`, or `prerelease --preid beta`), open a PR and squash merge it.
+1. Bump the version on a branch with `npm version minor --no-git-tag-version` (or `patch`, or `prerelease --preid beta`). For release notes of your own, add them as `.github/release-notes/v<version>.md` in the same branch. Open a PR and squash merge it.
 2. Tag the merge commit on `main` and push the tag: `git tag -a v0.4.0 -m v0.4.0 && git push origin v0.4.0`.
 3. Approve the staged version on npmjs.com under Staged Packages (asks for 2FA). Only then is it installable.
 
-The workflow checks that the tag matches `package.json` and sits on `main`, runs typecheck, unit tests, build and the bundle check, stages the version on npm with provenance and creates the GitHub release. A prerelease tag such as `v0.5.0-beta.1` goes to the npm dist-tag named after its identifier, `beta` here, and becomes a GitHub prerelease, a stable tag goes to `latest`. If the workflow fails after staging, approve the staged version first and then rerun it, it skips npm when that version already came from the same commit.
+The workflow checks that the tag matches `package.json` and sits on `main`, runs typecheck, unit tests, build and the bundle check, stages the version on npm with provenance and creates the GitHub release, with the notes file of the tag or, without one, with notes generated from the merged pull requests. A prerelease tag such as `v0.5.0-beta.1` goes to the npm dist-tag named after its identifier, `beta` here, and becomes a GitHub prerelease, a stable tag goes to `latest`. If the workflow fails after staging, approve the staged version first and then rerun it, it skips npm when that version already came from the same commit.
 
 Related work: [cardano-test-wallet](https://github.com/cardanoapi/cardano-test-wallet) (MIT) is the conceptual predecessor, a simulated wallet built for GovTool. Sorbet and Cardano Dev Wallet are browser extensions for manual testing, with a human at the popup. This project is built for runs without one: CI pipelines and coding agents that drive a browser.

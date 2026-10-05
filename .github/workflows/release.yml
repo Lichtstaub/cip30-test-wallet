@@ -73,6 +73,8 @@ jobs:
             echo "::error::$name@$version is already published from $published_head, not from $GITHUB_SHA"
             exit 1
           fi
+      # Release notes written for this version (.github/release-notes/<tag>.md at the tagged
+      # commit) replace the generated list of merged pull requests.
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -80,7 +82,9 @@ jobs:
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             echo "Release $GITHUB_REF_NAME already exists"
           else
-            flags=(--verify-tag --generate-notes)
+            flags=(--verify-tag)
+            notes=".github/release-notes/${GITHUB_REF_NAME}.md"
+            if [ -f "$notes" ]; then flags+=(--notes-file "$notes"); else flags+=(--generate-notes); fi
             if [ "$PRERELEASE" = true ]; then flags+=(--prerelease); fi
             gh release create "$GITHUB_REF_NAME" "${flags[@]}"
           fi
