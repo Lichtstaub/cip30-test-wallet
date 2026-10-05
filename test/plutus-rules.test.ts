@@ -259,6 +259,14 @@ describe('collect phase', () => {
     expect(witness(ctx).map((f) => f.rule)).toEqual(['MissingRedeemers']);
   });
 
+  it('a reward and a mint without redeemers: MissingRedeemers in need order, NoRedeemer the later first, whatever the body order', () => {
+    // Body key 9 before key 5, the needs still come reward before mint (Conway UTxO.hs getConwayScriptsNeeded).
+    const withdrawal: Array<[bigint, unknown]> = [[5n, new Map([[concat(Uint8Array.of(0xf0), V3_HASH), 0n]])]];
+    const ctx = consistent({ body: [...mintV2, ...withdrawal], plutusV2: true, plutusV3: true }, [own]);
+    expect(witness(ctx)).toEqual([utxow('MissingRedeemers', `[(ConwayRewarding (AsIx 0), ${V3.hashHex}), (ConwayMinting (AsIx 0), ${V2.hashHex})]`)]);
+    expect(collect(ctx)).toEqual(collectErrors('NoRedeemer (ConwayMinting (AsIx 0))', 'NoRedeemer (ConwayRewarding (AsIx 0))'));
+  });
+
   it('merges like the node: a translation failure stays behind a later NoRedeemer, one after an error is never seen', () => {
     const shared: Array<[bigint, unknown]> = [[18n, new Tagged(258n, [[v3.input.txId, 0n]])]];
     const mintV3: Array<[bigint, unknown]> = [[9n, new Map([[V3_HASH, new Map([[hexToBytes('41'), 1n]])]])]];
