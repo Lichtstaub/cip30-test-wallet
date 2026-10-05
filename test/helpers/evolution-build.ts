@@ -37,8 +37,8 @@ const REDEEMER_TAGS = ['spend', 'mint', 'cert', 'reward', 'vote', 'propose'] as 
 
 /**
  * Answers every redeemer of the transaction with the same fixed budget, so a
- * Plutus transaction builds offline. Nothing is executed: the wallet never
- * runs a script, and the budget only has to be a valid number.
+ * Plutus transaction builds offline. Nothing is executed here. 100000 memory
+ * and 10000000 steps cover the always_succeeds fixture (9751 and 2836913).
  */
 export const fixedBudgetEvaluator: Evaluator = {
   evaluate: (tx) => {

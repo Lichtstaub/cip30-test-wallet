@@ -395,12 +395,12 @@ The wallet's UTxOs stay as they were, a corrected transaction over the same inpu
 A dApp that spends from a contract builds the transaction from chain data. The wallet has to know every input it cannot find in its own UTxOs: the UTxO the contract locks and, when the validator is used as a reference script, the UTxO holding it. Without them `signTx` raises `CHW_UNRESOLVED_INPUT`. A dApp that attaches the validator to the transaction itself needs only the locked UTxO.
 
 ```ts
-// The validator 4601000022499d is Plutus V3, its hash f219ee...48d1bc makes the script address.
+// The validator is an always succeeding Plutus V3 script compiled with aiken, its hash 5d0f74...02078e3 makes the script address.
 test.use({
   walletOptions: {
     foreignUtxos: [
-      { txId: 'aa'.repeat(32), index: 0, addressHex: '70f219eeced46ac39519d0542b1ed39fd0b563eac2a1d6a1b60b48d1bc', lovelace: 5_000_000, inlineDatum: 'd87980' },
-      { txId: 'bb'.repeat(32), index: 0, addressHex: '70f219eeced46ac39519d0542b1ed39fd0b563eac2a1d6a1b60b48d1bc', lovelace: 20_000_000, scriptRef: '8203474601000022499d' },
+      { txId: 'aa'.repeat(32), index: 0, addressHex: '705d0f747d4eb70739ff667eed99b934de3a3e5054fae1e368902078e3', lovelace: 5_000_000, inlineDatum: 'd87980' },
+      { txId: 'bb'.repeat(32), index: 0, addressHex: '705d0f747d4eb70739ff667eed99b934de3a3e5054fae1e368902078e3', lovelace: 20_000_000, scriptRef: '8203585e585c01010029800aba2aba1aab9eaab9dab9a4888896600264653001300600198031803800cc0180092225980099b8748008c01cdd500144c8cc892898050009805180580098041baa0028a51401830060013003375400d149a26cac8009' },
     ],
   },
 });
