@@ -1,15 +1,18 @@
 import { blake2b } from '@noble/hashes/blake2.js';
 import { networkTag } from '../../core/addresses.js';
 import { bytesToHex } from '../../core/bytes.js';
-import { arrayItemRanges, decodeItem, mapValueOffsets, type CborValue } from '../../core/cbor/decode.js';
+import { isPlutusDataBytes } from '../../core/cbor-shapes.js';
+import { arrayItemRanges, decode, decodeItem, mapValueOffsets, readHeader, type CborValue } from '../../core/cbor/decode.js';
 import { unwrapSet, type ParsedTransaction, type TxOutput } from '../../core/cbor/tx.js';
 import { CERTIFICATE_ARITY, certificateName } from '../../core/requirements.js';
+import { scriptHash } from '../../core/scripts.js';
 import { addAsset, MAX_INT64, type MultiAsset } from '../../core/value.js';
 
 // What the ledger rules need from a transaction beyond what the page parser
-// reads: amounts, byte sizes, certificates, redeemers and the auxiliary data
-// hash. Everything comes from the original bytes, only a value's size is
-// counted as the ledger would serialize it again.
+// reads: amounts, byte sizes, certificates, redeemers with their data, Plutus
+// scripts, datums, the script data hash and the auxiliary data hash.
+// Everything comes from the original bytes, only a value's size is counted as
+// the ledger would serialize it again.
 // Field layout after the Conway CDDL (eras/conway/impl/cddl/data/conway.cddl).
 
 export interface Credential {
@@ -77,6 +80,18 @@ export interface TxFacts {
   /** declaredHash: body key 7. computedHash: Blake2b-256 over the original bytes of the auxiliary data, undefined when it is null. */
   auxiliaryData: { declaredHash: Uint8Array | undefined; computedHash: Uint8Array | undefined };
   redeemers: RedeemerFact[];
+  /** The data of every redeemer as the original plutus_data bytes, in the order and with the dedupe of redeemers. */
+  redeemerData: Array<{ tag: bigint; index: bigint; data: Uint8Array }>;
+  /** Witness set key 5 in its original bytes, what the script integrity hash covers. */
+  redeemersBytes: Uint8Array | undefined;
+  /** Plutus scripts of witness set keys 3, 6 and 7 in key order, each hash once. bytes is the content of the CBOR byte string. */
+  plutusScripts: Array<{ language: 1 | 2 | 3; hash: Uint8Array; bytes: Uint8Array }>;
+  /** Witness set key 4, each hash once. hash is Blake2b-256 over the original bytes of the datum. */
+  datums: Array<{ hash: Uint8Array; bytes: Uint8Array }>;
+  /** Witness set key 4 in its original bytes, what the script integrity hash covers. */
+  datumsBytes: Uint8Array | undefined;
+  /** script_data_hash, body key 11. */
+  scriptDataHash: Uint8Array | undefined;
   bootstrapWitnesses: number;
 }
 
@@ -86,6 +101,7 @@ const BODY_CERTIFICATES = 4n;
 const BODY_WITHDRAWALS = 5n;
 const BODY_AUXILIARY_DATA_HASH = 7n;
 const BODY_MINT = 9n;
+const BODY_SCRIPT_DATA_HASH = 11n;
 const BODY_NETWORK_ID = 15n;
 const BODY_COLLATERAL_RETURN = 16n;
 const BODY_TOTAL_COLLATERAL = 17n;
@@ -93,8 +109,16 @@ const BODY_PROPOSAL_PROCEDURES = 20n;
 const BODY_CURRENT_TREASURY = 21n;
 const BODY_DONATION = 22n;
 const WITNESS_BOOTSTRAP = 2n;
+const WITNESS_DATUMS = 4n;
 const WITNESS_REDEEMERS = 5n;
+// Witness set keys of Plutus V1, V2 and V3 scripts with their language.
+const WITNESS_PLUTUS_SCRIPTS: Array<[bigint, 1 | 2 | 3]> = [
+  [3n, 1],
+  [6n, 2],
+  [7n, 3],
+];
 const CBOR_NULL = 0xf6;
+const CBOR_BREAK = 0xff;
 
 // uint .size 4, the redeemer index
 const MAX_UINT32 = 0xffffffffn;
@@ -224,29 +248,122 @@ function tagAndIndex(tag: CborValue | undefined, index: CborValue | undefined): 
   return { tag, index };
 }
 
+type Range = [number, number];
+
+/** Byte ranges of the key and the value of every entry of the CBOR map at offset, definite or indefinite. */
+function mapEntryRanges(bytes: Uint8Array, offset: number): Array<{ key: Range; value: Range }> {
+  const h = readHeader(bytes, offset);
+  const entries: Array<{ key: Range; value: Range }> = [];
+  let p = h.next;
+  const entry = () => {
+    const keyEnd = decodeItem(bytes, p).next;
+    const valueEnd = decodeItem(bytes, keyEnd).next;
+    entries.push({ key: [p, keyEnd], value: [keyEnd, valueEnd] });
+    p = valueEnd;
+  };
+  if (h.indefinite) {
+    while (bytes[p] !== CBOR_BREAK) entry();
+  } else {
+    for (let i = 0n; i < h.arg; i++) entry();
+  }
+  return entries;
+}
+
+/** The original bytes of one plutus_data item, refused when they are no plutus_data. */
+function plutusData(bytes: Uint8Array, [start, end]: Range, what: string): Uint8Array {
+  const data = bytes.slice(start, end);
+  if (!isPlutusDataBytes(data)) malformed(what);
+  return data;
+}
+
+interface RedeemerEntry {
+  fact: RedeemerFact;
+  data: Uint8Array;
+}
+
 // redeemers = [+ [tag, index, data, ex_units]] / {+ [tag, index] => [data, ex_units]}
 // Alonzo TxWits.hs decodes both forms with Map.fromList, so a repeated (tag, index) collapses
 // to one entry and the later wire entry wins. A JS Map keeps the position of the first
-// occurrence and takes the later value, which is the same set of entries.
-function readRedeemers(value: CborValue | undefined): RedeemerFact[] {
-  if (value === undefined) return [];
-  const byKey = new Map<string, RedeemerFact>();
-  const add = (fact: RedeemerFact) => byKey.set(`${fact.tag}:${fact.index}`, fact);
+// occurrence and takes the later value, which is the same set of entries. The data keeps
+// its original bytes, what a script receives and what the script integrity hash covers.
+function readRedeemers(bytes: Uint8Array, at: number | undefined): RedeemerEntry[] {
+  if (at === undefined) return [];
+  const value = decodeItem(bytes, at).value;
+  const byKey = new Map<string, RedeemerEntry>();
+  const add = (fact: RedeemerFact, data: Uint8Array) => byKey.set(`${fact.tag}:${fact.index}`, { fact, data });
   if (Array.isArray(value)) {
-    for (const r of value) {
+    const { ranges } = arrayItemRanges(bytes, at, false);
+    value.forEach((r, i) => {
       if (!Array.isArray(r) || r.length !== 4) malformed('redeemer');
-      add({ ...tagAndIndex(r[0], r[1]), ...exUnits(r[3], 'redeemer ex units') });
-    }
+      const fact = { ...tagAndIndex(r[0], r[1]), ...exUnits(r[3], 'redeemer ex units') };
+      add(fact, plutusData(bytes, arrayItemRanges(bytes, ranges[i]![0], false).ranges[2]!, 'redeemer data'));
+    });
   } else if (value instanceof Map) {
-    for (const [key, entry] of value) {
+    const ranges = mapEntryRanges(bytes, at);
+    [...value].forEach(([key, entry], i) => {
       if (!Array.isArray(key) || key.length !== 2) malformed('redeemer key');
       if (!Array.isArray(entry) || entry.length !== 2) malformed('redeemer');
-      add({ ...tagAndIndex(key[0], key[1]), ...exUnits(entry[1], 'redeemer ex units') });
-    }
+      const fact = { ...tagAndIndex(key[0], key[1]), ...exUnits(entry[1], 'redeemer ex units') };
+      add(fact, plutusData(bytes, arrayItemRanges(bytes, ranges[i]!.value[0], false).ranges[0]!, 'redeemer data'));
+    });
   } else {
     malformed('redeemers');
   }
   return [...byKey.values()];
+}
+
+/** The original bytes of the item at offset, undefined when the key is absent. */
+function itemBytes(bytes: Uint8Array, at: number | undefined): Uint8Array | undefined {
+  return at === undefined ? undefined : bytes.slice(at, decodeItem(bytes, at).next);
+}
+
+// plutus_v1_script = bytes, plutus_v2_script and plutus_v3_script likewise, as a
+// nonempty_set or a plain array. The page parser already refused an empty list
+// and an empty or non-bytes script. Alonzo TxWits.hs keeps the scripts in a map
+// by hash, so a repeated script counts once.
+function readPlutusScripts(bytes: Uint8Array, offsets: Map<bigint, number>): TxFacts['plutusScripts'] {
+  const byHash = new Map<string, TxFacts['plutusScripts'][number]>();
+  for (const [key, language] of WITNESS_PLUTUS_SCRIPTS) {
+    const at = offsets.get(key);
+    if (at === undefined) continue;
+    for (const [start, end] of arrayItemRanges(bytes, at, true).ranges) {
+      const content = decode(bytes.slice(start, end));
+      if (!(content instanceof Uint8Array) || content.length === 0) malformed(`Plutus V${language} script`);
+      const hash = scriptHash(language, content);
+      const hex = bytesToHex(hash);
+      if (!byHash.has(hex)) byHash.set(hex, { language, hash, bytes: content });
+    }
+  }
+  return [...byHash.values()];
+}
+
+// plutus_data in witness set key 4: nonempty_set<plutus_data>, a plain array or tag 258.
+// Alonzo TxWits.hs hashes every datum over its original bytes (hashData) and keeps
+// them in a map by that hash, so a repeated datum counts once.
+function readDatums(bytes: Uint8Array, at: number | undefined): TxFacts['datums'] {
+  if (at === undefined) return [];
+  let ranges: Range[];
+  try {
+    ranges = arrayItemRanges(bytes, at, true).ranges;
+  } catch {
+    return malformed('datums');
+  }
+  if (ranges.length === 0) malformed('datums');
+  const byHash = new Map<string, TxFacts['datums'][number]>();
+  for (const range of ranges) {
+    const datum = plutusData(bytes, range, 'datum');
+    const hash = blake2b(datum, { dkLen: 32 });
+    const hex = bytesToHex(hash);
+    if (!byHash.has(hex)) byHash.set(hex, { hash, bytes: datum });
+  }
+  return [...byHash.values()];
+}
+
+// script_data_hash = hash32
+function readScriptDataHash(value: CborValue | undefined): Uint8Array | undefined {
+  if (value === undefined) return undefined;
+  if (!(value instanceof Uint8Array) || value.length !== 32) malformed('script data hash');
+  return value;
 }
 
 // mint = {+ policy_id => {+ asset_name => nonzero_int64}}, already checked by the page parser.
@@ -377,6 +494,8 @@ export function readTransaction(bytes: Uint8Array, parsed: ParsedTransaction): T
   const bootstrap = witnessSet.get(WITNESS_BOOTSTRAP);
   // Core.hs hashTxAuxData: Blake2b-256 over the auxiliary data in the bytes it arrived in.
   const auxIsNull = bytes[auxRange[0]] === CBOR_NULL;
+  const witnessOffsets = mapValueOffsets(bytes, witnessRange[0]);
+  const redeemers = readRedeemers(bytes, witnessOffsets.get(WITNESS_REDEEMERS));
 
   return {
     size,
@@ -395,7 +514,13 @@ export function readTransaction(bytes: Uint8Array, parsed: ParsedTransaction): T
       declaredHash: readAuxiliaryDataHash(body.get(BODY_AUXILIARY_DATA_HASH)),
       computedHash: auxIsNull ? undefined : blake2b(bytes.subarray(...auxRange), { dkLen: 32 }),
     },
-    redeemers: readRedeemers(witnessSet.get(WITNESS_REDEEMERS)),
+    redeemers: redeemers.map((r) => r.fact),
+    redeemerData: redeemers.map(({ fact, data }) => ({ tag: fact.tag, index: fact.index, data })),
+    redeemersBytes: itemBytes(bytes, witnessOffsets.get(WITNESS_REDEEMERS)),
+    plutusScripts: readPlutusScripts(bytes, witnessOffsets),
+    datums: readDatums(bytes, witnessOffsets.get(WITNESS_DATUMS)),
+    datumsBytes: itemBytes(bytes, witnessOffsets.get(WITNESS_DATUMS)),
+    scriptDataHash: readScriptDataHash(body.get(BODY_SCRIPT_DATA_HASH)),
     // bootstrap_witness = [public_key, signature, chain_code, attributes]
     bootstrapWitnesses: (bootstrap === undefined ? [] : unwrapSet(bootstrap)).length,
   };

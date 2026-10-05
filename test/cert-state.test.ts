@@ -38,6 +38,12 @@ const facts = (certificates: CertFact[], proposals: TxFacts['proposals'] = []): 
   proposals,
   auxiliaryData: { declaredHash: undefined, computedHash: undefined },
   redeemers: [],
+  redeemerData: [],
+  redeemersBytes: undefined,
+  plutusScripts: [],
+  datums: [],
+  datumsBytes: undefined,
+  scriptDataHash: undefined,
   bootstrapWitnesses: 0,
 });
 const state = (opts: { accounts?: Array<[Credential, bigint]>; dreps?: Array<[Credential, bigint]>; pools?: string[] } = {}): CertState => ({
