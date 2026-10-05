@@ -21,9 +21,9 @@ describe('page bundle', () => {
     expect(window['__chw']).toBeDefined();
   });
 
-  it('carries none of the ledger checks, they run in Node only', async () => {
+  it('carries none of the ledger checks and no Plutus evaluator, they run in Node only', async () => {
     const source = (await build({ ...PAGE_BUNDLE_OPTIONS, write: false, logLevel: 'silent' })).outputFiles[0]!.text;
-    for (const name of ['FeeTooSmallUTxO', 'ValueNotConservedUTxO', 'ConwayApplyTxError', 'tierRefScriptFee']) expect(source).not.toContain(name);
+    for (const name of ['FeeTooSmallUTxO', 'ValueNotConservedUTxO', 'ConwayApplyTxError', 'tierRefScriptFee', 'ValidationTagMismatch', 'scalus']) expect(source).not.toContain(name);
   });
 
   it.skipIf(!existsSync('dist/node'))('emits the node entry points the package exports point at', () => {

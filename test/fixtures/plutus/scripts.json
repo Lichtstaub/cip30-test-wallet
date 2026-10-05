@@ -1,0 +1,65 @@
+[
+  {
+    "name": "v3_always_succeeds",
+    "language": "PlutusV3",
+    "hash": "5d0f747d4eb70739ff667eed99b934de3a3e5054fae1e368902078e3",
+    "cborHex": "585c01010029800aba2aba1aab9eaab9dab9a4888896600264653001300600198031803800cc0180092225980099b8748008c01cdd500144c8cc892898050009805180580098041baa0028a51401830060013003375400d149a26cac8009",
+    "origin": "aiken v1.1.21 with stdlib v2.2.0, oracle.ak validator always_succeeds, accepts every purpose"
+  },
+  {
+    "name": "v3_always_fails",
+    "language": "PlutusV3",
+    "hash": "fc20070d1e5379403add6acbf77b233b2f8240821c187b398525de28",
+    "cborHex": "585b01010029800aba2aba1aab9eaab9dab9a4888896600264653001300600198031803800cc0180092225980099b8748008c01cdd500144c8cc898c028004c028c02c004c020dd50014590060c018004c00cdd5003452689b2b200201",
+    "origin": "aiken v1.1.21 with stdlib v2.2.0, oracle.ak validator always_fails, fails every purpose, built without traces"
+  },
+  {
+    "name": "v3_always_fails_traced",
+    "language": "PlutusV3",
+    "hash": "d4bbe572041c0f9338d12db725b6caacc991dccd0c08aefb95d56278",
+    "cborHex": "587801010029800aba2aba1aab9eaab9dab9cab9a48888896600264653001300700198039804000cc01c0092225980099b8748008c020dd500144c8cc894cc029241146f7261636c653a20616c77617973206661696c730016300b001300b300c0013009375400516401830070013004375400f149a26cac8009",
+    "origin": "aiken v1.1.21 with stdlib v2.2.0, oracle.ak validator always_fails built with user-defined traces, logs \"oracle: always fails\""
+  },
+  {
+    "name": "v3_needs_signer",
+    "language": "PlutusV3",
+    "hash": "3f316cc23258e7c731ff1d5d459ee1996d2af0f278e6c6026a393cbc",
+    "cborHex": "58b601010029800aba2aba1aab9faab9eaab9dab9a48888896600264646644b30013370e900118031baa00189919912cc004cdc3a400060126ea800626466446600400400244b30010018a508acc004cdc79bae300f0010038a518998010011808000a01640386eb0c034c038c038c038c038c038c038c038c038c02cdd518068041bae300c300a3754003164020601400260146016002600e6ea80062c8028c01c004c01cc020004c01c004c00cdd5003c52689b2b20021",
+    "origin": "aiken v1.1.21 with stdlib v2.2.0, oracle.ak validator needs_signer, the inline datum is a key hash that must be among the required signers"
+  },
+  {
+    "name": "v3_after_deadline",
+    "language": "PlutusV3",
+    "hash": "b669ba54db80d707d9be2c2a0f0a9fc2e7ca98734c9f188eb640320d",
+    "cborHex": "58dc01010029800aba2aba1aab9eaab9dab9a4888896600264653001300600198031803800cdc3a40049112cc004c004c01cdd500144c8cc896600266e1d2000300a3754003132332259800980398069baa0028992cc004c020c038dd51808180898079baa3010300f37540091337100040031337120040028068dd6980798071baa0028a504030601a60186ea8c034c030dd500099b80375a601a60186ea80092001300c300d300d300d300d300d300d300d300b3754601801116402460140026014601600260106ea800a2c8030600c00260066ea801a29344d9590011",
+    "origin": "aiken v1.1.21 with stdlib v2.2.0, oracle.ak validator after_deadline, the inline datum is a POSIX time in ms, the validity range must start at or after it"
+  },
+  {
+    "name": "v3_burn",
+    "language": "PlutusV3",
+    "hash": "b0d76b66a6b8946f56a598dcc3708112164b3d105185ed8f6bfbf3fa",
+    "cborHex": "587801010029800aba2aba1aab9eaab9dab9a4888896600264646644b30013370e900118031baa0028994c004c02400660126014003225980099b8900148002294626600400466e0000520014020911198008009bad300c00718039baa0028b200a30063007001300600230060013003375400d149a26cac8009",
+    "origin": "aiken v1.1.21 with stdlib v2.2.0, oracle.ak validator burn, counts down from the integer redeemer to spend a known budget"
+  },
+  {
+    "name": "v3_two_args",
+    "language": "PlutusV3",
+    "hash": "f219eeced46ac39519d0542b1ed39fd0b563eac2a1d6a1b60b48d1bc",
+    "cborHex": "4601000022499d",
+    "origin": "a minimal synthetic program \\_ -> \\_ -> (), returns a lambda after two arguments, so under Plutus V3 (one argument, CIP-117 needs unit back) every run fails"
+  },
+  {
+    "name": "v2_always_succeeds",
+    "language": "PlutusV2",
+    "hash": "793f8c8cffba081b2a56462fc219cc8fe652d6a338b62c7b134876e7",
+    "cborHex": "4d01000033222220051200120011",
+    "origin": "cardano-node scripts/plutus/scripts, always-succeeds-spending.plutus, the inner byte string of its cborHex, the same bytes as the V1 entry with the Plutus V2 tag"
+  },
+  {
+    "name": "v1_always_succeeds",
+    "language": "PlutusV1",
+    "hash": "67f33146617a5e61936081db3b2117cbf59bd2123748f58ac9678656",
+    "cborHex": "4d01000033222220051200120011",
+    "origin": "cardano-node scripts/plutus/scripts/v1/always-succeeds-spending.plutus, the inner byte string of its cborHex"
+  }
+]

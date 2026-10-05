@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Address, Assets, Data, PlutusV3, ScriptHash, Transaction, TransactionHash, UTxO } from '@evolution-sdk/evolution';
 import { baseAddressBytes } from '../src/core/addresses.js';
-import { concat, hexToBytes } from '../src/core/bytes.js';
+import { bytesToHex, concat, hexToBytes } from '../src/core/bytes.js';
 import { encode } from '../src/core/cbor/encode.js';
 import { parseTransaction } from '../src/core/cbor/tx.js';
 import { keyHash, publicKey, sign, type SigningKey } from '../src/core/keys.js';
@@ -14,6 +14,8 @@ import { DEFAULT_PROTOCOL_PARAMS } from '../src/host/protocol-params.js';
 import { buildTx, outpoints, type BuildTxOptions } from './helpers/build-tx.js';
 import { checkContext } from './helpers/check-context.js';
 import { evolutionBuild, evolutionUtxo, fixedBudgetEvaluator } from './helpers/evolution-build.js';
+import { plutusScript } from './helpers/plutus-fixtures.js';
+import { lockedUtxo, scriptWitnesses } from './helpers/plutus-spend.js';
 import { PLUTUS_V3, hash28 as h, syntheticInput } from './helpers/synthetic.js';
 import { MNEMONIC } from './fixtures/vectors.js';
 
@@ -83,7 +85,7 @@ describe('forms the checks do not judge', () => {
   ];
 
   it.each(cases)('%s', (_name, opts, unspent, message) => {
-    expect(check(buildTx(opts), unspent)).toEqual({ failures: [], unsupported: [message] });
+    expect(check(buildTx(opts), unspent)).toEqual({ failures: [], unsupported: [message], needs: [] });
   });
 
   it('names a form once when several inputs or certificates share it', () => {
@@ -102,17 +104,27 @@ describe('forms the checks do not judge', () => {
 describe('ledger order', () => {
   const a = mine('order-a');
   const holder: Utxo = { input: syntheticInput('order-holder', 0n), address: myAddress, lovelace: 5_000_000n, scriptRef: bigRef(Number(MAX_REF_SCRIPT_SIZE_PER_TX) + 1) };
+  // A failing script, so the is_valid false case agrees with phase 2. Phase 1 fails anyway, nothing runs it.
+  const alwaysFails = plutusScript('v3_always_fails');
+  const locked = lockedUtxo(alwaysFails, 'order-locked');
+  const { witnessSet, scriptDataHash } = scriptWitnesses([{ utxo: locked, script: alwaysFails }], [a, locked]);
   // Unregisters a credential the state does not hold, spends without a witness, pays a fee of 1.
   const opts = (isValid: boolean): BuildTxOptions => ({
-    inputs: [a.input],
-    outputs: [{ address: myAddress, lovelace: 9_999_999n }],
+    inputs: [a.input, locked.input],
+    outputs: [{ address: myAddress, lovelace: 14_999_999n }],
     fee: 1n,
     isValid,
-    extraBodyEntries: new Map<bigint, unknown>([[18n, outpoints(holder)], [4n, [[8n, [0n, h(9)], 2_000_000n]]]]),
+    witnessSet,
+    extraBodyEntries: new Map<bigint, unknown>([
+      [18n, outpoints(holder)],
+      [4n, [[8n, [0n, h(9)], 2_000_000n]]],
+      [11n, scriptDataHash],
+      [13n, outpoints(a)],
+    ]),
   });
 
   it('LEDGER, then CERTS, then UTXOW, then UTXO', () => {
-    const { failures } = check(buildTx(opts(true)), [a, holder]);
+    const { failures } = check(buildTx(opts(true)), [a, holder, locked]);
     expect(failures.map((f) => f.rule)).toEqual(['ConwayTxRefScriptsSizeTooBig', 'StakeKeyNotRegisteredDELEG', 'MissingVKeyWitnessesUTXOW', 'FeeTooSmallUTxO']);
     expect(renderFailure(failures[0]!)).toBe(`ConwayTxRefScriptsSizeTooBig (Mismatch (RelLTEQ) {supplied: ${MAX_REF_SCRIPT_SIZE_PER_TX + 1n}, expected: ${MAX_REF_SCRIPT_SIZE_PER_TX}})`);
     expect(renderFailure(failures[2]!)).toMatch(/^ConwayUtxowFailure \(MissingVKeyWitnessesUTXOW \(/);
@@ -120,12 +132,40 @@ describe('ledger order', () => {
   });
 
   it('is_valid false skips the reference script limit and CERTS, UTXOW and UTXO still run', () => {
-    expect(rules(buildTx(opts(false)), [a, holder])).toEqual(['MissingVKeyWitnessesUTXOW', 'FeeTooSmallUTxO']);
+    expect(rules(buildTx(opts(false)), [a, holder, locked])).toEqual(['MissingVKeyWitnessesUTXOW', 'FeeTooSmallUTxO']);
+  });
+
+  it('UTXOW runs the datum and redeemer rules after script presence and the integrity hash after the key witnesses, CollectErrors comes last', () => {
+    const v2 = plutusScript('v2_always_succeeds');
+    const noDatum = lockedUtxo(v2, 'order-no-datum');
+    // No redeemers, an extraneous script, a V2 spend without a datum, a wrong integrity hash, no signature, a fee of 1.
+    const tx = buildTx({
+      inputs: [a.input, locked.input, noDatum.input],
+      outputs: [{ address: myAddress, lovelace: 19_999_999n }],
+      fee: 1n,
+      witnessSet: new Map<bigint, unknown>([
+        [6n, [v2.bytes]],
+        [7n, [alwaysFails.bytes, plutusScript('v3_always_succeeds').bytes]],
+      ]),
+      extraBodyEntries: new Map<bigint, unknown>([[11n, new Uint8Array(32).fill(0x11)]]),
+    });
+    const { failures, needs } = check(tx, [a, locked, noDatum]);
+    expect(needs).toHaveLength(2);
+    expect(failures.map((f) => f.rule)).toEqual([
+      'ExtraneousScriptWitnessesUTXOW',
+      'UnspendableUTxONoDatumHash',
+      'MissingRedeemers',
+      'MissingVKeyWitnessesUTXOW',
+      'ScriptIntegrityHashMismatch',
+      'FeeTooSmallUTxO',
+      'CollectErrors',
+    ]);
+    expect(renderFailure(failures[6]!)).toMatch(/^ConwayUtxowFailure \(UtxoFailure \(UtxosFailure \(CollectErrors \(NoRedeemer .* :\| \[NoRedeemer .*\]\)\)\)\)$/);
   });
 
   it('reference scripts up to the limit pass', () => {
     const atLimit: Utxo = { ...holder, scriptRef: bigRef(Number(MAX_REF_SCRIPT_SIZE_PER_TX)) };
-    expect(rules(buildTx(opts(true)), [a, atLimit])).not.toContain('ConwayTxRefScriptsSizeTooBig');
+    expect(rules(buildTx(opts(true)), [a, atLimit, locked])).not.toContain('ConwayTxRefScriptsSizeTooBig');
   });
 });
 
@@ -136,12 +176,12 @@ describe('transactions a node accepts', () => {
   it('an Evolution-built balanced payment signed by the wallet key passes with the preprod parameters', async () => {
     const tx = await evolutionBuild((b) => b.payToAddress({ address: Address.fromBytes(hexToBytes('00' + '22'.repeat(56))), assets: Assets.fromLovelace(2_000_000n) }), myAddress, ownEvo);
     const complete = Transaction.addVKeyWitnessesHex(tx, signWithKeys(tx, [me.payment]));
-    expect(check(complete, own, { params: DEFAULT_PROTOCOL_PARAMS[0] })).toEqual({ failures: [], unsupported: [] });
+    expect(check(complete, own, { params: DEFAULT_PROTOCOL_PARAMS[0] })).toEqual({ failures: [], unsupported: [], needs: [] });
     // Unsigned, the same transaction misses the wallet key.
     expect(rules(tx, own)).toEqual(['MissingVKeyWitnessesUTXOW']);
   });
 
-  it('an Evolution-built Plutus spend with collateral passes, the script counted and never run', async () => {
+  it('an Evolution-built Plutus spend with collateral passes phase 1 and names its one script to run', async () => {
     const plutus = new PlutusV3.PlutusV3({ bytes: hexToBytes(PLUTUS_V3) });
     const input = syntheticInput('accept-plutus', 0n);
     const scriptAddr = new Address.Address({ networkId: 0, paymentCredential: ScriptHash.fromScript(plutus) });
@@ -149,6 +189,8 @@ describe('transactions a node accepts', () => {
     const locked: Utxo = { input, address: Address.toBytes(scriptAddr), lovelace: 5_000_000n };
     const tx = await evolutionBuild((b) => b.collectFrom({ inputs: [lockedEvo], redeemer: Data.constr(0n, []) }).attachScript({ script: plutus }), myAddress, ownEvo, { evaluator: fixedBudgetEvaluator });
     const complete = Transaction.addVKeyWitnessesHex(tx, signWithKeys(tx, [me.payment]));
-    expect(check(complete, [...own, locked])).toEqual({ failures: [], unsupported: [] });
+    const { failures, unsupported, needs } = check(complete, [...own, locked]);
+    expect({ failures, unsupported }).toEqual({ failures: [], unsupported: [] });
+    expect(needs.map((n) => [n.tag, n.language, bytesToHex(n.scriptHash)])).toEqual([[0n, 3, plutusScript('v3_always_succeeds').hashHex]]);
   });
 });

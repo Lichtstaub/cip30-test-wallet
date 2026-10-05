@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
-import { bytesToHex } from '../src/core/bytes.js';
+import { Address, Assets, Data, PlutusV3, ScriptHash, Transaction, TransactionHash, UTxO } from '@evolution-sdk/evolution';
+import { bytesToHex, hexToBytes } from '../src/core/bytes.js';
 import { parseAddressArg } from '../src/core/sign-data.js';
 import { signWithKeys } from '../src/core/sign-tx.js';
 import { deriveAccount } from '../src/derive/index.js';
@@ -7,6 +8,9 @@ import { DEFAULT_MNEMONIC } from '../src/host/config.js';
 import { syntheticOwnedUtxo } from '../src/page/install.js';
 import { expect, test, type WalletHandle } from '../src/playwright/index.js';
 import { buildTx, spliceWitnessSet } from '../test/helpers/build-tx.js';
+import { evolutionBuild, evolutionUtxo, fixedBudgetEvaluator } from '../test/helpers/evolution-build.js';
+import { plutusScript } from '../test/helpers/plutus-fixtures.js';
+import { syntheticInput } from '../test/helpers/synthetic.js';
 
 type Api = { signTx(tx: string, partialSign: boolean): Promise<string>; submitTx(tx: string): Promise<string> };
 type ChwWindow = { cardano: { chw: { enable(): Promise<Api> } } };
@@ -120,5 +124,60 @@ test.describe('the submitFails quirk with a node message', () => {
     expect(await submitInPage(page, signed)).toBeUndefined();
     expect(await wallet.utxos()).toHaveLength(1);
     expect((await wallet.utxos())[0]!.txId).not.toBe(bytesToHex(utxo0(wallet).input.txId));
+  });
+});
+
+/** 5 ADA without a datum at the address of this Plutus V3 validator, for foreignUtxos and for Evolution. */
+function lockedBy(scriptCbor: string, seed: string) {
+  const script = new PlutusV3.PlutusV3({ bytes: hexToBytes(scriptCbor) });
+  const input = syntheticInput(seed, 0n);
+  const address = new Address.Address({ networkId: 0, paymentCredential: ScriptHash.fromScript(script) });
+  const evo = new UTxO.UTxO({ transactionId: TransactionHash.fromBytes(input.txId), index: 0n, address, assets: Assets.fromLovelace(5_000_000n) });
+  const config = { txId: bytesToHex(input.txId), index: 0, addressHex: bytesToHex(Address.toBytes(address)), lovelace: 5_000_000 };
+  return { script, input, evo, config };
+}
+
+const succeeds = lockedBy(plutusScript('v3_always_succeeds').cborHex, 'browser-plutus-succeeds');
+const fails = lockedBy(plutusScript('v3_always_fails').cborHex, 'browser-plutus-fails');
+
+test.describe('Plutus scripts under the ledger checks', () => {
+  test.use({ walletOptions: { utxos: [{ lovelace: 50_000_000 }, { lovelace: 10_000_000 }], foreignUtxos: [succeeds.config, fails.config], ledger: { checks: true } } });
+
+  /** A spend of the locked UTxO with its validator attached, collateral and change from the wallet, built in Node by Evolution. */
+  const spend = (wallet: WalletHandle, locked: ReturnType<typeof lockedBy>) => {
+    const address = parseAddressArg(wallet.addresses.payment);
+    const own = [0, 1].map((i) => syntheticOwnedUtxo(wallet.name, i, address, [50_000_000n, 10_000_000n][i]!));
+    return evolutionBuild(
+      (b) => b.collectFrom({ inputs: [locked.evo], redeemer: Data.constr(0n, []) }).attachScript({ script: locked.script }),
+      address,
+      own.map((u) => evolutionUtxo(u, address)),
+      { evaluator: fixedBudgetEvaluator },
+    );
+  };
+
+  test('a spend from always_succeeds is signed in the page, runs in Node and is accepted', async ({ page, wallet }) => {
+    await open(page);
+    const tx = await spend(wallet, succeeds);
+    const signed = Transaction.addVKeyWitnessesHex(tx, await signInPage(page, tx));
+    expect(await submitInPage(page, signed)).toBeUndefined();
+    expect(await wallet.lastSubmittedTx()).toBe(signed);
+    const [call] = await wallet.calls('submitTx');
+    const id = call!.result as string;
+    expect(id).toMatch(/^[0-9a-f]{64}$/);
+    // The change of the spend is a new wallet output.
+    expect((await wallet.utxos()).map((u) => u.txId)).toContain(id);
+  });
+
+  test('always_fails with is_valid true reaches the dApp as a plain { code: 2, info } naming ValidationTagMismatch', async ({ page, wallet }) => {
+    await open(page);
+    const before = await wallet.utxos();
+    const tx = await spend(wallet, fails);
+    const thrown = await submitInPage(page, Transaction.addVKeyWitnessesHex(tx, await signInPage(page, tx)));
+    expect(thrown).toMatchObject({ type: 'object', isError: false, code: 2 });
+    expect(thrown!.keys.sort()).toEqual(['code', 'info']);
+    expect(thrown!.info).toContain('ValidationTagMismatch');
+    expect(thrown!.info).toContain('FailedUnexpectedly');
+    expect(await wallet.utxos()).toEqual(before);
+    expect(await wallet.lastSubmittedTx()).toBeUndefined();
   });
 });

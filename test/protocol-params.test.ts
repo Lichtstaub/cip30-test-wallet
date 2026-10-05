@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { DEFAULT_COST_MODELS } from '../src/host/cost-models.js';
 import { DEFAULT_PROTOCOL_PARAMS, parseRational, resolveProtocolParams, type ProtocolParamsInput } from '../src/host/protocol-params.js';
 
 const r = (numerator: bigint, denominator: bigint) => ({ numerator, denominator });
@@ -23,8 +24,12 @@ function fromKoios(k: Record<string, unknown>): ProtocolParamsInput {
     collateralPercent: k['collateral_percent'] as number,
     maxCollateralInputs: k['max_collateral_inputs'] as number,
     minFeeRefScriptCostPerByte: k['min_fee_ref_script_cost_per_byte'] as number,
+    costModels: k['cost_models'] as Record<'PlutusV1' | 'PlutusV2' | 'PlutusV3', number[]>,
+    protocolMajorVersion: k['protocol_major'] as number,
   };
 }
+
+const koiosPreprod = () => (JSON.parse(readFileSync('test/fixtures/koios-epoch-params-preprod.json', 'utf8')) as Record<string, unknown>[])[0]!;
 
 describe('default protocol parameters', () => {
   it('preprod equals the Koios epoch_params fixture read as an override', () => {
@@ -51,6 +56,79 @@ describe('default protocol parameters', () => {
     const resolved = resolveProtocolParams(0, undefined);
     resolved.minFeeA = 1n;
     expect(DEFAULT_PROTOCOL_PARAMS[0].minFeeA).toBe(44n);
+  });
+});
+
+describe('cost models and protocol version', () => {
+  it('the defaults are the Koios cost models of the fixture, 332, 332 and 350 values, negative ones included', () => {
+    const koios = koiosPreprod()['cost_models'] as Record<'PlutusV1' | 'PlutusV2' | 'PlutusV3', number[]>;
+    expect(DEFAULT_COST_MODELS).toEqual({ PlutusV1: koios.PlutusV1.map(BigInt), PlutusV2: koios.PlutusV2.map(BigInt), PlutusV3: koios.PlutusV3.map(BigInt) });
+    expect([DEFAULT_COST_MODELS.PlutusV1.length, DEFAULT_COST_MODELS.PlutusV2.length, DEFAULT_COST_MODELS.PlutusV3.length]).toEqual([332, 332, 350]);
+    expect(DEFAULT_COST_MODELS.PlutusV3).toContain(-900n);
+  });
+
+  it('every network carries the same cost models and protocol version 11', () => {
+    for (const networkId of [0, 1] as const) {
+      expect(DEFAULT_PROTOCOL_PARAMS[networkId].costModels).toBe(DEFAULT_COST_MODELS);
+      expect(DEFAULT_PROTOCOL_PARAMS[networkId].protocolMajorVersion).toBe(11n);
+    }
+    expect(koiosPreprod()['protocol_major']).toBe(11);
+  });
+
+  it('cannot be changed by a caller, down to the arrays', () => {
+    expect(Object.isFrozen(DEFAULT_COST_MODELS)).toBe(true);
+    expect(Object.isFrozen(DEFAULT_COST_MODELS.PlutusV3)).toBe(true);
+    const resolved = resolveProtocolParams(0, undefined);
+    expect(resolved.costModels.PlutusV3).not.toBe(DEFAULT_COST_MODELS.PlutusV3);
+    resolved.costModels.PlutusV3[0] = 1n;
+    resolved.costModels.PlutusV1.push(1n);
+    expect(DEFAULT_COST_MODELS.PlutusV3[0]).toBe(100_788n);
+    expect(DEFAULT_COST_MODELS.PlutusV1).toHaveLength(332);
+  });
+
+  it('an override replaces the languages it names and keeps the others', () => {
+    const params = resolveProtocolParams(0, { costModels: { PlutusV3: [1, -2, '3', '-4', 5n, -(2n ** 63n), 2n ** 63n - 1n] } });
+    expect(params.costModels).toEqual({ ...DEFAULT_COST_MODELS, PlutusV3: [1n, -2n, 3n, -4n, 5n, -(2n ** 63n), 2n ** 63n - 1n] });
+  });
+
+  it('takes arrays of any length, the ledger keeps what it gets', () => {
+    const longer = [...DEFAULT_COST_MODELS.PlutusV3, 7n, 8n];
+    const params = resolveProtocolParams(1, { costModels: { PlutusV1: [42], PlutusV3: longer } });
+    expect(params.costModels.PlutusV1).toEqual([42n]);
+    expect(params.costModels.PlutusV3).toEqual(longer);
+    expect(params.costModels.PlutusV2).toEqual(DEFAULT_COST_MODELS.PlutusV2);
+  });
+
+  it('skips a language set to undefined and takes the protocol version as any integer form', () => {
+    expect(resolveProtocolParams(0, { costModels: { PlutusV2: undefined } } as unknown as ProtocolParamsInput).costModels).toEqual(DEFAULT_COST_MODELS);
+    expect(resolveProtocolParams(0, { protocolMajorVersion: 10 }).protocolMajorVersion).toBe(10n);
+    expect(resolveProtocolParams(0, { protocolMajorVersion: '12' }).protocolMajorVersion).toBe(12n);
+  });
+
+  const COSTS = 'ledger.protocolParams.costModels';
+  const ENTRY = 'must be an integer from -2^63 to 2^63 - 1 as number, bigint or decimal string';
+  it.each([
+    ['cost models as an array', { costModels: [[1]] }, `${COSTS} must be an object of Plutus language to cost model, got [[1]]`],
+    ['cost models that are null', { costModels: null }, `${COSTS} must be an object of Plutus language to cost model, got null`],
+    ['an unknown language', { costModels: { PlutusV4: [1] } }, `${COSTS}.PlutusV4 is not a Plutus language, known: PlutusV1, PlutusV2, PlutusV3`],
+    ['a lower case language', { costModels: { plutusV3: [1] } }, `${COSTS}.plutusV3 is not a Plutus language`],
+    ['an inherited key', { costModels: JSON.parse('{"toString": [1]}') }, `${COSTS}.toString is not a Plutus language`],
+    ['an empty array', { costModels: { PlutusV3: [] } }, `${COSTS}.PlutusV3 must be a non-empty array of integers, got []`],
+    ['a number for a cost model', { costModels: { PlutusV1: 5 } }, `${COSTS}.PlutusV1 must be a non-empty array of integers, got 5`],
+    ['null for a cost model', { costModels: { PlutusV2: null } }, `${COSTS}.PlutusV2 must be a non-empty array of integers, got null`],
+    ['the Evolution form, an object of index to value', { costModels: { PlutusV3: { 0: 1 } } }, `${COSTS}.PlutusV3 must be a non-empty array of integers, got [object Object]`],
+    ['a fractional value', { costModels: { PlutusV3: [1, 2.5] } }, `${COSTS}.PlutusV3[1] ${ENTRY}, got 2.5`],
+    ['an unsafe number', { costModels: { PlutusV3: [2 ** 53] } }, `${COSTS}.PlutusV3[0] ${ENTRY}, got 9007199254740992`],
+    ['a value above 2^63 - 1', { costModels: { PlutusV1: [2n ** 63n] } }, `${COSTS}.PlutusV1[0] ${ENTRY}, got 9223372036854775808n`],
+    ['a value below -2^63', { costModels: { PlutusV1: [-(2n ** 63n) - 1n] } }, `${COSTS}.PlutusV1[0] ${ENTRY}, got -9223372036854775809n`],
+    ['a decimal string', { costModels: { PlutusV2: ['1.5'] } }, `${COSTS}.PlutusV2[0] ${ENTRY}, got "1.5"`],
+    ['a string with a plus sign', { costModels: { PlutusV2: ['+1'] } }, `${COSTS}.PlutusV2[0] ${ENTRY}, got "+1"`],
+    ['null in the array', { costModels: { PlutusV2: [1, null] } }, `${COSTS}.PlutusV2[1] ${ENTRY}, got null`],
+    ['a hole in the array', { costModels: { PlutusV2: [1, , 3] } }, `${COSTS}.PlutusV2[1] ${ENTRY}, got undefined`],
+    ['a negative protocol version', { protocolMajorVersion: -1 }, 'ledger.protocolParams.protocolMajorVersion must be a non-negative integer as number, bigint or decimal string, got -1'],
+    ['a fractional protocol version', { protocolMajorVersion: 10.5 }, 'ledger.protocolParams.protocolMajorVersion must be a non-negative integer as number, bigint or decimal string, got 10.5'],
+  ])('refuses %s', (_name, override, message) => {
+    expect(() => resolveProtocolParams(0, override as unknown as ProtocolParamsInput)).toThrow(message);
   });
 });
 

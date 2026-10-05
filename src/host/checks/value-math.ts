@@ -1,4 +1,5 @@
 import { addAsset, addAssets, type MultiAsset } from '../../core/value.js';
+import { compare } from './order.js';
 
 // Values as the value balance of the UTXO rule adds and compares them. Quantities
 // may be negative here (a burn in the mint field), the MultiAsset invariant of
@@ -64,17 +65,15 @@ export function valuesEqual(a: Value, b: Value): boolean {
   return true;
 }
 
-// Mary Value.hs orders policies by script hash and asset names by their bytes.
-// On lower case hex both are plain string order.
-const byString = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
-
 /** 'Coin 5' or 'MaryValue (Coin 5) (MultiAsset (fromList [(<policy>,fromList [(<name>,3)])]))'. */
 export function formatValue(v: Value): string {
   const assets = withoutZeros(v.assets);
   if (assets.size === 0) return `Coin ${v.coin}`;
-  const policies = [...assets.keys()].sort(byString).map((policy) => {
+  // Mary Value.hs orders policies by script hash and asset names by their bytes.
+  // On lower case hex both are plain string order.
+  const policies = [...assets.keys()].sort(compare).map((policy) => {
     const names = assets.get(policy)!;
-    const inner = [...names.keys()].sort(byString).map((name) => `("${name}",${names.get(name)!})`);
+    const inner = [...names.keys()].sort(compare).map((name) => `("${name}",${names.get(name)!})`);
     return `(PolicyID {policyID = ScriptHash "${policy}"},fromList [${inner.join(',')}])`;
   });
   return `MaryValue (Coin ${v.coin}) (MultiAsset (fromList [${policies.join(',')}]))`;

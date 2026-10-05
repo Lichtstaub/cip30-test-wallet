@@ -35,3 +35,14 @@ describe('isCip30Error', () => {
     expect(isCip30Error(value)).toBe(false);
   });
 });
+
+describe('ChwError', () => {
+  it.each(['CHW_EVALUATOR_UNAVAILABLE', 'CHW_EVALUATOR_FAILED'] as const)('puts the code in front of the message and is never a CIP-30 error, %s included', (code) => {
+    const e = new ChwError(code, 'the Plutus evaluator could not run');
+    expect(e).toBeInstanceOf(Error);
+    expect(e.name).toBe('ChwError');
+    expect(e.code).toBe(code);
+    expect(e.message).toBe(`${code}: the Plutus evaluator could not run`);
+    expect(isCip30Error(e)).toBe(false);
+  });
+});

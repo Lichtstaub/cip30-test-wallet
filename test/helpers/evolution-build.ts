@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import CSL from '@emurgo/cardano-serialization-lib-nodejs';
 import { Effect } from 'effect';
-import { Address, Assets, Redeemer, Transaction, TransactionHash, UTxO } from '@evolution-sdk/evolution';
+import { Address, Assets, Data, InlineDatum, Redeemer, ScriptHash, Transaction, TransactionHash, UTxO } from '@evolution-sdk/evolution';
 import { makeTxBuilder, type Evaluator } from '@evolution-sdk/evolution/sdk/builders/TransactionBuilder';
 import type { EvalRedeemer } from '@evolution-sdk/evolution/sdk/EvalRedeemer';
 import type { Utxo } from '../../src/core/ledger.js';
@@ -36,25 +36,30 @@ const koios = (JSON.parse(readFileSync(new URL('../fixtures/koios-epoch-params-p
 const REDEEMER_TAGS = ['spend', 'mint', 'cert', 'reward', 'vote', 'propose'] as const;
 
 /**
- * Answers every redeemer of the transaction with the same fixed budget, so a
- * Plutus transaction builds offline. Nothing is executed: the wallet never
- * runs a script, and the budget only has to be a valid number.
+ * Answers every redeemer of the transaction with the same declared budget, so
+ * a Plutus transaction builds offline. Nothing is executed here, the checked
+ * ledger runs the scripts on submit and compares with this budget.
  */
-export const fixedBudgetEvaluator: Evaluator = {
-  evaluate: (tx) => {
-    const redeemers = CSL.Transaction.from_hex(Transaction.toCBORHex(tx)).witness_set().redeemers();
-    const answers: EvalRedeemer[] = [];
-    for (let i = 0; i < (redeemers?.len() ?? 0); i++) {
-      const redeemer = redeemers!.get(i);
-      answers.push({
-        ex_units: new Redeemer.ExUnits({ mem: 100_000n, steps: 10_000_000n }),
-        redeemer_index: Number(redeemer.index().to_str()),
-        redeemer_tag: REDEEMER_TAGS[redeemer.tag().kind()]!,
-      });
-    }
-    return Effect.succeed(answers);
-  },
-};
+export function budgetEvaluator(mem: bigint, steps: bigint): Evaluator {
+  return {
+    evaluate: (tx) => {
+      const redeemers = CSL.Transaction.from_hex(Transaction.toCBORHex(tx)).witness_set().redeemers();
+      const answers: EvalRedeemer[] = [];
+      for (let i = 0; i < (redeemers?.len() ?? 0); i++) {
+        const redeemer = redeemers!.get(i);
+        answers.push({
+          ex_units: new Redeemer.ExUnits({ mem, steps }),
+          redeemer_index: Number(redeemer.index().to_str()),
+          redeemer_tag: REDEEMER_TAGS[redeemer.tag().kind()]!,
+        });
+      }
+      return Effect.succeed(answers);
+    },
+  };
+}
+
+/** 100000 memory and 10000000 steps, more than the always_succeeds fixture needs (9751 and 2836913). */
+export const fixedBudgetEvaluator: Evaluator = budgetEvaluator(100_000n, 10_000_000n);
 
 export async function evolutionBuild(
   configure: (b: ReturnType<typeof makeTxBuilder>) => void,
@@ -76,4 +81,15 @@ export async function evolutionBuild(
 /** A coin-only wallet UTxO as Evolution's UTxO at the given address, for availableUtxos. */
 export function evolutionUtxo(u: Utxo, address: Uint8Array): UTxO.UTxO {
   return new UTxO.UTxO({ transactionId: TransactionHash.fromBytes(u.input.txId), index: u.input.index, address: Address.fromBytes(address), assets: Assets.fromLovelace(u.lovelace) });
+}
+
+/** A UTxO at the testnet address of this script hash as Evolution's UTxO, with an optional inline datum, for collectFrom. */
+export function evolutionLocked(u: Utxo, hash: ScriptHash.ScriptHash, datum?: Data.Data): UTxO.UTxO {
+  return new UTxO.UTxO({
+    transactionId: TransactionHash.fromBytes(u.input.txId),
+    index: u.input.index,
+    address: new Address.Address({ networkId: 0, paymentCredential: hash }),
+    assets: Assets.fromLovelace(u.lovelace),
+    ...(datum === undefined ? {} : { datumOption: new InlineDatum.InlineDatum({ data: datum }) }),
+  });
 }

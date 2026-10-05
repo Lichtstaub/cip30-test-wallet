@@ -2,12 +2,14 @@
 // code the table promises is checked against the installed wallet.
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { bytesToHex, hexToBytes } from '../src/core/bytes.js';
+import { bytesToHex } from '../src/core/bytes.js';
+import { encode } from '../src/core/cbor/encode.js';
 import { scriptHash } from '../src/core/scripts.js';
 import { prepareWallet } from '../src/host/config.js';
 import { installWallet, type InstallTarget } from '../src/page/install.js';
 import { standardUnsignedTx } from './helpers/build-tx.js';
 import { chwProvider, enableChw, testConfig } from './helpers/page.js';
+import { plutusScript } from './helpers/plutus-fixtures.js';
 
 const doc = readFileSync('docs/recipes.md', 'utf8');
 const table = doc.slice(doc.indexOf('## User-side failures'), doc.indexOf('## Reading the journal'));
@@ -60,8 +62,10 @@ describe('docs/recipes.md user-side failure table', () => {
 });
 
 describe('docs/recipes.md script spending recipe', () => {
-  const scriptAddress = '70f219eeced46ac39519d0542b1ed39fd0b563eac2a1d6a1b60b48d1bc';
-  const referenceScript = '8203474601000022499d';
+  // The aiken always_succeeds of test/fixtures/plutus, a script that passes when it runs.
+  const always = plutusScript('v3_always_succeeds');
+  const scriptAddress = '70' + always.hashHex;
+  const referenceScript = bytesToHex(encode([3n, always.bytes]));
 
   it('keeps the values the test below uses', () => {
     expect(doc).toContain(referenceScript);
@@ -77,8 +81,8 @@ describe('docs/recipes.md script spending recipe', () => {
         ],
       }),
     ).not.toThrow();
-    const hash = bytesToHex(scriptHash(3, hexToBytes('4601000022499d')));
-    expect(hash).toBe('f219eeced46ac39519d0542b1ed39fd0b563eac2a1d6a1b60b48d1bc');
+    const hash = bytesToHex(scriptHash(3, always.bytes));
+    expect(hash).toBe('5d0f747d4eb70739ff667eed99b934de3a3e5054fae1e368902078e3');
     expect(scriptAddress).toBe('70' + hash);
   });
 });

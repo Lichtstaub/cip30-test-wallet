@@ -12,6 +12,7 @@ export interface Failure {
 
 export const PATH = {
   UTXO: ['ConwayUtxowFailure', 'UtxoFailure'],
+  UTXOS: ['ConwayUtxowFailure', 'UtxoFailure', 'UtxosFailure'],
   UTXOW: ['ConwayUtxowFailure'],
   DELEG: ['ConwayCertsFailure', 'CertFailure', 'DelegFailure'],
   POOL: ['ConwayCertsFailure', 'CertFailure', 'PoolFailure'],
@@ -48,10 +49,14 @@ export function mismatch(relation: 'RelEQ' | 'RelGTEQ' | 'RelLTEQ', supplied: st
   return `Mismatch (${relation}) {supplied: ${supplied}, expected: ${expected}}`;
 }
 
-/** 'ConwayUtxowFailure (UtxoFailure (FeeTooSmallUTxO (<detail>)))'. A detail that is a quoted string stays without parentheses, as Show writes a Text argument. */
+/**
+ * 'ConwayUtxowFailure (UtxoFailure (FeeTooSmallUTxO (<detail>)))'. A detail that is a quoted string stays without
+ * parentheses, as Show writes a Text argument. A detail that starts with a parenthesis holds several arguments,
+ * each already where Show puts its parentheses, and stays as it is.
+ */
 export function renderFailure(f: Failure): string {
   let text = f.rule;
-  if (f.detail !== undefined) text += f.detail.startsWith('"') ? ` ${f.detail}` : ` (${f.detail})`;
+  if (f.detail !== undefined) text += f.detail.startsWith('"') || f.detail.startsWith('(') ? ` ${f.detail}` : ` (${f.detail})`;
   for (const wrapper of [...f.path].reverse()) text = `${wrapper} (${text})`;
   return text;
 }

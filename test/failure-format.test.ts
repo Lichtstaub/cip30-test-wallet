@@ -16,6 +16,11 @@ describe('failure format', () => {
     ],
     ['a UTXOW failure without a detail', { path: PATH.UTXOW, rule: 'MissingScriptWitnessesUTXOW' }, 'ConwayUtxowFailure (MissingScriptWitnessesUTXOW)'],
     [
+      'a UTXOS failure',
+      { path: PATH.UTXOS, rule: 'CollectErrors', detail: 'NoRedeemer (ConwaySpending (AsIx 0)) :| []' },
+      'ConwayUtxowFailure (UtxoFailure (UtxosFailure (CollectErrors (NoRedeemer (ConwaySpending (AsIx 0)) :| []))))',
+    ],
+    [
       'a DELEG failure',
       { path: PATH.DELEG, rule: 'StakeKeyNotRegisteredDELEG', detail: 'KeyHashObj (KeyHash {unKeyHash = "01"})' },
       'ConwayCertsFailure (CertFailure (DelegFailure (StakeKeyNotRegisteredDELEG (KeyHashObj (KeyHash {unKeyHash = "01"})))))',
@@ -28,6 +33,11 @@ describe('failure format', () => {
       'a quoted text detail without parentheses',
       { path: PATH.LEDGER, rule: 'ConwayMempoolFailure', detail: '"All inputs are spent. Transaction has probably already been included"' },
       'ConwayMempoolFailure "All inputs are spent. Transaction has probably already been included"',
+    ],
+    [
+      'a detail of several arguments as it stands',
+      { path: PATH.UTXOS, rule: 'ValidationTagMismatch', detail: '(IsValid False) PassedUnexpectedly' },
+      'ConwayUtxowFailure (UtxoFailure (UtxosFailure (ValidationTagMismatch (IsValid False) PassedUnexpectedly)))',
     ],
   ])('renders %s', (_name, failure, text) => {
     expect(renderFailure(failure)).toBe(text);
