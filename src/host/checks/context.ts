@@ -2,11 +2,14 @@ import { bytesToHex } from '../../core/bytes.js';
 import { lookupInputs, parseTransaction, type InputLabel, type ParsedTransaction, type TxInput } from '../../core/cbor/tx.js';
 import type { Utxo } from '../../core/ledger.js';
 import type { ProtocolParams } from '../protocol-params.js';
+import type { SlotConfig } from '../slot-config.js';
 import type { CertState } from './cert-state.js';
 import { readTransaction, type TxFacts } from './read-tx.js';
 
 /** Everything a rule reads: the transaction, the UTxOs it names, the parameters and the certificate state before it. */
 export interface CheckContext {
+  /** The transaction exactly as submitted, what the script evaluator reads. */
+  bytes: Uint8Array;
   parsed: ParsedTransaction;
   facts: TxFacts;
   /** lookupInputs order (inputs, collateral inputs, reference inputs), undefined when unknown or spent. */
@@ -14,6 +17,8 @@ export interface CheckContext {
   params: ProtocolParams;
   networkId: 0 | 1;
   currentSlot: bigint | undefined;
+  /** The calendar of the network, the scripts see the validity interval in POSIX time. */
+  slotConfig: SlotConfig;
   certState: CertState;
 }
 
@@ -21,11 +26,11 @@ export interface CheckContext {
 export function buildCheckContext(
   bytes: Uint8Array,
   find: (input: TxInput) => Utxo | undefined,
-  env: Pick<CheckContext, 'params' | 'networkId' | 'currentSlot' | 'certState'>,
+  env: Pick<CheckContext, 'params' | 'networkId' | 'currentSlot' | 'slotConfig' | 'certState'>,
 ): CheckContext {
   const parsed = parseTransaction(bytes);
   const facts = readTransaction(bytes, parsed);
-  return { parsed, facts, resolved: lookupInputs(parsed.body).map(({ input }) => find(input)), ...env };
+  return { bytes, parsed, facts, resolved: lookupInputs(parsed.body).map(({ input }) => find(input)), ...env };
 }
 
 export interface KnownInput {

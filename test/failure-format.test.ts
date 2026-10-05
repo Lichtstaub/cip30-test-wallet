@@ -34,6 +34,11 @@ describe('failure format', () => {
       { path: PATH.LEDGER, rule: 'ConwayMempoolFailure', detail: '"All inputs are spent. Transaction has probably already been included"' },
       'ConwayMempoolFailure "All inputs are spent. Transaction has probably already been included"',
     ],
+    [
+      'a detail of several arguments as it stands',
+      { path: PATH.UTXOS, rule: 'ValidationTagMismatch', detail: '(IsValid False) PassedUnexpectedly' },
+      'ConwayUtxowFailure (UtxoFailure (UtxosFailure (ValidationTagMismatch (IsValid False) PassedUnexpectedly)))',
+    ],
   ])('renders %s', (_name, failure, text) => {
     expect(renderFailure(failure)).toBe(text);
   });

@@ -2,6 +2,7 @@ import type { TxInput } from '../../core/cbor/tx.js';
 import { apiError, APIErrorCode, ChwError, TxSendErrorCode, txSendError } from '../../core/errors.js';
 import type { Ledger, MemoryLedger, Utxo } from '../../core/ledger.js';
 import type { LedgerChecksConfig } from '../config.js';
+import { SLOT_CONFIGS } from '../slot-config.js';
 import { applyCertificates, initialCertState, type CertState } from './cert-state.js';
 import { buildCheckContext } from './context.js';
 import { formatFailures } from './failure.js';
@@ -81,7 +82,7 @@ export class CheckedLedger implements Ledger {
     const { checks, networkId } = this.opts;
     const ctx = readOrRefuse(() =>
       // A spent output counts as unknown, a node no longer holds it. signTx still resolves it through resolveInput.
-      buildCheckContext(tx, (input) => this.inner.unspent(input), { params: checks.params, networkId, currentSlot: checks.currentSlot, certState: this.state }),
+      buildCheckContext(tx, (input) => this.inner.unspent(input), { params: checks.params, networkId, currentSlot: checks.currentSlot, slotConfig: SLOT_CONFIGS[checks.network], certState: this.state }),
     );
     const { failures, unsupported } = checkTransaction(ctx);
     if (unsupported.length > 0) {
