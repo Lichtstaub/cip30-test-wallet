@@ -408,7 +408,7 @@ test.use({
 
 This fragment only configures the wallet. A unit test checks that it is accepted and that the reference script hash matches the script address.
 
-The wallet signs for the collateral and every key the transaction needs from it. It never runs the validator: a redeemer or budget that a node would reject passes here.
+The wallet signs for the collateral and every key the transaction needs from it. `signTx` never runs the validator. With `ledger: { checks: true }` `submitTx` runs it in Node, within the ExUnits its redeemer declares. A validator that fails or needs more than that is refused as `ValidationTagMismatch`, a script data hash that does not match as `ScriptIntegrityHashMismatch`, see [Ledger checks](../README.md#ledger-checks). Without the checks a redeemer or budget that a node would reject passes here.
 
 ## Reading the journal
 

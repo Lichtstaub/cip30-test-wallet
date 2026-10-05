@@ -25,7 +25,7 @@ const third = deriveAccount(MNEMONIC, 2);
 const otherPub = bytesToHex(publicKey(other.payment));
 const own = OWN.map((u, i) => syntheticOwnedUtxo(w.config.name, i, address, BigInt(u.lovelace)));
 const ownEvo = own.map((u) => evolutionUtxo(u, address));
-// A Plutus V3 script, never executed: fixedBudgetEvaluator stands in for the node.
+// The always_succeeds Plutus V3 script. These tests only sign, fixedBudgetEvaluator answers for the redeemers.
 const plutus = new PlutusV3.PlutusV3({ bytes: hexToBytes(PLUTUS_V3) });
 const plutusHash = ScriptHash.fromScript(plutus);
 const pk = (hash: Uint8Array) => NativeScripts.makeScriptPubKey(hash).script;

@@ -347,9 +347,10 @@ export interface ParsedTransaction {
  * every path. It accepts one complete CBOR item shaped like a transaction,
  * [body map, witness set map, is_valid boolean, auxiliary data], with nothing
  * after it. Auxiliary data is null, a map (Shelley), an array (Allegra,
- * [metadata, native scripts]) or a tagged value (Alonzo and later). Fees and
- * validity are not checked, scripts are read but never run. Throws a plain Error
- * on anything else, callers turn that into their own error shape.
+ * [metadata, native scripts]) or a tagged value (Alonzo and later). Fees,
+ * validity and script execution belong to the ledger checks in Node, this parser
+ * only reads the scripts. Throws a plain Error on anything else, callers turn
+ * that into their own error shape.
  */
 export function parseTransaction(tx: Uint8Array): ParsedTransaction {
   // decode() rejects trailing bytes and handles both array forms.
