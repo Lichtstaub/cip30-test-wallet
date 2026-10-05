@@ -12,6 +12,7 @@ export interface Failure {
 
 export const PATH = {
   UTXO: ['ConwayUtxowFailure', 'UtxoFailure'],
+  UTXOS: ['ConwayUtxowFailure', 'UtxoFailure', 'UtxosFailure'],
   UTXOW: ['ConwayUtxowFailure'],
   DELEG: ['ConwayCertsFailure', 'CertFailure', 'DelegFailure'],
   POOL: ['ConwayCertsFailure', 'CertFailure', 'PoolFailure'],
