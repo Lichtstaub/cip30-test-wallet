@@ -83,9 +83,14 @@
     "scalus": "^1.3.0"
   },
   "devDependencies": {
+    "@effect/platform": "0.96.3",
+    "@effect/platform-node": "0.106.0",
     "@emurgo/cardano-message-signing-nodejs": "^1.1.0",
     "@emurgo/cardano-serialization-lib-nodejs": "^17.0.0",
-    "@evolution-sdk/evolution": "^0.5.9",
+    "@evolution-sdk/aiken-uplc": "2.0.20",
+    "@evolution-sdk/devnet": "3.0.21",
+    "@evolution-sdk/evolution": "0.6.0",
+    "@evolution-sdk/scalus-uplc": "2.0.20",
     "@lucid-evolution/uplc": "0.2.23",
     "@playwright/test": "^1.50.0",
     "@types/node": "^22.0.0",
