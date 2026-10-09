@@ -2,7 +2,7 @@ import { bytesToHex } from '../../core/bytes.js';
 import { ChwError, type ChwErrorCode } from '../../core/errors.js';
 import { encodeUtxo } from '../../core/ledger.js';
 import { knownInputs, type CheckContext } from './context.js';
-import { PATH, type Failure } from './failure.js';
+import { PATH, showText, type Failure } from './failure.js';
 import type { PlutusNeed, RedeemerTag } from './plutus-purposes.js';
 
 // Phase 2 of a Conway node: Conway/Rules/Utxos.hs utxosTransition, which runs
@@ -141,33 +141,6 @@ export async function evaluateScripts(ctx: CheckContext, needs: readonly PlutusN
     // read. A node never reports these.
     throw evaluatorFailed(error);
   }
-}
-
-/**
- * After Haskell's Show of a Text: in double quotes, with backslash escapes for
- * quote, backslash, newline, tab and carriage return, and every character
- * outside ASCII as its decimal code point, \& separating such an escape from a
- * digit after it. Show names the other control characters (\SOH, \DEL), here
- * they are decimal too.
- */
-function showText(text: string): string {
-  let out = '"';
-  let numeric = false;
-  for (const char of text) {
-    const code = char.codePointAt(0)!;
-    if (numeric && char >= '0' && char <= '9') out += '\\&';
-    numeric = false;
-    if (char === '"') out += '\\"';
-    else if (char === '\\') out += '\\\\';
-    else if (char === '\n') out += '\\n';
-    else if (char === '\t') out += '\\t';
-    else if (char === '\r') out += '\\r';
-    else if (code < 0x20 || code >= 0x7f) {
-      out += `\\${code}`;
-      numeric = true;
-    } else out += char;
-  }
-  return `${out}"`;
 }
 
 /**

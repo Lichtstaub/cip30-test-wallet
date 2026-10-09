@@ -50,6 +50,33 @@ export function mismatch(relation: 'RelEQ' | 'RelGTEQ' | 'RelLTEQ', supplied: st
 }
 
 /**
+ * After Haskell's Show of a Text: in double quotes, with backslash escapes for
+ * quote, backslash, newline, tab and carriage return, and every character
+ * outside ASCII as its decimal code point, \& separating such an escape from a
+ * digit after it. Show names the other control characters (\SOH, \DEL), here
+ * they are decimal too.
+ */
+export function showText(text: string): string {
+  let out = '"';
+  let numeric = false;
+  for (const char of text) {
+    const code = char.codePointAt(0)!;
+    if (numeric && char >= '0' && char <= '9') out += '\\&';
+    numeric = false;
+    if (char === '"') out += '\\"';
+    else if (char === '\\') out += '\\\\';
+    else if (char === '\n') out += '\\n';
+    else if (char === '\t') out += '\\t';
+    else if (char === '\r') out += '\\r';
+    else if (code < 0x20 || code >= 0x7f) {
+      out += `\\${code}`;
+      numeric = true;
+    } else out += char;
+  }
+  return `${out}"`;
+}
+
+/**
  * 'ConwayUtxowFailure (UtxoFailure (FeeTooSmallUTxO (<detail>)))'. A detail that is a quoted string stays without
  * parentheses, as Show writes a Text argument. A detail that starts with a parenthesis holds several arguments,
  * each already where Show puts its parentheses, and stays as it is.

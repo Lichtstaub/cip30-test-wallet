@@ -1,0 +1,12 @@
+{
+  "jsonrpc": "2.0",
+  "method": "submitTransaction",
+  "error": {
+    "code": 3997,
+    "message": "The transaction couldn't be added to the mempool. A justification is given as 'data.error'.",
+    "data": {
+      "error": "All inputs are spent. Transaction has probably already been included"
+    }
+  },
+  "id": 22
+}

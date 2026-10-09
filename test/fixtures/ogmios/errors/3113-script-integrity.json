@@ -1,0 +1,13 @@
+{
+  "jsonrpc": "2.0",
+  "method": "submitTransaction",
+  "error": {
+    "code": 3113,
+    "message": "The transaction failed because the provided script integrity hash doesn't match the computed one. This is crucial for ensuring the integrity of cost models and Plutus version used during script execution. The field 'data.providedScriptIntegrity' correspond to what was given, if any, and 'data.computedScriptIntegrity' is what was expected. If the latter is null, this means you shouldn't have included a script integrity hash to begin with.",
+    "data": {
+      "providedScriptIntegrity": "0000000000000000000000000000000000000000000000000000000000000000",
+      "computedScriptIntegrity": "f077618a346e3e1e8d3a088a488dd500dc97e5bd7446c94ce935276a8c02618b"
+    }
+  },
+  "id": 38
+}

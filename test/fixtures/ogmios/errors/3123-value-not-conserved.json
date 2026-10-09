@@ -1,0 +1,21 @@
+{
+  "jsonrpc": "2.0",
+  "method": "submitTransaction",
+  "error": {
+    "code": 3123,
+    "message": "In and out value not conserved. The transaction must *exactly* balance: every input must be accounted for. There are various things counting as 'in balance': (a) the total value locked by inputs (or collateral inputs in case of a failing script), (b) rewards coming from withdrawals and (c) return deposits from stake credential or pool de-registration. In a similar fashion, various things count towards the 'out balance': (a) the total value assigned to each transaction output, (b) the fee and (c) any deposit for stake credential or pool registration. The field 'data.valueConsumed' contains the total 'in balance', and 'data.valueProduced' indicates the total amount counting as 'out balance'.",
+    "data": {
+      "valueConsumed": {
+        "ada": {
+          "lovelace": 20000000
+        }
+      },
+      "valueProduced": {
+        "ada": {
+          "lovelace": 25200000
+        }
+      }
+    }
+  },
+  "id": 23
+}

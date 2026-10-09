@@ -1,0 +1,19 @@
+{
+  "jsonrpc": "2.0",
+  "method": "submitTransaction",
+  "error": {
+    "code": 3134,
+    "message": "The transaction execution budget for scripts execution is above the allowed limit. The protocol limits the amount of execution that a single transaction can do. This limit is set by a protocol parameter. The field 'data.maximumExecutionUnits' indicates the current limit and the field 'data.providedExecutionUnits' indicates how much the transaction requires.",
+    "data": {
+      "providedExecutionUnits": {
+        "memory": 999000000,
+        "cpu": 1000000000
+      },
+      "maximumExecutionUnits": {
+        "memory": 10000000,
+        "cpu": 10000000000
+      }
+    }
+  },
+  "id": 39
+}
