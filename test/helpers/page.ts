@@ -60,9 +60,26 @@ export async function rejectionOf(p: Promise<unknown>): Promise<unknown> {
   throw new Error('expected a rejection');
 }
 
-/** A page window whose binding goes through JSON like Playwright's, so nothing the page receives is a bigint or a Uint8Array. */
+/**
+ * A page window whose binding behaves like Playwright's exposeBinding: arguments and answers go
+ * through JSON, so nothing the page receives is a bigint or a Uint8Array, and a value the binding
+ * throws arrives as a new Error with only its name and message, every other property lost.
+ */
 export function pageWith(ledger: Ledger): InstallTarget & Record<string, unknown> {
   const handler = ledgerBinding(ledger);
   const json = (v: unknown) => JSON.parse(JSON.stringify(v ?? null));
-  return { [LEDGER_BINDING]: async (op: string, arg?: unknown) => json(await handler(undefined, op, json(arg))) };
+  return {
+    [LEDGER_BINDING]: async (op: string, arg?: unknown) => {
+      let answer: unknown;
+      try {
+        answer = await handler(undefined, op, json(arg));
+      } catch (e) {
+        const thrown = e as { name?: unknown; message?: unknown } | undefined;
+        const error = new Error(String(thrown?.message ?? e));
+        error.name = String(thrown?.name ?? 'Error');
+        throw error;
+      }
+      return json(answer);
+    },
+  };
 }

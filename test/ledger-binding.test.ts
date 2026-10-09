@@ -10,7 +10,7 @@ import { LEDGER_BINDING, ledgerBinding, walletLedger } from '../src/host/ledger.
 import { installWallet, syntheticOwnedUtxo, type InstallTarget } from '../src/page/install.js';
 import { utxoFromConfig, utxoToConfig } from '../src/page/utxo-config.js';
 import { buildTx, spliceWitnessSet, standardUnsignedTx, TEST_ADDRESS } from './helpers/build-tx.js';
-import { enableChw, pageWith, rejectionOf } from './helpers/page.js';
+import { enableChw, pageWith, rejectionOf, type TestApi } from './helpers/page.js';
 import { hash28 as h, syntheticInput } from './helpers/synthetic.js';
 
 afterEach(() => vi.restoreAllMocks());
@@ -115,6 +115,56 @@ describe('a page wallet on a host ledger', () => {
   });
 });
 
+describe('read answers through the binding', () => {
+  const setup = () => {
+    const w = prepareWallet();
+    const node = walletLedger(w) as MemoryLedger;
+    const page = pageWith(node);
+    installWallet({ ...w.config, ledger: { state: true, binding: LEDGER_BINDING } }, page);
+    return { node, page, tx: standardUnsignedTx(w.config.name) };
+  };
+  const down = new ChwError('CHW_CHAIN_UNAVAILABLE', 'ogmios queryLedgerState/utxo failed: HTTP 503');
+
+  it('answers every read as a value', async () => {
+    const { node } = setup();
+    const binding = ledgerBinding(node);
+    expect(await binding(undefined, 'getWalletUtxos')).toEqual({ value: (await node.getWalletUtxos()).map(utxoToConfig) });
+    expect(await binding(undefined, 'getStakeRegistered')).toEqual({ value: false });
+    expect(await binding(undefined, 'resolveInput', { txId: '00'.repeat(32), index: '0' })).toEqual({ value: null });
+  });
+
+  it.each([
+    ['getUtxos', 'getWalletUtxos', (api: TestApi) => api.getUtxos()],
+    ['getBalance', 'getWalletUtxos', (api: TestApi) => api.getBalance()],
+    ['signTx', 'resolveInput', (api: TestApi, tx: string) => api.signTx(tx, false)],
+  ] as const)('%s rejects in the page with the ChwError of %s, code included', async (_call, method, run) => {
+    const { node, page, tx } = setup();
+    vi.spyOn(node, method as 'getWalletUtxos').mockRejectedValue(down);
+    const e = await rejectionOf(run(await enableChw(page), tx));
+    expect(e).toBeInstanceOf(ChwError);
+    expect(e).toMatchObject({ code: 'CHW_CHAIN_UNAVAILABLE', message: down.message });
+  });
+
+  it('CIP-95 rejects in the page with the ChwError of getStakeRegistered, code included', async () => {
+    const { node, page } = setup();
+    vi.spyOn(node, 'getStakeRegistered').mockRejectedValue(down);
+    const provider = (page.cardano as Record<string, { enable(o: unknown): Promise<unknown> }>)['chw']!;
+    const { cip95 } = (await provider.enable({ extensions: [{ cip: 95 }] })) as { cip95: { getRegisteredPubStakeKeys(): Promise<string[]> } };
+    const e = await rejectionOf(cip95.getRegisteredPubStakeKeys());
+    expect(e).toBeInstanceOf(ChwError);
+    expect(e).toMatchObject({ code: 'CHW_CHAIN_UNAVAILABLE', message: down.message });
+  });
+
+  it('anything else the host throws reaches the page as a bare Error with name and message, the way Playwright delivers it', async () => {
+    const { node, page } = setup();
+    vi.spyOn(node, 'getWalletUtxos').mockRejectedValue(Object.assign(new TypeError('ledger broke'), { code: 'LEDGER_BROKE' }));
+    const e = await rejectionOf((await enableChw(page)).getUtxos());
+    expect(e).toBeInstanceOf(Error);
+    expect(e).toMatchObject({ name: 'TypeError', message: 'ledger broke' });
+    expect(e).not.toHaveProperty('code');
+  });
+});
+
 describe('submit answers through the binding', () => {
   const setup = () => {
     const w = prepareWallet();
@@ -127,7 +177,7 @@ describe('submit answers through the binding', () => {
 
   it('answers an accepted transaction with its id', async () => {
     const { node, tx } = setup();
-    expect(await ledgerBinding(node)(undefined, 'submit', tx)).toEqual({ txId: bytesToHex(txHash(hexToBytes(tx))) });
+    expect(await ledgerBinding(node)(undefined, 'submit', tx)).toEqual({ value: bytesToHex(txHash(hexToBytes(tx))) });
   });
 
   it('carries a CIP-30 error as a value, the page throws it as the plain object', async () => {

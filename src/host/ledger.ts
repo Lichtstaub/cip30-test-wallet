@@ -3,7 +3,7 @@ import { ChwError, isCip30Error } from '../core/errors.js';
 import { keyHash } from '../core/hash.js';
 import type { Ledger } from '../core/ledger.js';
 import { parseAddressArg } from '../core/sign-data.js';
-import type { SubmitAnswer } from '../page/binding-ledger.js';
+import type { LedgerAnswer } from '../page/binding-ledger.js';
 import { buildLedger } from '../page/install.js';
 import { utxoToConfig } from '../page/utxo-config.js';
 import { CheckedLedger } from './checks/checked-ledger.js';
@@ -34,12 +34,13 @@ export function walletLedger(prepared: PreparedWallet): Ledger {
 }
 
 /**
- * Submits and turns the two error kinds the page knows into values. Anything
- * else is a bug in the host and is thrown as it is.
+ * Runs one ledger operation and turns the two error kinds the page knows into values, since a
+ * thrown value reaches the page without its code. Anything else is a bug in the host and is
+ * thrown as it is.
  */
-async function submitAnswer(ledger: Ledger, tx: Uint8Array): Promise<SubmitAnswer> {
+async function answer<T>(run: () => Promise<T>): Promise<LedgerAnswer<T>> {
   try {
-    return { txId: bytesToHex(await ledger.submit(tx)) };
+    return { value: await run() };
   } catch (e) {
     if (isCip30Error(e)) return { error: { code: e.code, info: e.info } };
     if (e instanceof ChwError) {
@@ -57,15 +58,17 @@ export function ledgerBinding(ledger: Ledger) {
     switch (op) {
       case 'resolveInput': {
         const { txId, index } = arg as { txId: string; index: string };
-        const found = await ledger.resolveInput({ txId: hexToBytes(txId), index: BigInt(index) });
-        return found ? utxoToConfig(found) : null;
+        return answer(async () => {
+          const found = await ledger.resolveInput({ txId: hexToBytes(txId), index: BigInt(index) });
+          return found ? utxoToConfig(found) : null;
+        });
       }
       case 'getWalletUtxos':
-        return (await ledger.getWalletUtxos()).map(utxoToConfig);
+        return answer(async () => (await ledger.getWalletUtxos()).map(utxoToConfig));
       case 'getStakeRegistered':
-        return ledger.getStakeRegistered();
+        return answer(() => ledger.getStakeRegistered());
       case 'submit':
-        return submitAnswer(ledger, hexToBytes(arg as string));
+        return answer(async () => bytesToHex(await ledger.submit(hexToBytes(arg as string))));
       default:
         throw new Error(`unknown ledger operation ${op}`);
     }
