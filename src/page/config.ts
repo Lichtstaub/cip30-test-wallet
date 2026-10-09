@@ -108,10 +108,12 @@ export interface PageConfig {
    * Ledger behaviour. state: apply every submitted transaction (default true).
    * binding: name of a host function the page calls instead of keeping its own
    * ledger, set by the Playwright fixture. checks: the host ledger checks every
-   * submitted transaction, the page only warns when it has no binding to reach
-   * it. Absent means the defaults.
+   * submitted transaction. chain: the host ledger reads a chain provider. For
+   * both the page only warns when it has no binding to reach them. signLocked:
+   * the chain is mainnet without allowMainnetSigning, signTx refuses. Absent
+   * means the defaults.
    */
-  ledger?: { state: boolean; binding?: string; checks?: boolean };
+  ledger?: { state: boolean; binding?: string; checks?: boolean; chain?: true; signLocked?: true };
 }
 
 export interface JournalEntry {

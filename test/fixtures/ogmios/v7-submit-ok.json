@@ -1,0 +1,10 @@
+{
+  "jsonrpc": "2.0",
+  "method": "submitTransaction",
+  "result": {
+    "transaction": {
+      "id": "eaacde39b5578ab547458e3a4db4ffe57f4b4808e7dd503f7d9e60b1c7dd90d6"
+    }
+  },
+  "id": 19
+}

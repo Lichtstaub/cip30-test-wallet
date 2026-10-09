@@ -10,7 +10,7 @@ import { parseTransaction } from '../../src/core/cbor/tx.js';
 import { keyHash, publicKey, sign, type SigningKey } from '../../src/core/keys.js';
 import { encodeOutput, type Datum, type Utxo } from '../../src/core/ledger.js';
 import { deriveAccount, type DerivedAccount } from '../../src/derive/index.js';
-import { DEFAULT_COST_MODELS } from '../../src/host/cost-models.js';
+import { DEFAULT_COST_MODELS, type CostModels } from '../../src/host/cost-models.js';
 import { languageViews } from '../../src/host/checks/script-integrity.js';
 import { buildTx, type BuildTxOptions } from './build-tx.js';
 import type { PlutusFixture } from './plutus-fixtures.js';
@@ -60,9 +60,15 @@ const WITNESS_KEYS = { 1: 3n, 2: 6n, 3: 7n } as const;
  * and the script data hash for body key 11. inputs are all spend inputs of the
  * transaction: a spend redeemer points at its position in their sorted set
  * (Conway UTxO.hs getConwayScriptsNeeded). The hash is Alonzo Tx.hs
- * hashScriptIntegrity over these bytes, undefined without any spend.
+ * hashScriptIntegrity over these bytes, undefined without any spend. The
+ * language views come from costModels, the network defaults when left out.
  */
-export function scriptWitnesses(spends: ScriptSpend[], inputs: Utxo[], witnessDatums?: CborValue[]): { witnessSet: Map<bigint, unknown>; scriptDataHash: Uint8Array | undefined } {
+export function scriptWitnesses(
+  spends: ScriptSpend[],
+  inputs: Utxo[],
+  witnessDatums?: CborValue[],
+  costModels: CostModels = DEFAULT_COST_MODELS,
+): { witnessSet: Map<bigint, unknown>; scriptDataHash: Uint8Array | undefined } {
   const witnessSet = new Map<bigint, unknown>();
   if (spends.length === 0) return { witnessSet, scriptDataHash: undefined };
   const sorted = [...inputs].sort(compareInputs);
@@ -80,7 +86,7 @@ export function scriptWitnesses(spends: ScriptSpend[], inputs: Utxo[], witnessDa
   witnessSet.set(5n, redeemers);
   const languages = new Set(spends.map((s) => s.script.language));
   const datums = witnessDatums ? encode(witnessDatums as never) : new Uint8Array();
-  return { witnessSet, scriptDataHash: blake2b(concat(encode(redeemers as never), datums, languageViews(languages, DEFAULT_COST_MODELS)), { dkLen: 32 }) };
+  return { witnessSet, scriptDataHash: blake2b(concat(encode(redeemers as never), datums, languageViews(languages, costModels)), { dkLen: 32 }) };
 }
 
 /** buildTx with vkey witnesses of these keys added to its own witness set, so scripts and redeemers stay. The body does not depend on the witness set: built once, its hash signed, built again. */
@@ -107,13 +113,15 @@ export interface PlutusSpendOptions {
   witnessDatums?: CborValue[];
   /** Keys whose vkey witnesses go into the witness set. */
   keys?: SigningKey[];
+  /** Cost models for the script data hash, the network defaults when left out. A devnet has its own. */
+  costModels?: CostModels;
 }
 
 /** A balanced spend of the script outputs plus the wallet UTxO, all value back to changeAddress less the fee, the wallet UTxO also as collateral. */
 export function plutusSpend(opts: PlutusSpendOptions): string {
   const fee = opts.fee ?? 400_000n;
   const inputs = [opts.wallet, ...opts.spends.map((s) => s.utxo)];
-  const { witnessSet, scriptDataHash } = scriptWitnesses(opts.spends, inputs, opts.witnessDatums);
+  const { witnessSet, scriptDataHash } = scriptWitnesses(opts.spends, inputs, opts.witnessDatums, opts.costModels);
   const body = new Map<bigint, unknown>([[13n, new Tagged(258n, [[opts.wallet.input.txId, opts.wallet.input.index]])]]);
   if (scriptDataHash) body.set(11n, scriptDataHash);
   if (opts.validityStart !== undefined) body.set(8n, opts.validityStart);

@@ -56,9 +56,14 @@ function pageLedger(config: PageConfig, target: InstallTarget, wallet: LedgerWal
   const call = name ? (target as Record<string, unknown>)[name] : undefined;
   if (typeof call === 'function') return new BindingLedger(call as LedgerBinding);
   // A safety net: the fixture's binding and init script both reach every frame of the page.
-  const checks = config.ledger?.checks ? ', and submitTx runs no ledger checks, they need the ledger in Node' : '';
-  if (name) console.warn(`[cip30-test-wallet] ledger binding ${name} is missing on this page, the wallet keeps its own ledger until the next load and wallet.utxos() will not see it${checks}`);
-  else if (checks) console.warn(`[cip30-test-wallet] ledger.checks is set but this page has no ledger binding${checks}`);
+  // The ledger key that needs the ledger in Node and what the page misses without it, named in the warning.
+  const [key, missing = ''] = config.ledger?.chain
+    ? ['chain', ', and the wallet reads no chain, ledger.chain needs the ledger in Node']
+    : config.ledger?.checks
+      ? ['checks', ', and submitTx runs no ledger checks, they need the ledger in Node']
+      : [];
+  if (name) console.warn(`[cip30-test-wallet] ledger binding ${name} is missing on this page, the wallet keeps its own ledger until the next load and wallet.utxos() will not see it${missing}`);
+  else if (key) console.warn(`[cip30-test-wallet] ledger.${key} is set but this page has no ledger binding${missing}`);
   return buildLedger(config, wallet);
 }
 

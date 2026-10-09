@@ -1,0 +1,9 @@
+{
+  "code": 3100,
+  "message": "Some signatures are invalid. 'data.invalidSignatories' contains a list of keys for which the signature didn't verify. As a reminder, you must only sign the serialised transaction *body*, without metadata or witnesses.",
+  "data": {
+    "invalidSignatories": [
+      "e5d83a02058d730af3d9bbf74379782bb34699ac63a1bb7caf43f80055a7710b"
+    ]
+  }
+}

@@ -12,6 +12,7 @@ import { isPlutusDataBytes } from '../core/cbor-shapes.js';
 import { isScriptRef } from '../core/scripts.js';
 import { resolveProtocolParams, type ProtocolParams, type ProtocolParamsInput } from './protocol-params.js';
 import { defaultNetwork, networkIdOf, SLOT_CONFIGS, type CardanoNetwork } from './slot-config.js';
+import { KOIOS_URLS } from './chain/koios-urls.js';
 
 /** Public test vector from the CSL documentation. Holds no funds, safe to ship. */
 export const DEFAULT_MNEMONIC = 'test walk nut penalty hip pave soap entry language right filter choice';
@@ -21,6 +22,16 @@ export const DEFAULT_ICON = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.o
 
 type UtxoExtrasInput = Omit<UtxoExtras, 'assets'> & { assets?: Record<string, number | bigint | string> };
 type ForeignUtxoInput = { txId: string; index: number; addressHex: string; lovelace: number | bigint | string } & UtxoExtrasInput;
+
+/**
+ * A chain the wallet's ledger reads and submits to instead of keeping UTxOs in memory.
+ * ogmios: an Ogmios server over HTTP, such as a devnet or an own node.
+ * koios: the public Koios API of the network, url replaces its default, token goes along as a bearer token.
+ * allowMainnetSigning: signTx signs when the chain is mainnet. Default false, signTx then throws CHW_MAINNET_LOCKED.
+ */
+export type ChainOptions =
+  | { provider: 'ogmios'; url: string; allowMainnetSigning?: boolean }
+  | { provider: 'koios'; network: 'mainnet' | 'preprod' | 'preview'; url?: string; token?: string; allowMainnetSigning?: boolean };
 
 export interface WalletOptions {
   name?: string;
@@ -44,6 +55,8 @@ export interface WalletOptions {
    * currentSlot is the slot the validity interval is checked against (no validity check without it),
    * drepRegistered counts the wallet's DRep as registered with drepDeposit (default false),
    * network picks the slot calendar Plutus scripts see (default preprod for networkId 0, mainnet for 1).
+   * chain: UTxOs and the stake registration come from this chain provider and submitTx sends there.
+   * Needs the ledger in Node and replaces utxos, foreignUtxos, stakeRegistered and the checks.
    */
   ledger?: {
     state?: boolean;
@@ -52,6 +65,7 @@ export interface WalletOptions {
     currentSlot?: number | bigint;
     drepRegistered?: boolean;
     network?: CardanoNetwork;
+    chain?: ChainOptions;
   };
 }
 
@@ -75,6 +89,8 @@ export interface PreparedWallet {
   drepId: string;
   /** Set exactly when walletOptions.ledger.checks is true. */
   ledgerChecks?: LedgerChecksConfig;
+  /** Set exactly when walletOptions.ledger.chain is given, validated, the Koios url filled in. Never part of config, it may hold a token. */
+  chain?: ChainOptions;
 }
 
 function lovelaceString(v: number | bigint | string): string {
@@ -175,7 +191,7 @@ function foreignUtxo(f: ForeignUtxoInput, i: number) {
   };
 }
 
-const LEDGER_OPTIONS = ['state', 'checks', 'protocolParams', 'currentSlot', 'drepRegistered', 'network'] as const;
+const LEDGER_OPTIONS = ['state', 'checks', 'protocolParams', 'currentSlot', 'drepRegistered', 'network', 'chain'] as const;
 const CHECKS_ONLY_OPTIONS = ['protocolParams', 'currentSlot', 'drepRegistered', 'network'] as const;
 
 /** ledger.network, checked against networkId: a preprod calendar under mainnet addresses is a mistake in the options. */
@@ -189,9 +205,85 @@ function ledgerNetwork(value: unknown, networkId: 0 | 1): CardanoNetwork {
   return network;
 }
 
+const CHAIN_OPTIONS = {
+  ogmios: ['provider', 'url', 'allowMainnetSigning'],
+  koios: ['provider', 'network', 'url', 'token', 'allowMainnetSigning'],
+} as const;
+const KOIOS_NETWORKS = ['mainnet', 'preprod', 'preview'] as const;
+/** RFC 6750 b64token: a valid header value, so fetch never refuses it with an error that repeats it. */
+const BEARER_TOKEN = /^[A-Za-z0-9\-._~+/]+=*$/;
+
+/**
+ * Why a chain replaces each checks-only option, so a new one needs a reason here. The chain is the
+ * only source of UTxOs and registrations, the node checks every transaction itself.
+ */
+const LEDGER_OPTIONS_REPLACED_BY_CHAIN: Record<(typeof CHECKS_ONLY_OPTIONS)[number], string> = {
+  protocolParams: 'ledger.protocolParams, the node uses its own protocol parameters',
+  currentSlot: 'ledger.currentSlot, the node checks the validity interval against its own tip',
+  drepRegistered: 'ledger.drepRegistered, the chain reports whether the DRep is registered',
+  network: 'ledger.network, the node runs scripts with its own slot calendar',
+};
+
+/** Top-level options a chain replaces. Any value counts, an empty list and false as well. */
+const WALLET_OPTIONS_REPLACED_BY_CHAIN = [
+  ['utxos', "utxos, the wallet's UTxOs come from the chain"],
+  ['foreignUtxos', 'foreignUtxos, the chain resolves every input'],
+  ['stakeRegistered', 'stakeRegistered, the chain reports whether the stake key is registered'],
+] as const;
+
+/** An absolute http or https URL, as it came. The message never repeats the value, a URL can carry credentials. */
+function chainUrl(value: unknown): string {
+  let url: URL | undefined;
+  try {
+    url = typeof value === 'string' ? new URL(value) : undefined;
+  } catch {
+    // url stays undefined and fails below.
+  }
+  if (!url || (url.protocol !== 'http:' && url.protocol !== 'https:')) {
+    throw new Error('ledger.chain.url must be an absolute http or https URL such as http://localhost:1337');
+  }
+  // fetch would refuse such a URL later with only "request failed", so say why here.
+  if (url.username !== '' || url.password !== '') {
+    throw new Error('ledger.chain.url must not carry a username or a password, fetch refuses such a URL');
+  }
+  return value as string;
+}
+
+/** ledger.chain, strict like every ledger option. Koios without url gets the public URL of its network. */
+function chainOptions(value: unknown, networkId: 0 | 1): ChainOptions {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error(`ledger.chain must be an object, got ${String(value)}`);
+  const options = value as Record<string, unknown>;
+  const provider = options['provider'];
+  if (provider !== 'ogmios' && provider !== 'koios') throw new Error(`ledger.chain.provider must be ogmios or koios, got ${String(provider)}`);
+  const known: readonly string[] = CHAIN_OPTIONS[provider];
+  for (const key of Object.keys(options)) {
+    if (!known.includes(key)) throw new Error(`ledger.chain.${key} is not an option of provider ${String(provider)}, known: ${known.join(', ')}`);
+  }
+  const allow = options['allowMainnetSigning'];
+  if (allow !== undefined && typeof allow !== 'boolean') throw new Error(`ledger.chain.allowMainnetSigning must be a boolean, got ${String(allow)}`);
+  const signing = allow === undefined ? {} : { allowMainnetSigning: allow };
+  if (provider === 'ogmios') {
+    if (options['url'] === undefined) throw new Error('ledger.chain.url is required for provider ogmios, the address of the Ogmios server such as http://localhost:1337');
+    return { provider: 'ogmios', url: chainUrl(options['url']), ...signing };
+  }
+  const network = options['network'];
+  if (typeof network !== 'string' || !(KOIOS_NETWORKS as readonly string[]).includes(network)) {
+    throw new Error(`ledger.chain.network must be one of ${KOIOS_NETWORKS.join(', ')}, got ${String(network)}`);
+  }
+  const koiosNetwork = network as (typeof KOIOS_NETWORKS)[number];
+  const expected = koiosNetwork === 'mainnet' ? 1 : 0;
+  if (networkId !== expected) throw new Error(`ledger.chain.network ${koiosNetwork} needs networkId ${expected}, got networkId ${networkId}`);
+  const token = options['token'];
+  // The messages never repeat the value, it is a secret.
+  if (token !== undefined && (typeof token !== 'string' || token === '')) throw new Error('ledger.chain.token must be a non-empty string');
+  if (typeof token === 'string' && !BEARER_TOKEN.test(token)) throw new Error('ledger.chain.token must be a bearer token of letters, digits and - . _ ~ + /, with = only at the end');
+  const url = options['url'] === undefined ? KOIOS_URLS[koiosNetwork] : chainUrl(options['url']);
+  return { provider: 'koios', network: koiosNetwork, url, ...(token === undefined ? {} : { token }), ...signing };
+}
+
 /** Checked in Node, so a typo fails here instead of switching a check off without a word. */
-function ledgerOptions(ledger: unknown, networkId: 0 | 1): { state: boolean; checks: LedgerChecksConfig | undefined } {
-  if (ledger === undefined) return { state: true, checks: undefined };
+function ledgerOptions(ledger: unknown, networkId: 0 | 1): { state: boolean; checks?: LedgerChecksConfig; chain?: ChainOptions } {
+  if (ledger === undefined) return { state: true };
   if (typeof ledger !== 'object' || ledger === null || Array.isArray(ledger)) throw new Error(`ledger must be an object, got ${String(ledger)}`);
   const options = ledger as NonNullable<WalletOptions['ledger']>;
   for (const key of Object.keys(options)) {
@@ -206,10 +298,18 @@ function ledgerOptions(ledger: unknown, networkId: 0 | 1): { state: boolean; che
   };
   const state = booleanOption('state', true);
   const checks = booleanOption('checks', false);
+  if (options.chain !== undefined) {
+    const chain = chainOptions(options.chain, networkId);
+    // Before the checks-only rule below, so each option names why a chain replaces it.
+    if (!state) throw new Error('ledger.chain cannot be combined with ledger.state: false, the chain applies every transaction it accepts');
+    if (checks) throw new Error('ledger.chain cannot be combined with ledger.checks: true, the node checks every transaction itself');
+    for (const key of CHECKS_ONLY_OPTIONS) if (options[key] !== undefined) throw new Error(`ledger.chain cannot be combined with ${LEDGER_OPTIONS_REPLACED_BY_CHAIN[key]}`);
+    return { state, chain };
+  }
   if (!checks) {
     const stray = CHECKS_ONLY_OPTIONS.find((key) => options[key] !== undefined);
     if (stray) throw new Error(`ledger.${stray} only applies with ledger.checks: true`);
-    return { state, checks: undefined };
+    return { state };
   }
   if (!state) throw new Error('ledger.checks: true needs ledger.state: true, the checks judge each transaction against the state the ones before it left');
   const slot = options.currentSlot;
@@ -250,9 +350,13 @@ export function prepareWallet(options: WalletOptions = {}): PreparedWallet {
   const drepHash = keyHash(drepPub);
   const { base, reward } = walletAddresses(networkId, paymentPub, stakePub);
 
-  const utxos = (options.utxos ?? [{ lovelace: 10_000_000 }]).map((u, i) => ({ lovelace: lovelaceString(u.lovelace), ...validateUtxoExtras(u, `utxos[${i}]`) }));
-  checkOwnedSums(utxos);
   const ledger = ledgerOptions(options.ledger, networkId);
+  if (ledger.chain) {
+    for (const [key, why] of WALLET_OPTIONS_REPLACED_BY_CHAIN) if (options[key] !== undefined) throw new Error(`ledger.chain cannot be combined with ${why}`);
+  }
+  // With a chain the default of 10 ADA does not apply, the wallet holds what the chain holds.
+  const utxos = ledger.chain ? [] : (options.utxos ?? [{ lovelace: 10_000_000 }]).map((u, i) => ({ lovelace: lovelaceString(u.lovelace), ...validateUtxoExtras(u, `utxos[${i}]`) }));
+  checkOwnedSums(utxos);
   const submitFails = submitFailsProblem(options.quirks?.submitFails);
   if (submitFails) throw new Error(submitFails);
 
@@ -270,8 +374,8 @@ export function prepareWallet(options: WalletOptions = {}): PreparedWallet {
     foreignUtxos: (options.foreignUtxos ?? []).map(foreignUtxo),
     quirks: { ...(options.quirks ?? {}) },
     stakeRegistered: options.stakeRegistered ?? false,
-    // checks only reaches the page when set, so the page can warn when it has no host ledger.
-    ledger: ledger.checks ? { state: ledger.state, checks: true } : { state: ledger.state },
+    // checks and chain only reach the page when set, so the page can warn when it has no host ledger. The chain options stay in Node.
+    ledger: ledger.chain ? { state: true, chain: true } : ledger.checks ? { state: ledger.state, checks: true } : { state: ledger.state },
   };
 
   return {
@@ -283,5 +387,6 @@ export function prepareWallet(options: WalletOptions = {}): PreparedWallet {
     drepKeyHashHex: bytesToHex(drepHash),
     drepId: cip129DRepId(drepHash),
     ...(ledger.checks ? { ledgerChecks: ledger.checks } : {}),
+    ...(ledger.chain ? { chain: ledger.chain } : {}),
   };
 }

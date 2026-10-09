@@ -6,7 +6,7 @@
 [![npm](https://img.shields.io/npm/v/cip30-test-wallet)](https://www.npmjs.com/package/cip30-test-wallet)
 [![node](https://img.shields.io/node/v/cip30-test-wallet)](https://github.com/Lichtstaub/cip30-test-wallet/blob/main/package.json)
 
-`cip30-test-wallet` reproduces real Cardano wallet failures in automated browser tests, with no node, faucet, extension, or shared chain state.
+`cip30-test-wallet` reproduces real Cardano wallet failures in automated browser tests, with no node, faucet, extension, or shared chain state by default.
 
 It injects a CIP-30 test wallet into the page under test. The wallet holds real keys, returns real UTxO CBOR, signs real transaction CBOR with a real Ed25519 signature, and records every call in a journal your test can read. A catalogue of quirks reproduces the failures that only show up on a user's machine: a wallet on the wrong network, a wallet that injects late, a user who declines or never answers.
 
@@ -27,12 +27,13 @@ Coding agents start with [AGENTS.md](https://github.com/Lichtstaub/cip30-test-wa
 - `expectSignedData(result, expected)`: proves a `signData` or `cip95.signData` result the way a careful verifier does, checking the COSE signature, key and address.
 - The quirk catalogue in [`quirks/`](quirks/README.md), a provenance note for every switch.
 - `doctor`: a command line check of a deployed dApp for the secure-context and content-security-policy traps, with a browser mode that measures wallet detection.
+- Chain mode, opt in: with `walletOptions.ledger.chain` the wallet reads its UTxOs and stake registration from Ogmios or Koios and `submitTx` submits for real, see [Chain mode](#chain-mode).
 
 `signData` follows CIP-30 and CIP-8 byte for byte with Emurgo's message-signing library: payment key for base, pointer and enterprise addresses, stake key for reward addresses. CIP-95 is announced by default: `getPubDRepKey`, the registered and unregistered stake keys, and `cip95.signData` with the bare DRep ID or a type 6 address. `signTx` signs Conway governance transactions: stake and vote delegation certificates with the stake key, DRep registration, update and retirement and DRep votes with the DRep key. Pool and committee certificates are never witnessed by the wallet, as CIP-95 requires. Pre-Conway certificates are refused with `TxSignError` `DeprecatedCertificate` (3).
 
 ## Not in the box yet
 
-This release is a CIP-30 subset for transaction tests plus CIP-95, including governance and script transactions. Every transaction form outside the supported set below is missing on purpose and may come in a later release. `submitTx` is simulated: it records the transaction, applies it to the wallet's UTxOs and stake registration, and returns its id. It never talks to a node. Fees, balance, witnesses, certificates and Plutus scripts are checked only with `walletOptions.ledger: { checks: true }`, see [Ledger checks](#ledger-checks). Without the checks Plutus scripts are never run.
+This release is a CIP-30 subset for transaction tests plus CIP-95, including governance and script transactions. Every transaction form outside the supported set below is missing on purpose and may come in a later release. By default `submitTx` is simulated: it records the transaction, applies it to the wallet's UTxOs and stake registration, and returns its id without talking to a node. With `walletOptions.ledger.chain` it submits to a real chain, see [Chain mode](#chain-mode). Fees, balance, witnesses, certificates and Plutus scripts are checked only with `walletOptions.ledger: { checks: true }`, see [Ledger checks](#ledger-checks). Without the checks Plutus scripts are never run.
 
 ## Getting started
 
@@ -104,8 +105,8 @@ Wallet errors are plain `{ code, info }` objects as CIP-30 requires, so a dApp t
 
 Two questions decide how a transaction test is wired, answer them for your dApp first:
 
-- **Where does the builder get its inputs?** The wallet's UTxOs exist only in the wallet. A builder connected to the CIP-30 api reads them through `getUtxos()` and works. One that looks the address up at an indexer finds nothing.
-- **Who submits?** The wallet's `submitTx` records the transaction, applies it to the wallet's UTxOs and never reaches a chain. A library or backend that submits on its own has to be intercepted with `page.route`.
+- **Where does the builder get its inputs?** By default the wallet's UTxOs exist only in the wallet. A builder connected to the CIP-30 api reads them through `getUtxos()` and works. One that looks the address up at an indexer finds nothing. In chain mode the UTxOs are real, see [Chain mode](#chain-mode).
+- **Who submits?** By default the wallet's `submitTx` records the transaction, applies it to the wallet's UTxOs and never reaches a chain. A library or backend that submits on its own has to be intercepted with `page.route`. In chain mode `submitTx` and a backend that submits both reach the chain, see [Chain mode](#chain-mode).
 
 The details and a recipe per library follow in [Building and submitting transactions](#building-and-submitting-transactions). A test then proves the signature instead of counting calls:
 
@@ -137,11 +138,11 @@ The full option and handle reference is in [docs/fixture-api.md](docs/fixture-ap
 
 ## Building and submitting transactions
 
-The wallet's UTxOs are synthetic, they exist inside the wallet and on no chain. Three things follow for a dApp under test:
+By default the wallet's UTxOs are synthetic, they exist inside the wallet and on no chain. Three things follow for a dApp under test:
 
 - Build from the wallet's `getUtxos()`. Evolution SDK, Mesh and Lucid Evolution do that when they are connected to the CIP-30 api. A builder that looks the address up at a chain indexer finds nothing.
 - Protocol parameters still come from the network. Serve a recorded answer with `page.route` and the test runs offline.
-- Nothing reaches a chain. `submitTx` only records the transaction and applies it to the wallet's UTxOs. A library or backend that submits on its own has to be intercepted with `page.route`, then `expectSignedBy` proves the transaction it would have sent.
+- Nothing reaches a chain. `submitTx` only records the transaction and applies it to the wallet's UTxOs. A library or backend that submits on its own has to be intercepted with `page.route`, then `expectSignedBy` proves the transaction it would have sent. In [chain mode](#chain-mode) the UTxOs are real, and both the wallet's `submitTx` and a backend that submits reach the chain.
 
 Tested, complete recipes in [docs/recipes.md](docs/recipes.md):
 
@@ -170,7 +171,7 @@ So an agent that changes a wallet flow can check its own work: write or extend a
 Wallet flows are tested with cip30-test-wallet (Playwright fixture, import from `cip30-test-wallet/playwright`).
 After changing connect, signing or submit code, run the wallet tests and check `wallet.calls()` and `expectSignedBy`.
 Reproduce user-side failures with `walletOptions.quirks` (see node_modules/cip30-test-wallet/quirks/README.md), never with a real wallet.
-Before writing a transaction test, read node_modules/cip30-test-wallet/AGENTS.md and node_modules/cip30-test-wallet/docs/recipes.md: the wallet's UTxOs exist only in the wallet, and anything that submits outside the wallet must be intercepted.
+Before writing a transaction test, read node_modules/cip30-test-wallet/AGENTS.md and node_modules/cip30-test-wallet/docs/recipes.md: by default the wallet's UTxOs exist only in the wallet, and anything that submits outside the wallet must be intercepted. This does not hold with `walletOptions.ledger.chain`, where the UTxOs are real and a submit reaches the chain.
 Before deploying, run `npx cip30-test-wallet doctor <url> --json` and treat exit code 1 as a failed check.
 On macOS, run the browser tests and `doctor --deep` outside the agent sandbox or with escalation, browsers crash at launch inside it.
 ```
@@ -240,8 +241,8 @@ What decides whether a login works:
 
 - **Roles without chain state** work with any mnemonic, the default one included, for example a plain account login with the reward address.
 - **Roles the dApp checks on chain** need a wallet that really has that role on the dApp's network, for example a DRep registered on preprod. Pass its mnemonic through an environment variable, never commit it. Its keys end up in traces like any other, so use a testnet wallet only.
-- **Governance actions are signed.** Votes, vote delegation and DRep updates are signed with the right keys. `submitTx` never reaches a chain, so a vote is never cast from a test.
-- **Token-gated pages** that check ownership on chain, through an indexer or their backend, do not see the synthetic UTxOs, the address itself has to hold the tokens. Pages that read `getBalance` or `getUtxos` in the browser do see them.
+- **Governance actions are signed.** Votes, vote delegation and DRep updates are signed with the right keys. Without a chain provider `submitTx` never reaches a chain, so a vote is never cast from a test. In [chain mode](#chain-mode) on preprod or preview it is cast for real.
+- **Token-gated pages** that check ownership on chain, through an indexer or their backend, do not see the synthetic UTxOs by default, the address itself has to hold the tokens. In chain mode the UTxOs are real. Pages that read `getBalance` or `getUtxos` in the browser do see them.
 
 The fixture injects into any URL, so this also works against a deployed site, not only a local dev server. The wallet's network has to match the site's. Against a mainnet site only flows that cost nothing make sense, such as a message-signing login, and only with a mnemonic that holds nothing. Remember that a production login creates real accounts and sessions on that site.
 
@@ -249,13 +250,15 @@ The fixture injects into any URL, so this also works against a deployed site, no
 
 The wallet's extended private keys are serialised into the page's init script by design, that is how an injected CIP-30 provider signs without a node process to call back into. So they appear in Playwright traces, HAR files and any dump of the page. The same holds for the file `init-script` writes, keep it out of version control. Use only throwaway mnemonics for tests, never one that holds real funds. The default mnemonic is the public CSL test vector and holds no funds.
 
+In [chain mode](#chain-mode) on a public network, use a mnemonic of your own and pass it through an environment variable. The default mnemonic is public, and its preprod address holds UTxOs other people sent there, which `getUtxos` then shows. A Koios `token` stays in Node, it never reaches the page, the journal or an error message.
+
 ## Defaults are spec-conformant, not convenient
 
 Errors are plain `{ code, info }` objects, as CIP-30 requires, never `Error` instances. Code that reads `err.message` shows up immediately. `getUtxos()` returns `[]` for an empty wallet and `null` when the requested amount cannot be reached. Addresses are hex CBOR bytes. A test that is green with the defaults already tells you something.
 
 One compatibility exception: `getCollateral()` without an argument means 5 ADA. CIP-30 calls that form possible but not specified, Mesh calls it this way and Lace answers it this way. An amount of 0 or above 5 ADA is InvalidRequest. Collateral comes from pure ADA UTxOs without datum or reference script, at most three: first in configuration order, then the largest ones if that is not enough. `null` when even that does not cover the amount.
 
-State after submit: a submitted transaction spends its inputs and creates its outputs, a phase 2 invalid one spends only its collateral. `getUtxos`, `getBalance` and `getCollateral` show the result, CIP-95 reflects stake registration and unregistration certificates. In the Playwright fixture this state lives in Node for the whole test and survives reloads, navigations and origin changes. `wallet.utxos()` reads it. The journal still starts fresh with every page load. `walletOptions.ledger: { state: false }` keeps the configured UTxOs and stake registration as before 0.8.0. A spent output stays known for `signTx`. Without the ledger checks the wallet also accepts a second spend of it, which a node would refuse.
+State after submit: a submitted transaction spends its inputs and creates its outputs, a phase 2 invalid one spends only its collateral. `getUtxos`, `getBalance` and `getCollateral` show the result, CIP-95 reflects stake registration and unregistration certificates. In the Playwright fixture this state lives in Node for the whole test and survives reloads, navigations and origin changes. `wallet.utxos()` reads it. The journal still starts fresh with every page load. `walletOptions.ledger: { state: false }` keeps the configured UTxOs and stake registration as before 0.8.0. A spent output stays known for `signTx`. Without the ledger checks the wallet also accepts a second spend of it, which a node would refuse. In chain mode the chain refuses it.
 
 ## Ledger checks
 
@@ -265,7 +268,7 @@ With `walletOptions.ledger: { checks: true }` the wallet's `submitTx` refuses a 
 ConwayApplyTxError [ConwayUtxowFailure (UtxoFailure (FeeTooSmallUTxO (Mismatch (RelGTEQ) {supplied: Coin 150000, expected: Coin 170000})))]
 ```
 
-Match on the rule name. Ogmios and Blockfrost wrap the same rules in formats of their own, so the whole string differs between providers. A refused transaction leaves the UTxOs, the stake registration and `wallet.utxos()` as they were, and `lastSubmittedTx()` skips it. `signTx` checks nothing, the checks run at `submitTx`.
+Match on the rule name. Ogmios and Blockfrost wrap the same rules in formats of their own, so the whole string differs between providers. In [chain mode](#chain-mode) the wallet turns the answer of Ogmios into this format. A refused transaction leaves the UTxOs, the stake registration and `wallet.utxos()` as they were, and `lastSubmittedTx()` skips it. `signTx` checks nothing, the checks run at `submitTx`.
 
 | Check | Rule a node names |
 |---|---|
@@ -300,6 +303,56 @@ test.use({ walletOptions: { ledger: { checks: true, currentSlot: 110_000_000, pr
 ```
 
 A form the checks cannot judge (Byron addresses, bootstrap witnesses, the deprecated certificates 5 and 6 and everything `signTx` reports as unsupported except unknown certificate numbers, which are `APIError` InvalidRequest) makes `submitTx` raise `CHW_UNSUPPORTED_TX_FORM`, a harness diagnosis. `submitTx` also raises `CHW_EVALUATOR_UNAVAILABLE` when the Plutus evaluator cannot be loaded and `CHW_EVALUATOR_FAILED` with the evaluator's own message when it stops on a transaction without a failing script, both harness diagnoses. The checks run in Node, with the fixture and with `attachWallet`. `init-script` has no Node side and refuses `checks`.
+
+## Chain mode
+
+With `walletOptions.ledger.chain` the ledger in Node asks a real chain instead of keeping synthetic UTxOs. `getUtxos`, `getBalance` and `getCollateral` show the outputs at the wallet's base address on that chain, CIP-95 reads the stake registration from the chain, and `submitTx` hands the exact bytes to the chain. A dApp under test can then build from a chain indexer, submit through its backend and wait for confirmation like in production.
+
+```ts
+// A local devnet or a node of your own, through Ogmios over HTTP
+test.use({ walletOptions: { ledger: { chain: { provider: 'ogmios', url: 'http://127.0.0.1:1337' } } } });
+
+// preprod, preview or mainnet through Koios
+test.use({ walletOptions: { mnemonic: process.env.PREPROD_MNEMONIC, ledger: { chain: { provider: 'koios', network: 'preprod' } } } });
+```
+
+| Field | Meaning |
+|---|---|
+| `provider: 'ogmios'`, `url` | Ogmios 6 or 7, JSON-RPC over HTTP. Meant for a devnet or a node of your own. For preprod, preview and mainnet use Koios: Ogmios asks the node for the UTxOs of an address, and the node searches its whole UTxO set for them, which is slow on a public network |
+| `provider: 'koios'`, `network` | `'mainnet'`, `'preprod'` or `'preview'`. Mainnet needs `networkId` 1, the other two `networkId` 0 |
+| `url` (Koios) | Defaults to `https://api.koios.rest/api/v1`, `https://preprod.koios.rest/api/v1` or `https://preview.koios.rest/api/v1` |
+| `token` (Koios) | Sent as `Authorization: Bearer <token>`, so it may hold letters, digits and `-._~+/` with `=` at the end, as bearer tokens do. Koios answers without one, a token raises its rate limit |
+| `allowMainnetSigning` | `true` lets `signTx` sign on mainnet, see below |
+
+Chain mode runs in Node, with the fixture and with `attachWallet`. `init-script` refuses it. It cannot be combined with `utxos`, `foreignUtxos`, `stakeRegistered`, `ledger.state: false`, `ledger.checks: true` or the options that only apply with the checks (`protocolParams`, `currentSlot`, `drepRegistered`, `network`), the chain is the only source and the node does the checking. `prepareWallet` throws for each of them with its own message. `ledger.state: true` and `ledger.checks: false` may stay, they describe chain mode. Before the page loads, the fixture and `attachWallet` ask the provider which network it serves. A chain on another network than `networkId` throws with both values. With Koios the network magic has to match `network` as well, so a preview URL under `network: 'preprod'` fails with `CHW_CHAIN_UNAVAILABLE`.
+
+**After a submit.** The wallet does not wait for the block. Right after `submitTx` it shows the spent inputs as gone and the new outputs as its own, so a follow-up transaction can spend the change at once, as with a wallet that watches its mempool. A transaction leaves this pending overlay as soon as the chain shows one of its inputs spent, by its own block or by another transaction, and from then on the chain alone decides. `wallet.utxos()` shows the same view as the page.
+
+**Refusals.** A transaction the chain refuses comes back as `TxSendError` Failure `{ code: 2, info }`, with `info` in the format of the [ledger checks](#ledger-checks):
+
+```text
+ConwayApplyTxError [ConwayUtxowFailure (UtxoFailure (BadInputsUTxO ...))]
+```
+
+Ogmios reports one failure per transaction, the one with the highest priority, so `info` names that one where a node lists every failed rule. A double spend shows `BadInputsUTxO` without the `ValueNotConservedUTxO` a node adds. A transaction whose inputs are all spent already or never existed, a resubmit for example, is refused as `ConwayMempoolFailure` before any rule runs. A refusal code the wallet does not know comes back as `Ogmios <code>: <message>`, unchanged. A second `submitTx` of the same transaction goes to the chain again and gets the chain's answer.
+
+**Errors of the harness.** When the provider cannot be reached, times out or answers with anything but a result or a refusal, reads and `submitTx` raise `ChwError` `CHW_CHAIN_UNAVAILABLE` with the provider, the method and the HTTP status, in the page with its `code` as well. An error of Ogmios' own JSON-RPC layer counts as well, for example a transaction it cannot decode in any era, since no ledger rule judged it. The pending overlay stays as it was, a later call works again once the provider is back. A submit that timed out may still have reached the node. The wallet does not count it as pending, the first read after its block shows it. The same holds for the rare answer that names another transaction id than the one the wallet computed: the node took a transaction, the wallet raises `CHW_CHAIN_UNAVAILABLE` and does not count it as pending.
+
+**Mainnet.** On a chain that reports mainnet the wallet is read only by default. `signTx` throws `ChwError` `CHW_MAINNET_LOCKED` before any signature exists, at both `partialSign` values, after the checks that make a malformed transaction `APIError` InvalidRequest. `signData` stays available, so a message login against a mainnet site works. `allowMainnetSigning: true` lifts the lock for a test. The keys sit in the page as always, in traces and HAR files, and a signature on mainnet can move real funds.
+
+Where chain mode differs from a wallet on a real network:
+
+- Owned UTxOs are those at the base address of the account. Outputs to the enterprise or pointer address of the same key count only while they come from the wallet's own pending transactions.
+- Rollbacks are not handled. A transaction the mempool drops without any of its inputs being spent stays in the pending overlay until the test ends.
+- An address counts as used while it holds UTxOs. A wallet that spends everything reads as unused again.
+- Tests that share a chain and a mnemonic share UTxOs. Give each test file its own `accountIndex`, or run them with one worker. With `fullyParallel: true` the tests inside one file run in parallel as well, `test.describe.configure({ mode: 'serial' })` keeps the tests of a file that spends one after the other.
+- `signTx` throws `CHW_UNRESOLVED_INPUT` for an input the chain does not show unspent and the wallet has not seen in this test: another transaction spent it, or it never existed. The hint in that message to add the output to `utxos` or `foreignUtxos` does not apply in chain mode, both options are refused there.
+- When Ogmios sends a native reference script as JSON clauses without its CBOR, the wallet encodes the clauses with definite lengths and shortest heads, as CSL writes them. A native script written in another encoding gets another hash, and `signTx` does not count it as provided.
+- With `provider: 'ogmios'`, a stake key that is registered without any pool or DRep delegation reads as unregistered once its transaction is confirmed, because Ogmios 7.0.0 does not list such keys in its reward account summary. A key that is also delegated reads correctly. Koios is not affected.
+- The wallet reads outputs at Byron addresses when a transaction spends them, it never asks for the UTxOs of a Byron address.
+- Public Koios may answer from several instances. Right after a confirmation one read can still show a spent input or miss the change, the next read is consistent again.
+
+[Testing against a local devnet](docs/recipes.md#testing-against-a-local-devnet) shows a Playwright setup that starts a devnet in Docker and funds the wallet in its genesis.
 
 ## Supported transaction forms
 
@@ -386,6 +439,7 @@ Used by the test suite only:
 
 - Evolution SDK, `@emurgo/cardano-serialization-lib-nodejs` (CSL) and `@emurgo/cardano-message-signing-nodejs` are the reference implementations. Derived keys must match CSL byte for byte at every step of a few hundred seeded derivations, and match what Evolution derives. Addresses and signatures must match CSL byte for byte, and CSL must parse the UTxOs and witness sets the wallet returns. Body hashes and transaction ids must match Evolution, and Evolution must merge the witness sets without losing foreign witnesses. The COSE_Sign1 and COSE_Key that `signData` returns must match the message-signing library byte for byte. Both Emurgo libraries are Rust compiled to WASM, an independent codebase, so agreement with them is not agreement with ourselves. They are dev dependencies and are never installed by users.
 - `@lucid-evolution/uplc`, aiken's Plutus evaluator compiled to WASM, is the second evaluator: for every test script the ExUnits it computes must equal those the ledger checks compute. The one exception is a V3 script that does not return unit, which aiken accepts and the ledger refuses.
+- `@evolution-sdk/devnet` starts a cardano-node with Ogmios in Docker for the integration suite and the chain browser test. Its peers pin Evolution SDK 0.6.0 and two Evolution evaluators, all exact dev dependencies.
 
 The spike results the signing core was accepted on are in [docs/verification.md](docs/verification.md).
 
@@ -399,7 +453,11 @@ npm run typecheck
 npm run build         # dist/node and dist/page.js
 npm run test:browser  # builds first, then Playwright in three engines
 npm run bundle:check  # the page bundle must stand alone: no Node, no WASM, no externals
+npm run test:devnet          # integration tests against a local devnet, needs Docker
+npm run test:devnet:browser  # the chain browser test in three engines against its own devnet
 ```
+
+`npm run test:chain` runs the manual checks against public chains in `test-chain/`. Each one is skipped unless its environment variable is set, and none runs in CI.
 
 ### Releasing
 

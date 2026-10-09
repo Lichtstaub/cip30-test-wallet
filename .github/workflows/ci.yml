@@ -90,3 +90,37 @@ jobs:
           name: test-results-${{ matrix.browser }}
           path: test-results/
           retention-days: 7
+
+  devnet:
+    name: devnet, protocol 11
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      # The same images as test-devnet/helpers/devnet.ts, pulled first so no test timeout covers the download.
+      # Ogmios comes from Google's Docker Hub mirror, pinned to the digest of the Docker Hub tag, since
+      # shared runners hit the anonymous Docker Hub pull limit. The local tag keeps the name the tests use.
+      - name: Pull the devnet images
+        run: |
+          docker pull ghcr.io/intersectmbo/cardano-node:11.0.1
+          docker pull mirror.gcr.io/cardanosolutions/ogmios@sha256:8892ef5f77b94f1c95427cf9f2b40e6235a32b27a8b1e378db02289f3991617f
+          docker tag mirror.gcr.io/cardanosolutions/ogmios@sha256:8892ef5f77b94f1c95427cf9f2b40e6235a32b27a8b1e378db02289f3991617f cardanosolutions/ogmios:v7.0.0
+      - run: npm ci
+      - run: npm run test:devnet
+      - run: npx playwright install --with-deps chromium firefox webkit
+      - run: npm run test:devnet:browser
+      - name: Devnet containers and volumes left behind
+        if: always()
+        run: |
+          docker ps -a --filter name=chw-devnet
+          docker volume ls --filter name=chw-devnet
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-devnet
+          path: test-results/
+          retention-days: 7

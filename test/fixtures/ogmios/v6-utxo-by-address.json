@@ -1,0 +1,19 @@
+{
+  "jsonrpc": "2.0",
+  "method": "queryLedgerState/utxo",
+  "result": [
+    {
+      "transaction": {
+        "id": "51f9459b90a73fc422c51e78a33ef14f49c3bc339f152b1d87c1f0d433df9803"
+      },
+      "index": 0,
+      "address": "addr_test1qz6vn8y7xg4lt9w3lwwzkquxgn2cwhdgyl5337uv07qnduyffma0l7qsfrcv0n2ypcj7xtr9jnvf0yq5z95c7tulj9ss53yf6m",
+      "value": {
+        "ada": {
+          "lovelace": 100000000000
+        }
+      }
+    }
+  ],
+  "id": 15
+}

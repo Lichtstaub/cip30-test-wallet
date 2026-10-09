@@ -1,45 +1,62 @@
 import { bytesToHex, hexToBytes } from '../core/bytes.js';
 import { ChwError, isCip30Error } from '../core/errors.js';
 import { keyHash } from '../core/hash.js';
-import type { Ledger } from '../core/ledger.js';
+import type { Ledger, LedgerWallet } from '../core/ledger.js';
 import { parseAddressArg } from '../core/sign-data.js';
-import type { SubmitAnswer } from '../page/binding-ledger.js';
+import type { LedgerAnswer } from '../page/binding-ledger.js';
 import { buildLedger } from '../page/install.js';
 import { utxoToConfig } from '../page/utxo-config.js';
+import { ChainLedger } from './chain/chain-ledger.js';
+import type { ChainProvider } from './chain/provider.js';
 import { CheckedLedger } from './checks/checked-ledger.js';
 import type { PreparedWallet } from './config.js';
 
 /** Name of the binding the page ledger calls in the Playwright fixture. */
 export const LEDGER_BINDING = '__chwLedger';
 
+/** The wallet's base address and key hashes, from the prepared keys. */
+function walletOf(prepared: PreparedWallet): LedgerWallet {
+  return {
+    baseAddress: parseAddressArg(prepared.addresses.payment),
+    paymentKeyHash: keyHash(hexToBytes(prepared.paymentPublicKeyHex)),
+    stakeKeyHash: keyHash(hexToBytes(prepared.stakePublicKeyHex)),
+  };
+}
+
 /**
  * The wallet's ledger for one test, kept in Node so it outlives reloads and
  * origin changes. With ledger.checks it refuses what a node would refuse.
  */
 export function walletLedger(prepared: PreparedWallet): Ledger {
-  const stakeKeyHash = keyHash(hexToBytes(prepared.stakePublicKeyHex));
-  const memory = buildLedger(prepared.config, {
-    baseAddress: parseAddressArg(prepared.addresses.payment),
-    paymentKeyHash: keyHash(hexToBytes(prepared.paymentPublicKeyHex)),
-    stakeKeyHash,
-  });
+  const wallet = walletOf(prepared);
+  const memory = buildLedger(prepared.config, wallet);
   if (!prepared.ledgerChecks) return memory;
   return new CheckedLedger(memory, {
     checks: prepared.ledgerChecks,
     networkId: prepared.config.networkId,
-    stakeKeyHash,
+    stakeKeyHash: wallet.stakeKeyHash,
     drepKeyHash: hexToBytes(prepared.drepKeyHashHex),
     stakeRegistered: prepared.config.stakeRegistered,
   });
 }
 
 /**
- * Submits and turns the two error kinds the page knows into values. Anything
- * else is a bug in the host and is thrown as it is.
+ * The wallet's ledger on a chain for one test, in Node behind the same binding. Owned UTxOs
+ * are those at the wallet's base address, the stake key is the wallet's.
  */
-async function submitAnswer(ledger: Ledger, tx: Uint8Array): Promise<SubmitAnswer> {
+export function chainLedger(prepared: PreparedWallet, provider: ChainProvider): ChainLedger {
+  const { baseAddress, ...keys } = walletOf(prepared);
+  return new ChainLedger({ provider, baseAddress, wallet: { ...keys, networkId: prepared.config.networkId } });
+}
+
+/**
+ * Runs one ledger operation and turns the two error kinds the page knows into values, since a
+ * thrown value reaches the page without its code. Anything else is a bug in the host and is
+ * thrown as it is.
+ */
+async function answer<T>(run: () => Promise<T>): Promise<LedgerAnswer<T>> {
   try {
-    return { txId: bytesToHex(await ledger.submit(tx)) };
+    return { value: await run() };
   } catch (e) {
     if (isCip30Error(e)) return { error: { code: e.code, info: e.info } };
     if (e instanceof ChwError) {
@@ -57,15 +74,17 @@ export function ledgerBinding(ledger: Ledger) {
     switch (op) {
       case 'resolveInput': {
         const { txId, index } = arg as { txId: string; index: string };
-        const found = await ledger.resolveInput({ txId: hexToBytes(txId), index: BigInt(index) });
-        return found ? utxoToConfig(found) : null;
+        return answer(async () => {
+          const found = await ledger.resolveInput({ txId: hexToBytes(txId), index: BigInt(index) });
+          return found ? utxoToConfig(found) : null;
+        });
       }
       case 'getWalletUtxos':
-        return (await ledger.getWalletUtxos()).map(utxoToConfig);
+        return answer(async () => (await ledger.getWalletUtxos()).map(utxoToConfig));
       case 'getStakeRegistered':
-        return ledger.getStakeRegistered();
+        return answer(() => ledger.getStakeRegistered());
       case 'submit':
-        return submitAnswer(ledger, hexToBytes(arg as string));
+        return answer(async () => bytesToHex(await ledger.submit(hexToBytes(arg as string))));
       default:
         throw new Error(`unknown ledger operation ${op}`);
     }

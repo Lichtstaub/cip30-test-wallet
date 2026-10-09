@@ -28,13 +28,19 @@ export function bundleWith(code: string): string {
 
 /**
  * The complete init script: bundle plus the call that installs this config.
- * Refuses ledger.checks unless the config names a host binding: the checks run
- * in Node, a page on its own keeps a ledger that checks nothing.
+ * Refuses ledger.checks and ledger.chain unless the config names a host binding:
+ * both run in Node, a page on its own keeps a ledger that checks nothing and
+ * reaches no chain.
  */
 export function initScript(config: PageConfig): string {
   if (config.ledger?.checks && !config.ledger.binding) {
     throw new Error(
       'ledger.checks needs the ledger in Node of the Playwright fixture or of attachWallet from cip30-test-wallet/playwright, an init script keeps the ledger in the page where no checks run',
+    );
+  }
+  if (config.ledger?.chain && !config.ledger.binding) {
+    throw new Error(
+      'ledger.chain needs the ledger in Node of the Playwright fixture or of attachWallet from cip30-test-wallet/playwright, an init script keeps the ledger in the page where no chain provider is reachable',
     );
   }
   return bundleWith(`globalThis.__chwInit(${JSON.stringify(config)});`);

@@ -1,0 +1,27 @@
+{
+  "jsonrpc": "2.0",
+  "method": "queryLedgerState/rewardAccountSummaries",
+  "result": [
+    {
+      "from": "verificationKey",
+      "credential": "5199cb32079e1603cbe8eec36920ac5314e2b0f5b2c5de4d83ae2e05",
+      "stakePool": {
+        "id": "pool13gsek6vd8dhqxsu346zvae30r4mtd77yth07fcc7p49kqc3fd09"
+      },
+      "delegateRepresentative": {
+        "type": "abstain"
+      },
+      "rewards": {
+        "ada": {
+          "lovelace": 0
+        }
+      },
+      "deposit": {
+        "ada": {
+          "lovelace": 0
+        }
+      }
+    }
+  ],
+  "id": 32
+}

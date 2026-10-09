@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatFailures, mismatch, PATH, renderFailure } from '../src/host/checks/failure.js';
+import { formatFailures, mismatch, PATH, renderFailure, showText } from '../src/host/checks/failure.js';
 
 describe('failure format', () => {
   it('writes a mismatch like the ledger shows it', () => {
@@ -50,5 +50,11 @@ describe('failure format', () => {
       'ConwayApplyTxError [ConwayUtxowFailure (MissingScriptWitnessesUTXOW), ConwayUtxowFailure (UtxoFailure (FeeTooSmallUTxO (Mismatch (RelGTEQ) {supplied: Coin 1, expected: Coin 2})))]',
     );
     expect(formatFailures([])).toBe('ConwayApplyTxError []');
+  });
+
+  it('writes a text as Show writes a Text', () => {
+    expect(showText('All inputs are spent')).toBe('"All inputs are spent"');
+    expect(showText('a "b" \\ c\nd')).toBe('"a \\"b\\" \\\\ c\\nd"');
+    expect(showText('ü1')).toBe('"\\252\\&1"');
   });
 });

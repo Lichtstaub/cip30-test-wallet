@@ -8,8 +8,11 @@ import { utxoFromConfig } from './utxo-config.js';
 /** A host function the page calls with an operation name and a JSON argument. Playwright's exposeBinding provides it. */
 export type LedgerBinding = (op: string, arg?: unknown) => Promise<unknown>;
 
-/** What the host answers to submit. Errors travel as values, a thrown value loses its shape on the way into the page. chwError.message has no '<code>: ' prefix. */
-export type SubmitAnswer = { txId: string } | { error: Cip30Error } | { chwError: { code: ChwErrorCode; message: string } };
+/**
+ * What the host answers to every ledger operation. Errors travel as values: a value the host throws
+ * reaches the page as a bare Error with name and message only. chwError.message has no '<code>: ' prefix.
+ */
+export type LedgerAnswer<T = unknown> = { value: T } | { error: Cip30Error } | { chwError: { code: ChwErrorCode; message: string } };
 
 /**
  * The page side of a ledger that lives in the host. Every call goes through
@@ -20,24 +23,28 @@ export type SubmitAnswer = { txId: string } | { error: Cip30Error } | { chwError
 export class BindingLedger implements Ledger {
   constructor(private readonly call: LedgerBinding) {}
 
+  /** One operation through the binding. Errors are thrown here, in the page, so the dApp gets the plain CIP-30 object and a test the ChwError with its code. */
+  private async ask(op: string, arg?: unknown): Promise<unknown> {
+    const answer = (await this.call(op, arg)) as LedgerAnswer;
+    if ('error' in answer) throw answer.error;
+    if ('chwError' in answer) throw new ChwError(answer.chwError.code, answer.chwError.message);
+    return answer.value;
+  }
+
   async resolveInput(input: TxInput): Promise<Utxo | undefined> {
-    const found = (await this.call('resolveInput', { txId: bytesToHex(input.txId), index: input.index.toString() })) as ForeignUtxoConfig | null;
+    const found = (await this.ask('resolveInput', { txId: bytesToHex(input.txId), index: input.index.toString() })) as ForeignUtxoConfig | null;
     return found ? utxoFromConfig(found) : undefined;
   }
 
   async getWalletUtxos(): Promise<Utxo[]> {
-    return ((await this.call('getWalletUtxos')) as ForeignUtxoConfig[]).map(utxoFromConfig);
+    return ((await this.ask('getWalletUtxos')) as ForeignUtxoConfig[]).map(utxoFromConfig);
   }
 
   async getStakeRegistered(): Promise<boolean> {
-    return (await this.call('getStakeRegistered')) === true;
+    return (await this.ask('getStakeRegistered')) === true;
   }
 
   async submit(tx: Uint8Array): Promise<Uint8Array> {
-    const answer = (await this.call('submit', bytesToHex(tx))) as SubmitAnswer;
-    // Thrown here, in the page, so the dApp gets the plain CIP-30 object and a test the ChwError it knows.
-    if ('error' in answer) throw answer.error;
-    if ('chwError' in answer) throw new ChwError(answer.chwError.code, answer.chwError.message);
-    return hexToBytes(answer.txId);
+    return hexToBytes((await this.ask('submit', bytesToHex(tx))) as string);
   }
 }

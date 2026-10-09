@@ -2,7 +2,7 @@
 // else under src is internal and can change in any release. Tests and repo
 // scripts import internals by path.
 export { DEFAULT_MNEMONIC, prepareWallet } from './host/config.js';
-export type { PreparedWallet, WalletOptions } from './host/config.js';
+export type { ChainOptions, PreparedWallet, WalletOptions } from './host/config.js';
 export type { CardanoNetwork } from './host/slot-config.js';
 export { initScript } from './host/bundle.js';
 export { expectSignedBy, expectSignedData } from './host/assert.js';

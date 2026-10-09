@@ -1,5 +1,6 @@
 import { test as base, expect, type Page } from '@playwright/test';
 import { initScript } from '../host/bundle.js';
+import { chainProvider, connectChain } from '../host/chain/index.js';
 import { prepareWallet, type WalletOptions } from '../host/config.js';
 import { LEDGER_BINDING, ledgerBinding, walletLedger } from '../host/ledger.js';
 import { utxoToConfig, type LedgerUtxo } from '../page/utxo-config.js';
@@ -9,7 +10,7 @@ import type { Control } from '../page/control.js';
 
 export { expectSignedBy, expectSignedData } from '../host/assert.js';
 export type { SignedDataExpectation, SignerRole } from '../host/assert.js';
-export type { WalletOptions } from '../host/config.js';
+export type { ChainOptions, WalletOptions } from '../host/config.js';
 export type { LedgerUtxo } from '../page/utxo-config.js';
 export { expect };
 
@@ -23,12 +24,14 @@ export interface WalletHandle {
   readonly drepId: string;
   /** Journal entries, optionally filtered by CIP-30 method name. cip95.* names work too. */
   calls(method?: string): Promise<JournalEntry[]>;
-  /** Hex CBOR of the last transaction handed to submitTx, never broadcast. */
+  /** Hex CBOR of the last transaction submitTx accepted. With walletOptions.ledger.chain the chain has it, otherwise it never left the wallet. */
   lastSubmittedTx(): Promise<string | undefined>;
   /**
    * The wallet's unspent outputs as the ledger holds them after every submitted
    * transaction of this test, in the shape of walletOptions.foreignUtxos. Kept in
-   * Node, so it survives reloads, navigations and origin changes.
+   * Node, so it survives reloads, navigations and origin changes. With
+   * walletOptions.ledger.chain: the chain's outputs at the base address, with the
+   * wallet's pending transactions applied.
    */
   utxos(): Promise<LedgerUtxo[]>;
   setQuirk<K extends QuirkName>(name: K, value: QuirkConfig[K]): Promise<void>;
@@ -121,8 +124,10 @@ const attached = new WeakSet<Page>();
  * Installs the test wallet into a page without the test runner, the way the
  * fixture does: the ledger in Node behind a binding, so its state outlives
  * reloads, navigations and origin changes, and the provider through an init
- * script. Call it before the first navigation and once per page, never on a
- * page the test fixture already set up. Returns the handle the fixture gives a test.
+ * script. With walletOptions.ledger.chain the provider's network is checked
+ * first and the ledger reads that chain. Call it before the first navigation
+ * and once per page, never on a page the test fixture already set up. Returns
+ * the handle the fixture gives a test.
  */
 export async function attachWallet(page: Page, options: WalletOptions = {}): Promise<WalletHandle> {
   if (attached.has(page)) {
@@ -133,11 +138,23 @@ export async function attachWallet(page: Page, options: WalletOptions = {}): Pro
   const prepared = prepareWallet(options);
   attached.add(page);
   const installed = options.install !== false;
-  const ledger = walletLedger(prepared);
+  let chain: Awaited<ReturnType<typeof connectChain>> | undefined;
+  if (prepared.chain) {
+    try {
+      // Before anything reaches the page, also with install: false, since wallet.utxos() reads the chain.
+      chain = await connectChain(prepared, chainProvider(prepared.chain));
+    } catch (error) {
+      // A provider that was out of reach or on another network leaves the page free for another attempt.
+      attached.delete(page);
+      throw error;
+    }
+  }
+  const ledger: Ledger = chain ? chain.ledger : walletLedger(prepared);
   if (installed) {
     // The binding first: the init script finds it at document start in every engine.
     await page.exposeBinding(LEDGER_BINDING, ledgerBinding(ledger));
-    const config = { ...prepared.config, ledger: { ...prepared.config.ledger!, binding: LEDGER_BINDING } };
+    const lock = chain?.signLocked ? { signLocked: true as const } : {};
+    const config = { ...prepared.config, ledger: { ...prepared.config.ledger!, binding: LEDGER_BINDING, ...lock } };
     await page.addInitScript({ content: initScript(config) });
   }
   return makeHandle(page, prepared, installed, ledger);
