@@ -33,7 +33,7 @@ for (const bin of Object.values(pkg.bin)) {
   const entry = files.get(strip(bin));
   if (entry && (entry.mode & 0o111) === 0) problems.push(`${strip(bin)} is not executable`);
 }
-const forbidden = /^(src|test|test-browser|scripts|examples|\.github|\.superpowers|\.claude)\/|\.env|\.dev\.vars/;
+const forbidden = /^(src|test|test-browser|test-devnet|test-chain|scripts|examples|\.github|\.superpowers|\.claude)\/|\.env|\.dev\.vars/;
 for (const path of files.keys()) {
   if (forbidden.test(path)) problems.push(`ships ${path}`);
 }

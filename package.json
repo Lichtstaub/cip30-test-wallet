@@ -57,6 +57,7 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:devnet": "vitest run --config vitest.devnet.config.ts",
     "test:browser": "npm run build && playwright test",
     "serve:demo": "node examples/minimal-dapp/serve.mjs",
     "doctor:demo": "npm run build && node scripts/doctor-demo.mjs",
