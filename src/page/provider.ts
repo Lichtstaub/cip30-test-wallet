@@ -2,7 +2,7 @@ import { bytesToHex, hexToBytes } from '../core/bytes.js';
 import { decode, type CborValue } from '../core/cbor/decode.js';
 import { encode } from '../core/cbor/encode.js';
 import { signCose } from '../core/cose.js';
-import { APIErrorCode, apiError, DataSignErrorCode, dataSignError, TxSendErrorCode, txSendError, TxSignErrorCode, txSignError } from '../core/errors.js';
+import { APIErrorCode, apiError, ChwError, DataSignErrorCode, dataSignError, TxSendErrorCode, txSendError, TxSignErrorCode, txSignError } from '../core/errors.js';
 import type { SigningKey } from '../core/keys.js';
 import { encodeUtxo, type Ledger } from '../core/ledger.js';
 import { parseAddressArg, parseHexArg, resolveDataSigner } from '../core/sign-data.js';
@@ -189,6 +189,11 @@ export function buildApi(ctx: WalletContext, extensions: { cip: number }[] = [])
         refuseDeprecatedCertificate(parsed.body);
         // Validates every governance field before any prompt quirk. No ledger needed, unresolved inputs are skipped.
         requirements(parsed.body, []);
+        // A chain provider on mainnet: a signature here could move real funds. Refused after the checks above,
+        // so a malformed transaction stays InvalidRequest, and before the ledger and the prompt quirks are touched.
+        if (config.ledger?.signLocked) {
+          throw new ChwError('CHW_MAINNET_LOCKED', 'the chain provider reports mainnet, signTx signs there only with walletOptions.ledger.chain.allowMainnetSigning: true');
+        }
         if (partialSign) {
           try {
             const skipped = requirements(parsed.body, await resolveInputs(parsed.body, ledger)).unsupported;

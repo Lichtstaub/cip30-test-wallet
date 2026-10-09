@@ -60,6 +60,7 @@ export function isCip30Error(value: unknown): value is Cip30Error {
  * CHW_EVALUATOR_UNAVAILABLE: the ledger checks need the Plutus evaluator and could not load it.
  * CHW_EVALUATOR_FAILED: the Plutus evaluator stopped on a transaction other than with a script failure.
  * CHW_CHAIN_UNAVAILABLE: the chain provider gave no usable answer (no connection, timeout, an HTTP error, a body that is not the expected JSON, a JSON-RPC error of its own).
+ * CHW_MAINNET_LOCKED: signTx on a wallet whose chain is mainnet, without walletOptions.ledger.chain.allowMainnetSigning.
  */
 export type ChwErrorCode =
   | 'CHW_UNRESOLVED_INPUT'
@@ -67,7 +68,8 @@ export type ChwErrorCode =
   | 'CHW_UNSUPPORTED_TX_FORM'
   | 'CHW_EVALUATOR_UNAVAILABLE'
   | 'CHW_EVALUATOR_FAILED'
-  | 'CHW_CHAIN_UNAVAILABLE';
+  | 'CHW_CHAIN_UNAVAILABLE'
+  | 'CHW_MAINNET_LOCKED';
 
 export class ChwError extends Error {
   constructor(
