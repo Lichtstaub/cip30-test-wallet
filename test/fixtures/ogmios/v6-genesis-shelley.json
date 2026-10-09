@@ -1,0 +1,118 @@
+{
+  "jsonrpc": "2.0",
+  "method": "queryNetwork/genesisConfiguration",
+  "result": {
+    "era": "shelley",
+    "startTime": "2026-10-08T22:58:44.312Z",
+    "networkMagic": 42,
+    "network": "testnet",
+    "activeSlotsCoefficient": "1/1",
+    "securityParameter": 2160,
+    "epochLength": 500,
+    "slotsPerKesPeriod": 129600,
+    "maxKesEvolutions": 60,
+    "slotLength": {
+      "milliseconds": 1000
+    },
+    "updateQuorum": 2,
+    "maxLovelaceSupply": 2000000000000,
+    "initialParameters": {
+      "minFeeCoefficient": 44,
+      "minFeeConstant": {
+        "ada": {
+          "lovelace": 155381
+        }
+      },
+      "maxBlockBodySize": {
+        "bytes": 65536
+      },
+      "maxBlockHeaderSize": {
+        "bytes": 1100
+      },
+      "maxTransactionSize": {
+        "bytes": 16384
+      },
+      "stakeCredentialDeposit": {
+        "ada": {
+          "lovelace": 0
+        }
+      },
+      "stakePoolDeposit": {
+        "ada": {
+          "lovelace": 0
+        }
+      },
+      "stakePoolRetirementEpochBound": 18,
+      "desiredNumberOfStakePools": 100,
+      "stakePoolPledgeInfluence": "0/1",
+      "minStakePoolCost": {
+        "ada": {
+          "lovelace": 0
+        }
+      },
+      "monetaryExpansion": "1/10",
+      "treasuryExpansion": "1/10",
+      "federatedBlockProductionRatio": "0/1",
+      "extraEntropy": "neutral",
+      "minUtxoDepositConstant": {
+        "ada": {
+          "lovelace": 0
+        }
+      },
+      "minUtxoDepositCoefficient": 0,
+      "version": {
+        "major": 10,
+        "minor": 0
+      }
+    },
+    "initialDelegates": [],
+    "initialFunds": {
+      "addr_test1qzqncvkf92kjzac0lqqpmcy33avcm7xqva6lwluw3qua9gq8ffg47lejhuc6faquwst6symws9ftldp0qmt3kwy6dztqqxhfjs": {
+        "ada": {
+          "lovelace": 900000000000
+        }
+      },
+      "addr_test1qz6vn8y7xg4lt9w3lwwzkquxgn2cwhdgyl5337uv07qnduyffma0l7qsfrcv0n2ypcj7xtr9jnvf0yq5z95c7tulj9ss53yf6m": {
+        "ada": {
+          "lovelace": 100000000000
+        }
+      },
+      "addr_test1vztc80na8320zymhjekl40yjsnxkcvhu58x59mc2fuwvgkc332vxv": {
+        "ada": {
+          "lovelace": 900000000000
+        }
+      },
+      "addr_test1vz6vn8y7xg4lt9w3lwwzkquxgn2cwhdgyl5337uv07qnduqhznnxf": {
+        "ada": {
+          "lovelace": 50000000000
+        }
+      }
+    },
+    "initialStakePools": {
+      "stakePools": {
+        "pool13gsek6vd8dhqxsu346zvae30r4mtd77yth07fcc7p49kqc3fd09": {
+          "id": "pool13gsek6vd8dhqxsu346zvae30r4mtd77yth07fcc7p49kqc3fd09",
+          "vrfVerificationKeyHash": "fec17ed60cbf2ec5be3f061fb4de0b6ef1f20947cfbfce5fb2783d12f3f69ff5",
+          "pledge": {
+            "ada": {
+              "lovelace": 0
+            }
+          },
+          "cost": {
+            "ada": {
+              "lovelace": 0
+            }
+          },
+          "margin": "0/1",
+          "rewardAccount": "stake_test1uzm0lvsvlqslj2rgqg34ssw5xj9zc2a06nmnpy4hmen9t6sjtv8xy",
+          "owners": [],
+          "relays": []
+        }
+      },
+      "delegators": {
+        "074a515f7f32bf31a4f41c7417a8136e8152bfb42f06d71b389a6896": "pool13gsek6vd8dhqxsu346zvae30r4mtd77yth07fcc7p49kqc3fd09"
+      }
+    }
+  },
+  "id": 6
+}

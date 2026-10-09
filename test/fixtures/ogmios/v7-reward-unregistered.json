@@ -1,0 +1,6 @@
+{
+  "jsonrpc": "2.0",
+  "method": "queryLedgerState/rewardAccountSummaries",
+  "result": [],
+  "id": 17
+}

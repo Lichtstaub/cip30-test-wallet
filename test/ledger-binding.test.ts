@@ -156,7 +156,7 @@ describe('submit answers through the binding', () => {
     expect(e).toMatchObject({ code: original.code, message: original.message });
   });
 
-  it.each(['CHW_EVALUATOR_UNAVAILABLE', 'CHW_EVALUATOR_FAILED'] as const)('carries %s into the page like every other harness diagnosis', async (code) => {
+  it.each(['CHW_EVALUATOR_UNAVAILABLE', 'CHW_EVALUATOR_FAILED', 'CHW_CHAIN_UNAVAILABLE'] as const)('carries %s into the page like every other harness diagnosis', async (code) => {
     const { node, page, tx } = setup();
     const original = new ChwError(code, 'the Plutus evaluator could not run');
     vi.spyOn(node, 'submit').mockRejectedValue(original);

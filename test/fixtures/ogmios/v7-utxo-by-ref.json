@@ -1,0 +1,31 @@
+{
+  "jsonrpc": "2.0",
+  "method": "queryLedgerState/utxo",
+  "result": [
+    {
+      "transaction": {
+        "id": "2ef47ca7b7a642a543e1d24bd6201604389b827845c5437d5a34de20839846a8"
+      },
+      "index": 0,
+      "address": "addr_test1vpma5q47qqjyj3555fkavdj3x98xp6u3tslngvwk8c8kxqqda0c8g",
+      "value": {
+        "ada": {
+          "lovelace": 50000000000
+        }
+      }
+    },
+    {
+      "transaction": {
+        "id": "4c3819269b1f5ad9d0c0824f9c90459cc93f6c3f4a45b67f6a155e21fc0a3bcf"
+      },
+      "index": 0,
+      "address": "addr_test1qpma5q47qqjyj3555fkavdj3x98xp6u3tslngvwk8c8kxqz3n89nypu7zcpuh68wcd5jptznzn3tpadjch0ymqaw9czshjqqnf",
+      "value": {
+        "ada": {
+          "lovelace": 100000000000
+        }
+      }
+    }
+  ],
+  "id": 16
+}

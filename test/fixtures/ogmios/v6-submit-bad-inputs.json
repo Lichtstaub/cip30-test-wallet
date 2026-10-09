@@ -1,0 +1,19 @@
+{
+  "jsonrpc": "2.0",
+  "method": "submitTransaction",
+  "error": {
+    "code": 3117,
+    "message": "The transaction contains unknown UTxO references as inputs. This can happen if the inputs you're trying to spend have already been spent, or if you've simply referred to non-existing UTxO altogether. The field 'data.unknownOutputReferences' indicates all unknown inputs.",
+    "data": {
+      "unknownOutputReferences": [
+        {
+          "transaction": {
+            "id": "51f9459b90a73fc422c51e78a33ef14f49c3bc339f152b1d87c1f0d433df9803"
+          },
+          "index": 0
+        }
+      ]
+    }
+  },
+  "id": 22
+}
