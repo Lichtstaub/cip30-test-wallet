@@ -6,6 +6,8 @@ import { parseAddressArg } from '../core/sign-data.js';
 import type { LedgerAnswer } from '../page/binding-ledger.js';
 import { buildLedger } from '../page/install.js';
 import { utxoToConfig } from '../page/utxo-config.js';
+import { ChainLedger } from './chain/chain-ledger.js';
+import type { ChainProvider } from './chain/provider.js';
 import { CheckedLedger } from './checks/checked-ledger.js';
 import type { PreparedWallet } from './config.js';
 
@@ -30,6 +32,22 @@ export function walletLedger(prepared: PreparedWallet): Ledger {
     stakeKeyHash,
     drepKeyHash: hexToBytes(prepared.drepKeyHashHex),
     stakeRegistered: prepared.config.stakeRegistered,
+  });
+}
+
+/**
+ * The wallet's ledger on a chain for one test, in Node behind the same binding. Owned UTxOs
+ * are those at the wallet's base address, the stake key is the wallet's.
+ */
+export function chainLedger(prepared: PreparedWallet, provider: ChainProvider): ChainLedger {
+  return new ChainLedger({
+    provider,
+    baseAddress: parseAddressArg(prepared.addresses.payment),
+    wallet: {
+      paymentKeyHash: keyHash(hexToBytes(prepared.paymentPublicKeyHex)),
+      stakeKeyHash: keyHash(hexToBytes(prepared.stakePublicKeyHex)),
+      networkId: prepared.config.networkId,
+    },
   });
 }
 
