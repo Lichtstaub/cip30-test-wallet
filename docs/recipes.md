@@ -11,6 +11,8 @@ The wallet's UTxOs are synthetic. They exist inside the wallet only, not on any 
 - **Nothing reaches a chain.** The wallet's `submitTx` records the transaction, applies it to the wallet's UTxOs and returns its id. A library that submits through its own provider, or a dApp that hands the signed transaction to its backend, would send a transaction whose inputs do not exist. Intercept that request with `page.route` and check the transaction instead, see [A backend or provider that submits](#a-backend-or-provider-that-submits).
 - **Chain checks cannot see synthetic funds.** A token-gated page, a balance read from an indexer or a check that an address is a registered DRep needs a wallet that really has that state on the dApp's network, passed in through `walletOptions.mnemonic`. See [Pages behind a wallet login](../README.md#pages-behind-a-wallet-login).
 
+All of this holds for the default ledger. In chain mode, with `walletOptions.ledger.chain`, the wallet's UTxOs are real chain UTxOs and `submitTx` submits, so a builder that asks an indexer and a backend that submits work as in production, see [Testing against a local devnet](#testing-against-a-local-devnet).
+
 ## Serving a test page on a fake origin
 
 The recipes serve a bundled dApp on `https://dapp.test/` with `page.route`, so no dev server is needed. Against your own app use its dev server or deployed URL instead, the wallet is installed the same way.
@@ -409,6 +411,95 @@ test.use({
 This fragment only configures the wallet. A unit test checks that it is accepted and that the reference script hash matches the script address.
 
 The wallet signs for the collateral and every key the transaction needs from it. `signTx` never runs the validator. With `ledger: { checks: true }` `submitTx` runs it in Node, within the ExUnits its redeemer declares. A validator that fails or needs more than that is refused as `ValidationTagMismatch`, a script data hash that does not match as `ScriptIntegrityHashMismatch`, see [Ledger checks](../README.md#ledger-checks). Without the checks a redeemer or budget that a node would reject passes here.
+
+## Testing against a local devnet
+
+A dApp whose backend reads the chain, or a flow that has to be confirmed, needs real UTxOs. `@evolution-sdk/devnet` runs a cardano-node with Ogmios in Docker, its genesis funds the wallet, and `ledger.chain` points the wallet at it. Install it with its peers, exact versions:
+
+```bash
+npm install --save-dev --save-exact @evolution-sdk/devnet@3.0.21 @evolution-sdk/evolution@0.6.0 @evolution-sdk/scalus-uplc@2.0.20 @evolution-sdk/aiken-uplc@2.0.20
+```
+
+A global setup starts the devnet once per run, on protocol 11 with cardano-node 11.0.1 and Ogmios 7.0.0 and a block every second, and funds accounts 0 to 3 of the test mnemonic with 10,000 ADA each. Two settings are needed that the devnet package does not set itself for node 11, the P2P topology and `ExperimentalHardForksEnabled: false`:
+
+```ts
+// devnet-setup.ts, globalSetup in playwright.config.ts
+import { execFileSync } from 'node:child_process';
+import { rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { Cluster, Config } from '@evolution-sdk/devnet';
+import { Address } from '@evolution-sdk/evolution';
+import { prepareWallet } from 'cip30-test-wallet';
+
+export default async function devnetSetup() {
+  const name = 'dapp-devnet';
+  const now = Math.floor(Date.now() / 1000);
+  const shelley = Config.DEFAULT_SHELLEY_GENESIS;
+  const funds = Object.fromEntries(
+    [0, 1, 2, 3].map((accountIndex) => [Address.toHex(Address.fromBech32(prepareWallet({ accountIndex }).addresses.payment)), 10_000_000_000]),
+  );
+  const cluster = await Cluster.make({
+    clusterName: name,
+    image: 'ghcr.io/intersectmbo/cardano-node:11.0.1',
+    ogmios: { image: 'cardanosolutions/ogmios:v7.0.0' },
+    kupo: { enabled: false },
+    nodeConfig: { ExperimentalHardForksEnabled: false },
+    byronGenesis: { ...Config.DEFAULT_BYRON_GENESIS, startTime: now },
+    shelleyGenesis: {
+      ...shelley,
+      systemStart: new Date(now * 1000).toISOString(),
+      slotLength: 1,
+      initialFunds: { ...shelley.initialFunds, ...funds },
+      protocolParams: { ...shelley.protocolParams, protocolVersion: { major: 11, minor: 0 } },
+    },
+  });
+  // cardano-node 11 reads only the P2P topology format.
+  const [node] = JSON.parse(execFileSync('docker', ['inspect', cluster.cardanoNode.id], { encoding: 'utf8' }));
+  const configDir: string = node.Mounts.find((m: { Destination: string }) => m.Destination === '/opt/cardano/config').Source;
+  writeFileSync(join(configDir, 'topology.json'), JSON.stringify({ localRoots: [], publicRoots: [], useLedgerAfterSlot: -1 }));
+  await Cluster.start(cluster);
+
+  const url = `http://127.0.0.1:${cluster.ports.ogmios}`;
+  for (let attempt = 0; ; attempt++) {
+    const tip = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', method: 'queryNetwork/tip' }) })
+      .then((response) => response.json())
+      .catch(() => undefined);
+    if (tip?.result?.slot > 0) break;
+    if (attempt === 300) throw new Error('the devnet produced no block');
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  process.env.DEVNET_OGMIOS = url;
+
+  return async () => {
+    await Cluster.remove(cluster);
+    execFileSync('docker', ['volume', 'rm', `${name}-ipc`]);
+    rmSync(configDir, { recursive: true, force: true });
+  };
+}
+```
+
+The devnet has its own protocol parameters, its cost models differ from mainnet and preprod. A dApp that hardcodes parameters or cost models has to read them from the devnet, through Ogmios `queryLedgerState/protocolParameters`. Each test file takes its own account, so files can run in parallel without spending each other's UTxOs. With `fullyParallel: true` the tests inside one file run in parallel as well and share its account, so a file whose tests spend runs them in order:
+
+```ts
+import { expect, expectSignedBy, test } from 'cip30-test-wallet/playwright';
+
+test.use({ walletOptions: { accountIndex: 1, ledger: { chain: { provider: 'ogmios', url: process.env.DEVNET_OGMIOS! } } } });
+test.describe.configure({ mode: 'serial' });
+
+test('the payment is submitted to the devnet', async ({ page, wallet }) => {
+  await page.goto('/checkout');
+  await page.getByRole('button', { name: 'Connect' }).click();
+  await page.getByRole('button', { name: 'Pay' }).click();
+  await expect(page.getByText('Payment sent')).toBeVisible(); // whatever your app shows after the submit
+
+  const tx = (await wallet.lastSubmittedTx())!;
+  expectSignedBy(tx, wallet);
+  // The wallet shows the change at once, the chain after the next block, about a second later.
+  expect((await wallet.utxos()).length).toBeGreaterThan(0);
+});
+```
+
+The package's own CI runs this setup, its browser test pays from chain UTxOs on the demo dApp in three engines and checks the balance before and after the block.
 
 ## Reading the journal
 

@@ -24,12 +24,14 @@ export interface WalletHandle {
   readonly drepId: string;
   /** Journal entries, optionally filtered by CIP-30 method name. cip95.* names work too. */
   calls(method?: string): Promise<JournalEntry[]>;
-  /** Hex CBOR of the last transaction handed to submitTx, never broadcast. */
+  /** Hex CBOR of the last transaction submitTx accepted. With walletOptions.ledger.chain the chain has it, otherwise it never left the wallet. */
   lastSubmittedTx(): Promise<string | undefined>;
   /**
    * The wallet's unspent outputs as the ledger holds them after every submitted
    * transaction of this test, in the shape of walletOptions.foreignUtxos. Kept in
-   * Node, so it survives reloads, navigations and origin changes.
+   * Node, so it survives reloads, navigations and origin changes. With
+   * walletOptions.ledger.chain: the chain's outputs at the base address, with the
+   * wallet's pending transactions applied.
    */
   utxos(): Promise<LedgerUtxo[]>;
   setQuirk<K extends QuirkName>(name: K, value: QuirkConfig[K]): Promise<void>;
