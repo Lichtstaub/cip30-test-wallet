@@ -1,7 +1,7 @@
 {
   "name": "cip30-test-wallet",
   "version": "0.9.0",
-  "description": "CIP-30 test wallet for Cardano dApps. Injects into Playwright tests and signs real transactions and messages with no wallet popup, so CI and coding agents can test wallet flows unattended. Includes a quirk catalogue and a CSP doctor.",
+  "description": "CIP-30 and CIP-95 test wallet for Cardano dApps. Injects into Playwright tests and signs real transactions, governance actions and messages with no wallet popup, so CI and coding agents can test wallet flows unattended. Optional ledger checks with local Plutus execution, an opt-in chain mode for Ogmios and Koios, a quirk catalogue and a CSP doctor.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -22,7 +22,17 @@
     "e2e",
     "ci",
     "ai-agents",
-    "coding-agents"
+    "coding-agents",
+    "cip95",
+    "cip-95",
+    "governance",
+    "conway",
+    "plutus",
+    "ogmios",
+    "koios",
+    "devnet",
+    "mock-wallet",
+    "test-wallet"
   ],
   "type": "module",
   "publishConfig": {

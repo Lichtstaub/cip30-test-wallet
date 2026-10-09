@@ -15,16 +15,28 @@ export type { LedgerUtxo } from '../page/utxo-config.js';
 export { expect };
 
 export interface WalletHandle {
+  /** The key under window.cardano. */
   readonly name: string;
+  /** The base address (payment) and the reward address, bech32. */
   readonly addresses: { payment: string; reward: string };
+  /** Raw 32-byte public key, hex. */
   readonly paymentPublicKeyHex: string;
+  /** Raw 32-byte public key, hex. */
   readonly stakePublicKeyHex: string;
+  /** Raw 32-byte public key, hex. */
   readonly drepPublicKeyHex: string;
+  /** Blake2b-224 hash of the DRep key, hex. */
   readonly drepKeyHashHex: string;
+  /** CIP-129 DRep id, bech32 with prefix drep. */
   readonly drepId: string;
-  /** Journal entries, optionally filtered by CIP-30 method name. cip95.* names work too. */
+  /** Journal entries of the current page, optionally filtered by CIP-30 method name. cip95.* names work too. */
   calls(method?: string): Promise<JournalEntry[]>;
-  /** Hex CBOR of the last transaction submitTx accepted. With walletOptions.ledger.chain the chain has it, otherwise it never left the wallet. */
+  /**
+   * Hex CBOR of the last submitTx call on the current page that has not failed, undefined after a
+   * navigation. A call still running counts as well, so wait until the submit resolved before reading
+   * it. Once it resolved, the wallet accepted the transaction. With walletOptions.ledger.chain the chain
+   * did, otherwise it never left the wallet.
+   */
   lastSubmittedTx(): Promise<string | undefined>;
   /**
    * The wallet's unspent outputs as the ledger holds them after every submitted
@@ -34,8 +46,11 @@ export interface WalletHandle {
    * wallet's pending transactions applied.
    */
   utxos(): Promise<LedgerUtxo[]>;
+  /** Flips a quirk on the current page until the next navigation. Rejects for an unknown name, for lateInjection and answersEveryKey, and for an invalid submitFails value. */
   setQuirk<K extends QuirkName>(name: K, value: QuirkConfig[K]): Promise<void>;
+  /** Lets every hanging signTx continue and sign. Resolves to how many calls it settled. */
   release(method: 'signTx'): Promise<number>;
+  /** Fails every hanging signTx with TxSignError UserDeclined. Resolves to how many calls it settled. */
   reject(method: 'signTx'): Promise<number>;
 }
 
