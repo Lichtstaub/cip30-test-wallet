@@ -77,8 +77,9 @@ describe('stake registration on the devnet', () => {
 
   it('reads a key registered without any delegation as unregistered, a known limit of the Ogmios provider', async () => {
     // Ogmios 7.0.0 lists a reward account in rewardAccountSummaries only with a pool or DRep delegation,
-    // and no other Ogmios query reports a registration alone. A newer Ogmios that lists such keys turns
-    // this test red, and the docs on stake registration in chain mode then need an update.
+    // and the reward account summary is the only query probed for a registration alone. A newer Ogmios
+    // that lists such keys turns this test red, and the docs on stake registration in chain mode then
+    // need an update.
     const w = await chainWallet(devnet.ogmiosUrl, ATTEMPTS);
     const reward = w.prepared.addresses.reward;
     expect(cardanoCliStakeAddressInfo(nodeContainer(NAME), reward)).toEqual([]);

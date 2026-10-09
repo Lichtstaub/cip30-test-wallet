@@ -139,9 +139,10 @@ const PLUTUS_TAGS: Record<string, bigint> = { 'plutus:v1': 1n, 'plutus:v2': 2n, 
 /**
  * script = [0, native_script] / [1 to 3, plutus script bytes]. Plutus cbor is the
  * byte string the script is hashed over, as a script reference carries it. A
- * native script keeps the bytes Ogmios sends with --include-script-cbor,
- * otherwise it is encoded from the clauses with definite lengths and shortest
- * heads, byte for byte what CSL writes for the same script.
+ * native script keeps the cbor bytes Ogmios sends (Ogmios 7.0.0 sends them by
+ * default). Encoding the clauses with definite lengths and shortest heads, byte
+ * for byte what CSL writes for the same script, is the fallback for a server
+ * that omits the cbor.
  */
 function scriptRefFromOgmios(script: unknown): Uint8Array {
   if (typeof script !== 'object' || script === null) throw new Error('script must be an object');
