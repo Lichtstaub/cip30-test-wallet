@@ -105,8 +105,8 @@ Wallet errors are plain `{ code, info }` objects as CIP-30 requires, so a dApp t
 
 Two questions decide how a transaction test is wired, answer them for your dApp first:
 
-- **Where does the builder get its inputs?** The wallet's UTxOs exist only in the wallet. A builder connected to the CIP-30 api reads them through `getUtxos()` and works. One that looks the address up at an indexer finds nothing.
-- **Who submits?** The wallet's `submitTx` records the transaction, applies it to the wallet's UTxOs and never reaches a chain. A library or backend that submits on its own has to be intercepted with `page.route`.
+- **Where does the builder get its inputs?** By default the wallet's UTxOs exist only in the wallet. A builder connected to the CIP-30 api reads them through `getUtxos()` and works. One that looks the address up at an indexer finds nothing. In chain mode the UTxOs are real, see [Chain mode](#chain-mode).
+- **Who submits?** By default the wallet's `submitTx` records the transaction, applies it to the wallet's UTxOs and never reaches a chain. A library or backend that submits on its own has to be intercepted with `page.route`. In chain mode `submitTx` and a backend that submits both reach the chain, see [Chain mode](#chain-mode).
 
 The details and a recipe per library follow in [Building and submitting transactions](#building-and-submitting-transactions). A test then proves the signature instead of counting calls:
 
@@ -171,7 +171,7 @@ So an agent that changes a wallet flow can check its own work: write or extend a
 Wallet flows are tested with cip30-test-wallet (Playwright fixture, import from `cip30-test-wallet/playwright`).
 After changing connect, signing or submit code, run the wallet tests and check `wallet.calls()` and `expectSignedBy`.
 Reproduce user-side failures with `walletOptions.quirks` (see node_modules/cip30-test-wallet/quirks/README.md), never with a real wallet.
-Before writing a transaction test, read node_modules/cip30-test-wallet/AGENTS.md and node_modules/cip30-test-wallet/docs/recipes.md: the wallet's UTxOs exist only in the wallet, and anything that submits outside the wallet must be intercepted.
+Before writing a transaction test, read node_modules/cip30-test-wallet/AGENTS.md and node_modules/cip30-test-wallet/docs/recipes.md: by default the wallet's UTxOs exist only in the wallet, and anything that submits outside the wallet must be intercepted. This does not hold with `walletOptions.ledger.chain`, where the UTxOs are real and a submit reaches the chain.
 Before deploying, run `npx cip30-test-wallet doctor <url> --json` and treat exit code 1 as a failed check.
 On macOS, run the browser tests and `doctor --deep` outside the agent sandbox or with escalation, browsers crash at launch inside it.
 ```
@@ -242,7 +242,7 @@ What decides whether a login works:
 - **Roles without chain state** work with any mnemonic, the default one included, for example a plain account login with the reward address.
 - **Roles the dApp checks on chain** need a wallet that really has that role on the dApp's network, for example a DRep registered on preprod. Pass its mnemonic through an environment variable, never commit it. Its keys end up in traces like any other, so use a testnet wallet only.
 - **Governance actions are signed.** Votes, vote delegation and DRep updates are signed with the right keys. Without a chain provider `submitTx` never reaches a chain, so a vote is never cast from a test. In [chain mode](#chain-mode) on preprod or preview it is cast for real.
-- **Token-gated pages** that check ownership on chain, through an indexer or their backend, do not see the synthetic UTxOs, the address itself has to hold the tokens. Pages that read `getBalance` or `getUtxos` in the browser do see them.
+- **Token-gated pages** that check ownership on chain, through an indexer or their backend, do not see the synthetic UTxOs by default, the address itself has to hold the tokens. In chain mode the UTxOs are real. Pages that read `getBalance` or `getUtxos` in the browser do see them.
 
 The fixture injects into any URL, so this also works against a deployed site, not only a local dev server. The wallet's network has to match the site's. Against a mainnet site only flows that cost nothing make sense, such as a message-signing login, and only with a mnemonic that holds nothing. Remember that a production login creates real accounts and sessions on that site.
 
@@ -258,7 +258,7 @@ Errors are plain `{ code, info }` objects, as CIP-30 requires, never `Error` ins
 
 One compatibility exception: `getCollateral()` without an argument means 5 ADA. CIP-30 calls that form possible but not specified, Mesh calls it this way and Lace answers it this way. An amount of 0 or above 5 ADA is InvalidRequest. Collateral comes from pure ADA UTxOs without datum or reference script, at most three: first in configuration order, then the largest ones if that is not enough. `null` when even that does not cover the amount.
 
-State after submit: a submitted transaction spends its inputs and creates its outputs, a phase 2 invalid one spends only its collateral. `getUtxos`, `getBalance` and `getCollateral` show the result, CIP-95 reflects stake registration and unregistration certificates. In the Playwright fixture this state lives in Node for the whole test and survives reloads, navigations and origin changes. `wallet.utxos()` reads it. The journal still starts fresh with every page load. `walletOptions.ledger: { state: false }` keeps the configured UTxOs and stake registration as before 0.8.0. A spent output stays known for `signTx`. Without the ledger checks the wallet also accepts a second spend of it, which a node would refuse.
+State after submit: a submitted transaction spends its inputs and creates its outputs, a phase 2 invalid one spends only its collateral. `getUtxos`, `getBalance` and `getCollateral` show the result, CIP-95 reflects stake registration and unregistration certificates. In the Playwright fixture this state lives in Node for the whole test and survives reloads, navigations and origin changes. `wallet.utxos()` reads it. The journal still starts fresh with every page load. `walletOptions.ledger: { state: false }` keeps the configured UTxOs and stake registration as before 0.8.0. A spent output stays known for `signTx`. Without the ledger checks the wallet also accepts a second spend of it, which a node would refuse. In chain mode the chain refuses it.
 
 ## Ledger checks
 

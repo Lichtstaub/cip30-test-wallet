@@ -249,7 +249,7 @@ If the app goes through its own proxy, as many do because Koios sends no CORS he
 
 ## A backend or provider that submits
 
-Whatever submits the signed transaction, intercept that request, keep the transaction and prove the signature on it. Nothing leaves the test.
+Whatever submits the signed transaction, intercept that request, keep the transaction and prove the signature on it. Nothing leaves the test, unless the test runs in chain mode.
 
 ```ts
 test('the backend receives a transaction the wallet really signed', async ({ page, wallet }) => {
@@ -337,7 +337,7 @@ test('the wallet holds one token kind', async ({ page }) => {
 });
 ```
 
-A page that checks token ownership on chain, through an indexer or its backend, does not see the synthetic UTxOs. A page that reads `getBalance` or `getUtxos` in the browser does. See [Pages behind a wallet login](../README.md#pages-behind-a-wallet-login).
+A page that checks token ownership on chain, through an indexer or its backend, does not see the synthetic UTxOs by default, in chain mode the UTxOs are real. A page that reads `getBalance` or `getUtxos` in the browser does. See [Pages behind a wallet login](../README.md#pages-behind-a-wallet-login).
 
 ## Reading the wallet's UTxOs after a submit
 
