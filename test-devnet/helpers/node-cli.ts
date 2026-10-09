@@ -17,6 +17,13 @@ export function cardanoCliSubmit(container: string, txHex: string): { accepted: 
   }
 }
 
+/** cardano-cli's view of a stake address in the node container: one entry with deposit and delegations once registered, none before. */
+export function cardanoCliStakeAddressInfo(container: string, stakeAddress: string): Array<Record<string, unknown>> {
+  const args = ['exec', container, 'cardano-cli', 'conway', 'query', 'stake-address-info', '--address', stakeAddress];
+  const out = execFileSync('docker', [...args, '--testnet-magic', String(DEVNET_MAGIC), '--socket-path', '/opt/cardano/ipc/node.socket'], { encoding: 'utf8' });
+  return JSON.parse(out) as Array<Record<string, unknown>>;
+}
+
 // The rule wrappers of Conway's LEDGER, UTXOW, UTXO, UTXOS, CERTS and GOV rules. Every other name is a rule.
 const WRAPPERS = new Set(['ConwayUtxowFailure', 'UtxoFailure', 'UtxosFailure', 'ConwayCertsFailure', 'CertFailure', 'DelegFailure', 'PoolFailure', 'GovCertFailure', 'ConwayGovFailure']);
 

@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { Cluster, Config } from '@evolution-sdk/devnet';
 import { blake2b } from '@noble/hashes/blake2.js';
 import { walletAddresses } from '../../src/core/addresses.js';
-import { bytesToHex } from '../../src/core/bytes.js';
+import { bytesToHex, hexToBytes } from '../../src/core/bytes.js';
 import { publicKey } from '../../src/core/keys.js';
 import { deriveAccount } from '../../src/derive/index.js';
 import { ogmiosCall } from '../../src/host/chain/ogmios.js';
@@ -22,6 +22,8 @@ export const DEVNET_MAGIC = 42;
 export const FUNDED_ACCOUNTS = 10;
 /** 10,000 ADA per account. */
 export const DEFAULT_LOVELACE_PER_ACCOUNT = 10_000_000_000n;
+/** The key hash of the only pool, the one the package's default genesis stakes. */
+export const GENESIS_POOL: Uint8Array = hexToBytes(Object.keys(Config.DEFAULT_SHELLEY_GENESIS.staking.pools)[0]!);
 
 // The genesis takes amounts as JSON numbers, this keeps every sum far below 2^53.
 const MAX_LOVELACE_PER_ACCOUNT = 100_000_000_000_000n;
