@@ -6,7 +6,7 @@
 [![npm](https://img.shields.io/npm/v/cip30-test-wallet)](https://www.npmjs.com/package/cip30-test-wallet)
 [![node](https://img.shields.io/node/v/cip30-test-wallet)](https://github.com/Lichtstaub/cip30-test-wallet/blob/main/package.json)
 
-`cip30-test-wallet` reproduces real Cardano wallet failures in automated browser tests, with no node, faucet, extension, or shared chain state.
+`cip30-test-wallet` reproduces real Cardano wallet failures in automated browser tests, with no node, faucet, extension, or shared chain state by default.
 
 It injects a CIP-30 test wallet into the page under test. The wallet holds real keys, returns real UTxO CBOR, signs real transaction CBOR with a real Ed25519 signature, and records every call in a journal your test can read. A catalogue of quirks reproduces the failures that only show up on a user's machine: a wallet on the wrong network, a wallet that injects late, a user who declines or never answers.
 
@@ -350,6 +350,7 @@ Where chain mode differs from a wallet on a real network:
 - When Ogmios sends a native reference script as JSON clauses without its CBOR, the wallet encodes the clauses with definite lengths and shortest heads, as CSL writes them. A native script written in another encoding gets another hash, and `signTx` does not count it as provided.
 - With `provider: 'ogmios'`, a stake key that is registered without any pool or DRep delegation reads as unregistered once its transaction is confirmed, because Ogmios 7.0.0 does not list such keys in its reward account summary. A key that is also delegated reads correctly. Koios is not affected.
 - The wallet reads outputs at Byron addresses when a transaction spends them, it never asks for the UTxOs of a Byron address.
+- Public Koios may answer from several instances. Right after a confirmation one read can still show a spent input or miss the change, the next read is consistent again.
 
 [Testing against a local devnet](docs/recipes.md#testing-against-a-local-devnet) shows a Playwright setup that starts a devnet in Docker and funds the wallet in its genesis.
 

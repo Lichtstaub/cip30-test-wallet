@@ -39,7 +39,7 @@ test('update_drep through the fixture is confirmed and the DRep stays active', a
     inputs: [{ txId: hexToBytes(input!.txId), index: BigInt(input!.index) }],
     outputs: [{ address: parseAddressArg(wallet.addresses.payment), lovelace: BigInt(input!.lovelace) - fee }],
     fee,
-    // update_drep_cert = (18, drep_credential, anchor / null), the anchor stays as it is
+    // update_drep_cert = (18, drep_credential, anchor / null), no anchor, so the update clears any metadata URL the DRep has
     extraBodyEntries: new Map([[4n, [[18n, [0n, hexToBytes(wallet.drepKeyHashHex)], null]]]]),
   });
 

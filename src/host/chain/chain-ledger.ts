@@ -49,6 +49,9 @@ function unique(utxos: Utxo[]): Utxo[] {
  *
  * Not handled: rollbacks, and a transaction the mempool drops while its
  * inputs stay unspent. It stays in the overlay as long as this ledger lives.
+ * Public Koios may answer from several instances, so right after a confirmation
+ * one read can still show a spent input or miss the change. The next read is
+ * consistent again.
  */
 export class ChainLedger implements Ledger {
   private pending: PendingTx[] = [];
