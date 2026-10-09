@@ -8,6 +8,7 @@ import { scriptFromRef } from '../src/core/scripts.js';
 import { parseJsonBig } from '../src/host/chain/json.js';
 import { chainUnavailable, ogmiosCall, ogmiosProvider, utxoFromOgmios } from '../src/host/chain/ogmios.js';
 import { utxoToConfig } from '../src/page/utxo-config.js';
+import { rejectionOf } from './helpers/page.js';
 import { plutusScript } from './helpers/plutus-fixtures.js';
 
 // Recorded answers in test/fixtures/ogmios, see the README there. The fetch is
@@ -37,14 +38,10 @@ function fakeFetch(...answers: Array<Response | Error>) {
 }
 
 async function rejection(promise: Promise<unknown>): Promise<ChwError> {
-  try {
-    await promise;
-  } catch (error) {
-    expect(error).toBeInstanceOf(ChwError);
-    expect((error as ChwError).code).toBe('CHW_CHAIN_UNAVAILABLE');
-    return error as ChwError;
-  }
-  throw new Error('expected a rejection');
+  const error = await rejectionOf(promise);
+  expect(error).toBeInstanceOf(ChwError);
+  expect((error as ChwError).code).toBe('CHW_CHAIN_UNAVAILABLE');
+  return error as ChwError;
 }
 
 // The base address of the recorded devnet account A: payment key hash 77da02be..., stake key hash 5199cb32....

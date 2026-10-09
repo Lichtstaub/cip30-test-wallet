@@ -2,6 +2,7 @@ import { isHex } from '../../core/bytes.js';
 import { addAsset, type MultiAsset } from '../../core/value.js';
 import { coin, formatFailures, list, mismatch, network, PATH, showText, type Failure } from '../checks/failure.js';
 import { formatValue, type Value } from '../checks/value-math.js';
+import { jsonNatural, record } from './json.js';
 import type { OgmiosError } from './provider.js';
 
 // Ogmios answers a refused transaction with one JSON-RPC error, the failure its
@@ -14,18 +15,6 @@ import type { OgmiosError } from './provider.js';
 
 type Data = Record<string, unknown>;
 type Rule = (data: Data) => Failure | undefined;
-
-function record(value: unknown): Data | undefined {
-  return typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Data) : undefined;
-}
-
-/** A non-negative integer as it arrives: a JSON number, or the digit string parseJsonBig keeps a long one as. */
-function natural(value: unknown): bigint | undefined {
-  if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) return BigInt(value);
-  if (typeof value === 'string' && /^\d+$/.test(value)) return BigInt(value);
-  if (typeof value === 'bigint' && value >= 0n) return value;
-  return undefined;
-}
 
 /** Every item read, undefined when value is no non-empty array or one item does not read. */
 function every(value: unknown, read: (item: unknown) => string | undefined): string[] | undefined {
@@ -48,7 +37,7 @@ const withDetail = (path: readonly string[], rule: string, detail: string | unde
   detail === undefined ? { path, rule } : { path, rule, detail };
 
 /** The lovelace of Ogmios { ada: { lovelace } }. */
-const lovelace = (value: unknown) => natural(record(record(value)?.['ada'])?.['lovelace']);
+const lovelace = (value: unknown) => jsonNatural(record(record(value)?.['ada'])?.['lovelace']);
 const coinText = (value: unknown) => {
   const amount = lovelace(value);
   return amount === undefined ? undefined : coin(amount);
@@ -65,7 +54,7 @@ function valueText(json: unknown): string | undefined {
     const inner = record(names);
     if (!isHex(policy, 28) || !inner) return undefined;
     for (const [name, quantity] of Object.entries(inner)) {
-      const q = natural(quantity);
+      const q = jsonNatural(quantity);
       if (!isHex(name) || name.length > 64 || q === undefined) return undefined;
       addAsset(assets, policy.toLowerCase(), name.toLowerCase(), q);
     }
@@ -78,7 +67,7 @@ function valueText(json: unknown): string | undefined {
 function outputReference(item: unknown): string | undefined {
   const ref = record(item);
   const id = record(ref?.['transaction'])?.['id'];
-  const index = natural(ref?.['index']);
+  const index = jsonNatural(ref?.['index']);
   return isHex(id, 32) && index !== undefined ? `${id.toLowerCase()}#${index}` : undefined;
 }
 
@@ -91,14 +80,14 @@ function maybeHash(value: unknown): string | undefined {
 /** A validity bound: SJust (SlotNo n), or SNothing when Ogmios leaves it out. */
 function bound(value: unknown): string | undefined {
   if (value === undefined || value === null) return 'SNothing';
-  const slot = natural(value);
+  const slot = jsonNatural(value);
   return slot === undefined ? undefined : `SJust (SlotNo ${slot})`;
 }
 
 /** The local check's {invalidBefore, invalidHereafter, slot}. Ogmios calls the upper bound invalidAfter. */
 function validity(data: Data): string | undefined {
   const interval = record(data['validityInterval']);
-  const slot = natural(data['currentSlot']);
+  const slot = jsonNatural(data['currentSlot']);
   if (!interval || slot === undefined) return undefined;
   const before = bound(interval['invalidBefore']);
   const after = bound(interval['invalidAfter']);
@@ -109,8 +98,8 @@ function validity(data: Data): string | undefined {
 /** ExUnits {mem, steps} from Ogmios { memory, cpu }. */
 function exUnits(value: unknown): string | undefined {
   const units = record(value);
-  const mem = natural(units?.['memory']);
-  const steps = natural(units?.['cpu']);
+  const mem = jsonNatural(units?.['memory']);
+  const steps = jsonNatural(units?.['cpu']);
   return mem === undefined || steps === undefined ? undefined : `ExUnits {mem: ${mem}, steps: ${steps}}`;
 }
 

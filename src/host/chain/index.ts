@@ -10,11 +10,7 @@ import type { ChainProvider } from './provider.js';
 /** The provider for these options. */
 export function chainProvider(options: ChainOptions): ChainProvider {
   if (options.provider === 'ogmios') return ogmiosProvider({ url: options.url });
-  return koiosProvider({
-    network: options.network,
-    ...(options.url === undefined ? {} : { url: options.url }),
-    ...(options.token === undefined ? {} : { token: options.token }),
-  });
+  return koiosProvider(options);
 }
 
 const networkName = (id: 0 | 1) => (id === 1 ? 'mainnet (networkId 1)' : 'a test network (networkId 0)');

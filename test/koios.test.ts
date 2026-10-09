@@ -7,6 +7,7 @@ import { parseTransaction, type TxInput } from '../src/core/cbor/tx.js';
 import { ChwError } from '../src/core/errors.js';
 import { KOIOS_URLS, koiosProvider, utxoFromKoios } from '../src/host/chain/koios.js';
 import { rejectionInfo } from '../src/host/chain/ogmios-errors.js';
+import { rejectionOf } from './helpers/page.js';
 
 // Koios preprod answers, see test/fixtures/koios/README.md.
 
@@ -78,14 +79,7 @@ function koios(route: Route = preprod) {
 }
 
 /** The rejection of a promise that must reject. */
-async function failure(promise: Promise<unknown>): Promise<Error> {
-  try {
-    await promise;
-  } catch (error) {
-    return error as Error;
-  }
-  throw new Error('expected a rejection');
-}
+const failure = async (promise: Promise<unknown>): Promise<Error> => (await rejectionOf(promise)) as Error;
 
 describe('Koios provider', () => {
   it('talks to the public Koios of each network unless a url is given', async () => {

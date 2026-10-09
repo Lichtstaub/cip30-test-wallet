@@ -12,7 +12,7 @@ import { isPlutusDataBytes } from '../core/cbor-shapes.js';
 import { isScriptRef } from '../core/scripts.js';
 import { resolveProtocolParams, type ProtocolParams, type ProtocolParamsInput } from './protocol-params.js';
 import { defaultNetwork, networkIdOf, SLOT_CONFIGS, type CardanoNetwork } from './slot-config.js';
-import { KOIOS_URLS } from './chain/koios.js';
+import { KOIOS_URLS } from './chain/koios-urls.js';
 
 /** Public test vector from the CSL documentation. Holds no funds, safe to ship. */
 export const DEFAULT_MNEMONIC = 'test walk nut penalty hip pave soap entry language right filter choice';
@@ -213,13 +213,16 @@ const KOIOS_NETWORKS = ['mainnet', 'preprod', 'preview'] as const;
 /** RFC 6750 b64token: a valid header value, so fetch never refuses it with an error that repeats it. */
 const BEARER_TOKEN = /^[A-Za-z0-9\-._~+/]+=*$/;
 
-/** Ledger options a chain replaces. The chain is the only source of UTxOs and registrations, the node checks every transaction itself. */
-const LEDGER_OPTIONS_REPLACED_BY_CHAIN = [
-  ['protocolParams', 'ledger.protocolParams, the node uses its own protocol parameters'],
-  ['currentSlot', 'ledger.currentSlot, the node checks the validity interval against its own tip'],
-  ['drepRegistered', 'ledger.drepRegistered, the chain reports whether the DRep is registered'],
-  ['network', 'ledger.network, the node runs scripts with its own slot calendar'],
-] as const;
+/**
+ * Why a chain replaces each checks-only option, so a new one needs a reason here. The chain is the
+ * only source of UTxOs and registrations, the node checks every transaction itself.
+ */
+const LEDGER_OPTIONS_REPLACED_BY_CHAIN: Record<(typeof CHECKS_ONLY_OPTIONS)[number], string> = {
+  protocolParams: 'ledger.protocolParams, the node uses its own protocol parameters',
+  currentSlot: 'ledger.currentSlot, the node checks the validity interval against its own tip',
+  drepRegistered: 'ledger.drepRegistered, the chain reports whether the DRep is registered',
+  network: 'ledger.network, the node runs scripts with its own slot calendar',
+};
 
 /** Top-level options a chain replaces. Any value counts, an empty list and false as well. */
 const WALLET_OPTIONS_REPLACED_BY_CHAIN = [
@@ -234,7 +237,7 @@ function chainUrl(value: unknown): string {
   try {
     url = typeof value === 'string' ? new URL(value) : undefined;
   } catch {
-    url = undefined;
+    // url stays undefined and fails below.
   }
   if (!url || (url.protocol !== 'http:' && url.protocol !== 'https:')) {
     throw new Error('ledger.chain.url must be an absolute http or https URL such as http://localhost:1337');
@@ -252,7 +255,7 @@ function chainOptions(value: unknown, networkId: 0 | 1): ChainOptions {
   const options = value as Record<string, unknown>;
   const provider = options['provider'];
   if (provider !== 'ogmios' && provider !== 'koios') throw new Error(`ledger.chain.provider must be ogmios or koios, got ${String(provider)}`);
-  const known: readonly string[] = CHAIN_OPTIONS[provider as 'ogmios' | 'koios'];
+  const known: readonly string[] = CHAIN_OPTIONS[provider];
   for (const key of Object.keys(options)) {
     if (!known.includes(key)) throw new Error(`ledger.chain.${key} is not an option of provider ${String(provider)}, known: ${known.join(', ')}`);
   }
@@ -275,12 +278,12 @@ function chainOptions(value: unknown, networkId: 0 | 1): ChainOptions {
   if (token !== undefined && (typeof token !== 'string' || token === '')) throw new Error('ledger.chain.token must be a non-empty string');
   if (typeof token === 'string' && !BEARER_TOKEN.test(token)) throw new Error('ledger.chain.token must be a bearer token of letters, digits and - . _ ~ + /, with = only at the end');
   const url = options['url'] === undefined ? KOIOS_URLS[koiosNetwork] : chainUrl(options['url']);
-  return { provider: 'koios', network: koiosNetwork, url, ...(token === undefined ? {} : { token: token as string }), ...signing };
+  return { provider: 'koios', network: koiosNetwork, url, ...(token === undefined ? {} : { token }), ...signing };
 }
 
 /** Checked in Node, so a typo fails here instead of switching a check off without a word. */
-function ledgerOptions(ledger: unknown, networkId: 0 | 1): { state: boolean; checks: LedgerChecksConfig | undefined; chain: ChainOptions | undefined } {
-  if (ledger === undefined) return { state: true, checks: undefined, chain: undefined };
+function ledgerOptions(ledger: unknown, networkId: 0 | 1): { state: boolean; checks?: LedgerChecksConfig; chain?: ChainOptions } {
+  if (ledger === undefined) return { state: true };
   if (typeof ledger !== 'object' || ledger === null || Array.isArray(ledger)) throw new Error(`ledger must be an object, got ${String(ledger)}`);
   const options = ledger as NonNullable<WalletOptions['ledger']>;
   for (const key of Object.keys(options)) {
@@ -300,13 +303,13 @@ function ledgerOptions(ledger: unknown, networkId: 0 | 1): { state: boolean; che
     // Before the checks-only rule below, so each option names why a chain replaces it.
     if (!state) throw new Error('ledger.chain cannot be combined with ledger.state: false, the chain applies every transaction it accepts');
     if (checks) throw new Error('ledger.chain cannot be combined with ledger.checks: true, the node checks every transaction itself');
-    for (const [key, why] of LEDGER_OPTIONS_REPLACED_BY_CHAIN) if (options[key] !== undefined) throw new Error(`ledger.chain cannot be combined with ${why}`);
-    return { state, checks: undefined, chain };
+    for (const key of CHECKS_ONLY_OPTIONS) if (options[key] !== undefined) throw new Error(`ledger.chain cannot be combined with ${LEDGER_OPTIONS_REPLACED_BY_CHAIN[key]}`);
+    return { state, chain };
   }
   if (!checks) {
     const stray = CHECKS_ONLY_OPTIONS.find((key) => options[key] !== undefined);
     if (stray) throw new Error(`ledger.${stray} only applies with ledger.checks: true`);
-    return { state, checks: undefined, chain: undefined };
+    return { state };
   }
   if (!state) throw new Error('ledger.checks: true needs ledger.state: true, the checks judge each transaction against the state the ones before it left');
   const slot = options.currentSlot;
@@ -317,7 +320,6 @@ function ledgerOptions(ledger: unknown, networkId: 0 | 1): { state: boolean; che
   return {
     state,
     checks: { params: resolveProtocolParams(networkId, options.protocolParams), currentSlot: slot === undefined ? undefined : BigInt(slot), drepRegistered, network },
-    chain: undefined,
   };
 }
 

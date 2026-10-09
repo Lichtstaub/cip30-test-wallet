@@ -1,15 +1,18 @@
-import { base58, bech32 } from '@scure/base';
 import { rewardAddressBytes, toBech32 } from '../../core/addresses.js';
-import { bytesToHex, concat, hexToBytes, isHex } from '../../core/bytes.js';
+import { concat, hexToBytes, isHex } from '../../core/bytes.js';
 import { isPlutusDataBytes } from '../../core/cbor-shapes.js';
 import { encode } from '../../core/cbor/encode.js';
-import type { TxInput } from '../../core/cbor/tx.js';
+import { outpoint } from '../../core/cbor/tx.js';
 import type { Utxo } from '../../core/ledger.js';
 import { isScriptRef } from '../../core/scripts.js';
 import { addAsset, MAX_UINT64, type MultiAsset } from '../../core/value.js';
-import { jsonInteger, parseJsonBig } from './json.js';
-import { CHAIN_TIMEOUT_MS, chainUnavailable, fetchFailure, ogmiosCall, ogmiosProvider, type OgmiosConnection } from './ogmios.js';
+import { addressDecoder, addressFromText, jsonInteger, record } from './json.js';
+import { KOIOS_URLS } from './koios-urls.js';
+import { ogmiosQuery, ogmiosSubmit, type OgmiosConnection } from './ogmios.js';
 import type { ChainProvider } from './provider.js';
+import { chainUnavailable, fetchText, jsonBody } from './transport.js';
+
+export { KOIOS_URLS };
 
 // Koios: UTxOs and stake accounts over its REST endpoints, network and submit
 // over the Ogmios methods it forwards at /ogmios. Lovelace and asset quantities
@@ -17,12 +20,6 @@ import type { ChainProvider } from './provider.js';
 // body at most 5120 bytes, so address queries page and outpoint queries go out
 // in groups. Pages are separate queries, so a listing over several pages counts
 // only when the chain tip stayed the same while it was read.
-
-export const KOIOS_URLS: Record<'mainnet' | 'preprod' | 'preview', string> = Object.freeze({
-  mainnet: 'https://api.koios.rest/api/v1',
-  preprod: 'https://preprod.koios.rest/api/v1',
-  preview: 'https://preview.koios.rest/api/v1',
-});
 
 /** The networkMagic of each network's Shelley genesis, so a URL of another network fails before the first test. */
 const NETWORK_MAGIC = { mainnet: 764824073, preprod: 1, preview: 2 } as const;
@@ -43,27 +40,16 @@ const LANGUAGES = new Map<unknown, 0 | 1 | 2 | 3>([
 
 type Row = Record<string, unknown>;
 
-function record(value: unknown): Row | undefined {
-  return typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Row) : undefined;
-}
-
 /** A count as parseJsonBig leaves it, from min to 2^64 - 1. */
 function natural(value: unknown, what: string, min = 0n): bigint {
   let n: bigint | undefined;
   try {
     n = jsonInteger(value, what);
   } catch {
-    n = undefined;
+    // n stays undefined and fails below.
   }
   if (n === undefined || n < min || n > MAX_UINT64) throw new Error(`${what} must be an integer from ${min} to 2^64 - 1`);
   return n;
-}
-
-/** Shelley addresses come as bech32, Byron addresses as base58. */
-function addressBytes(value: unknown): Uint8Array {
-  if (typeof value !== 'string' || value.length === 0) throw new Error('address must be a string');
-  if (value.startsWith('addr')) return bech32.fromWords(bech32.decode(value as `${string}1${string}`, false).words);
-  return base58.decode(value);
 }
 
 function assetsOf(value: unknown): MultiAsset | undefined {
@@ -111,13 +97,18 @@ function scriptRefOf(value: unknown): Uint8Array | undefined {
 
 /** Koios UTxO JSON (address_utxos and utxo_info with _extended) to the wallet's Utxo. */
 export function utxoFromKoios(json: unknown): Utxo {
+  return readUtxo(json, addressFromText);
+}
+
+/** utxoFromKoios with the address decoder of the answer the row came in. */
+function readUtxo(json: unknown, addressOf: (value: unknown) => Uint8Array): Utxo {
   const row = record(json);
   if (!row) throw new Error('a UTxO must be an object');
   const txHash = row['tx_hash'];
   if (!isHex(txHash, 32)) throw new Error('tx_hash must be 32 bytes of hex');
   const utxo: Utxo = {
     input: { txId: hexToBytes(txHash), index: natural(row['tx_index'], 'tx_index') },
-    address: addressBytes(row['address']),
+    address: addressOf(row['address']),
     lovelace: natural(row['value'], 'value'),
   };
   const assets = assetsOf(row['asset_list']);
@@ -135,7 +126,7 @@ function reason(text: string): string {
   try {
     message = record(JSON.parse(text))?.['message'];
   } catch {
-    message = undefined;
+    // A body that is not JSON is read as text below.
   }
   const line = (typeof message === 'string' ? message : text).split('\n')[0]!.trim();
   return line.length > 200 ? `${line.slice(0, 200)}...` : line;
@@ -143,7 +134,8 @@ function reason(text: string): string {
 
 const unspent = (row: unknown) => record(row)?.['is_spent'] !== true;
 const outpointOf = (row: unknown) => `${String(record(row)?.['tx_hash'])}#${String(record(row)?.['tx_index'])}`;
-const refOf = (input: TxInput) => `${bytesToHex(input.txId)}#${input.index}`;
+/** The query string of one page of address_utxos. */
+const pageQuery = (offset: number) => `?order=tx_hash.asc,tx_index.asc&offset=${offset}&limit=${PAGE}`;
 
 /** A Koios backed ChainProvider for mainnet, preprod or preview. */
 export function koiosProvider(opts: { network: 'mainnet' | 'preprod' | 'preview'; url?: string; token?: string; fetch?: typeof fetch }): ChainProvider {
@@ -156,34 +148,26 @@ export function koiosProvider(opts: { network: 'mainnet' | 'preprod' | 'preview'
   const secrets = opts.token === undefined ? [] : [opts.token];
   // Network and submit go to the Ogmios behind /ogmios, with the Ogmios client and its messages under the name koios.
   const forwarded: OgmiosConnection = { url: `${base}/ogmios`, headers, fetch: doFetch, provider: 'koios', secrets };
-  const ogmios = ogmiosProvider(forwarded);
   const unavailable = (endpoint: string, why: string) => chainUnavailable('koios', endpoint, why, secrets);
 
   /** POST with a JSON body, or GET without one. */
   async function request(endpoint: string, body?: unknown, query = ''): Promise<unknown[]> {
-    let response: Response;
-    let text: string;
-    try {
-      response = await doFetch(`${base}/${endpoint}${query}`, {
-        ...(body === undefined
+    const fail = (why: string) => unavailable(endpoint, why);
+    const { status, text } = await fetchText(
+      doFetch,
+      `${base}/${endpoint}${query}`,
+      () =>
+        body === undefined
           ? { method: 'GET', headers: { ...headers, accept: 'application/json' } }
-          : { method: 'POST', headers: { ...headers, 'content-type': 'application/json', accept: 'application/json' }, body: JSON.stringify(body) }),
-        signal: AbortSignal.timeout(CHAIN_TIMEOUT_MS),
-      });
-      text = await response.text();
-    } catch (error) {
-      throw unavailable(endpoint, fetchFailure(error));
-    }
-    if (response.status !== 200) {
+          : { method: 'POST', headers: { ...headers, 'content-type': 'application/json', accept: 'application/json' }, body: JSON.stringify(body) },
+      fail,
+    );
+    if (status !== 200) {
       const why = reason(text);
-      throw unavailable(endpoint, why ? `HTTP ${response.status}, ${why}` : `HTTP ${response.status}`);
+      throw fail(why ? `HTTP ${status}, ${why}` : `HTTP ${status}`);
     }
-    let json: unknown;
-    try {
-      json = parseJsonBig(text);
-    } catch {
-      throw unavailable(endpoint, 'HTTP 200 with a body that is not JSON');
-    }
+    // status is 200 here, so a broken body reads 'HTTP 200 with a body that is not JSON'.
+    const json = jsonBody(status, text, fail);
     if (!Array.isArray(json)) throw unavailable(endpoint, 'unexpected answer: the body must be a list');
     return json;
   }
@@ -200,16 +184,17 @@ export function koiosProvider(opts: { network: 'mainnet' | 'preprod' | 'preview'
   async function listing(query: unknown): Promise<unknown[]> {
     const rows: unknown[] = [];
     for (let offset = 0; ; offset += PAGE) {
-      const page = await request('address_utxos', query, `?order=tx_hash.asc,tx_index.asc&offset=${offset}&limit=${PAGE}`);
+      const page = await request('address_utxos', query, pageQuery(offset));
       rows.push(...page);
       if (page.length < PAGE) return rows;
     }
   }
 
   function utxos(endpoint: string, rows: unknown[]): Utxo[] {
+    const addressOf = addressDecoder();
     return rows.filter(unspent).map((row) => {
       try {
-        return utxoFromKoios(row);
+        return readUtxo(row, addressOf);
       } catch (error) {
         throw unavailable(endpoint, `unreadable UTxO ${outpointOf(row)}: ${(error as Error).message}`);
       }
@@ -221,9 +206,7 @@ export function koiosProvider(opts: { network: 'mainnet' | 'preprod' | 'preview'
 
     async networkId() {
       const method = 'queryNetwork/genesisConfiguration';
-      const answer = await ogmiosCall(forwarded, method, { era: 'shelley' });
-      if ('error' in answer) throw unavailable(method, `error ${answer.error.code}: ${answer.error.message}`);
-      const result = record(answer.result);
+      const result = record(await ogmiosQuery(forwarded, method, { era: 'shelley' }));
       const network = result?.['network'];
       if (network !== 'mainnet' && network !== 'testnet') throw unavailable(method, `unexpected answer: network must be mainnet or testnet, got ${String(network)}`);
       // mainnet or testnet alone would let a preview URL pass under network preprod.
@@ -239,7 +222,7 @@ export function koiosProvider(opts: { network: 'mainnet' | 'preprod' | 'preview'
     async utxosAt(address) {
       const query = { _addresses: [toBech32(address)], _extended: true };
       // One page is one query and one state of the chain, the common case costs a single request.
-      const first = await request('address_utxos', query, `?order=tx_hash.asc,tx_index.asc&offset=0&limit=${PAGE}`);
+      const first = await request('address_utxos', query, pageQuery(0));
       if (first.length < PAGE) return utxos('address_utxos', first);
       // Offsets shift when the chain moves between two pages, an output can be skipped or come twice.
       // So the whole listing counts only with the same tip before and after it.
@@ -252,7 +235,7 @@ export function koiosProvider(opts: { network: 'mainnet' | 'preprod' | 'preview'
     },
 
     async unspentOutputs(inputs) {
-      const refs = [...new Set(inputs.map(refOf))];
+      const refs = [...new Set(inputs.map(outpoint))];
       const out: Utxo[] = [];
       for (let i = 0; i < refs.length; i += REFS_PER_REQUEST) {
         const rows = await request('utxo_info', { _utxo_refs: refs.slice(i, i + REFS_PER_REQUEST), _extended: true });
@@ -266,7 +249,7 @@ export function koiosProvider(opts: { network: 'mainnet' | 'preprod' | 'preview'
       return rows.some((row) => record(row)?.['status'] === 'registered');
     },
 
-    // The Ogmios provider's submit: a refusal comes back as it came, a JSON-RPC code below 0 is a transport failure.
-    submit: (tx) => ogmios.submit(tx),
+    // The Ogmios submit: a refusal comes back as it came, a JSON-RPC code below 0 is a transport failure.
+    submit: (tx) => ogmiosSubmit(forwarded, tx),
   };
 }

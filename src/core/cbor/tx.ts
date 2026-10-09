@@ -1,4 +1,5 @@
 import { blake2b } from '@noble/hashes/blake2.js';
+import { bytesToHex } from '../bytes.js';
 import { Tagged, arrayItemRanges, decode, decodeItem, mapValueOffsets, readHeader, type CborValue } from './decode.js';
 import { encode } from './encode.js';
 import type { Utxo } from '../ledger.js';
@@ -14,6 +15,9 @@ export interface TxInput {
   txId: Uint8Array;
   index: bigint;
 }
+
+/** '<tx id hex>#<index>', one key per outpoint. */
+export const outpoint = (input: TxInput): string => `${bytesToHex(input.txId)}#${input.index}`;
 
 export interface ParsedVoter {
   type: bigint;

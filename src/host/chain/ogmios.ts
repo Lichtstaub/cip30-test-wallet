@@ -1,15 +1,17 @@
-import { base58, bech32 } from '@scure/base';
 import { toBech32 } from '../../core/addresses.js';
 import { bytesToHex, concat, hexToBytes, isHex } from '../../core/bytes.js';
 import type { CborValue } from '../../core/cbor/decode.js';
 import { encode } from '../../core/cbor/encode.js';
 import type { TxInput } from '../../core/cbor/tx.js';
-import { ChwError } from '../../core/errors.js';
+import type { ChwError } from '../../core/errors.js';
 import type { Utxo } from '../../core/ledger.js';
 import { scriptFromRef } from '../../core/scripts.js';
 import { addAsset, assetQuantity, MAX_UINT64, type MultiAsset } from '../../core/value.js';
-import { jsonInteger, parseJsonBig } from './json.js';
+import { addressDecoder, addressFromText, jsonInteger } from './json.js';
 import type { ChainProvider, OgmiosError, SubmitResult } from './provider.js';
+import { chainUnavailable, fetchText, jsonBody, scrub } from './transport.js';
+
+export { CHAIN_TIMEOUT_MS, chainUnavailable, fetchFailure } from './transport.js';
 
 // Ogmios JSON-RPC 2.0 over HTTP: POST / with the same body a WebSocket
 // client sends (server/src/Ogmios/App/Server/Http.hs, postRootR). Ogmios
@@ -29,35 +31,13 @@ export interface OgmiosConnection {
   secrets?: readonly string[];
 }
 
-/** How long one request may take before it counts as a transport failure. */
-export const CHAIN_TIMEOUT_MS = 30_000;
-
-/** The text with every secret replaced by <redacted>. The one place a secret leaves a message. */
-function redact(text: string, secrets: readonly string[]): string {
-  return secrets.reduce((out, secret) => (secret === '' ? out : out.split(secret).join('<redacted>')), text);
+/** chainUnavailable under the connection's provider name, its secrets redacted. */
+function failure(conn: OgmiosConnection, method: string, reason: string): ChwError {
+  return chainUnavailable(conn.provider ?? 'ogmios', method, reason, conn.secrets ?? []);
 }
 
-/** Every string of a JSON value redacted, keys included, for a JSON-RPC error that goes back to the caller. */
-function scrub(value: unknown, secrets: readonly string[]): unknown {
-  if (typeof value === 'string') return redact(value, secrets);
-  if (Array.isArray(value)) return value.map((item) => scrub(item, secrets));
-  if (typeof value === 'object' && value !== null) return Object.fromEntries(Object.entries(value).map(([key, item]) => [redact(key, secrets), scrub(item, secrets)]));
-  return value;
-}
-
-/** The ChwError for a provider that did not answer usably: '<provider> <method> failed: <reason>', never a URL or a header, every secret redacted. */
-export function chainUnavailable(provider: string, method: string, reason: string, secrets: readonly string[] = []): ChwError {
-  return new ChwError('CHW_CHAIN_UNAVAILABLE', redact(`${provider} ${method} failed: ${reason}`, secrets));
-}
-
-/** Why a fetch rejected, for chainUnavailable: a timeout, or the error code Node's fetch keeps in cause. Never a message, one can name the host or a header value. */
-export function fetchFailure(error: unknown): string {
-  if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) return `no answer within ${CHAIN_TIMEOUT_MS / 1000} s`;
-  // Node's fetch rejects with "fetch failed" and keeps the reason (ECONNREFUSED and the like) in cause.code.
-  const cause = error instanceof Error ? (error as Error & { cause?: unknown }).cause : undefined;
-  const code = typeof cause === 'object' && cause !== null ? (cause as { code?: unknown }).code : undefined;
-  return typeof code === 'string' ? `request failed: ${code}` : 'request failed';
-}
+/** The reason for a JSON-RPC error that leaves no usable answer. */
+const rpcError = (error: OgmiosError) => `error ${error.code}: ${error.message}`;
 
 function ogmiosError(value: unknown): OgmiosError | undefined {
   if (typeof value !== 'object' || value === null) return undefined;
@@ -71,37 +51,56 @@ function ogmiosError(value: unknown): OgmiosError | undefined {
  * strings with the secrets redacted. Throws CHW_CHAIN_UNAVAILABLE otherwise.
  */
 export async function ogmiosCall(opts: OgmiosConnection, method: string, params?: unknown): Promise<{ result: unknown } | { error: OgmiosError }> {
-  const provider = opts.provider ?? 'ogmios';
   const secrets = opts.secrets ?? [];
-  const fail = (reason: string) => chainUnavailable(provider, method, reason, secrets);
+  const fail = (reason: string) => failure(opts, method, reason);
   const request = params === undefined ? { jsonrpc: '2.0', method, id: null } : { jsonrpc: '2.0', method, params, id: null };
-  let response: Response;
-  let text: string;
-  try {
-    response = await (opts.fetch ?? fetch)(opts.url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', ...opts.headers },
-      body: JSON.stringify(request),
-      signal: AbortSignal.timeout(CHAIN_TIMEOUT_MS),
-    });
-    text = await response.text();
-  } catch (error) {
-    throw fail(fetchFailure(error));
-  }
-  if (response.status !== 200 && response.status !== 400) throw fail(`HTTP ${response.status}`);
-  let body: unknown;
-  try {
-    body = parseJsonBig(text);
-  } catch {
-    throw fail(`HTTP ${response.status} with a body that is not JSON`);
-  }
+  const { status, text } = await fetchText(
+    opts.fetch ?? fetch,
+    opts.url,
+    () => ({ method: 'POST', headers: { 'content-type': 'application/json', ...opts.headers }, body: JSON.stringify(request) }),
+    fail,
+  );
+  if (status !== 200 && status !== 400) throw fail(`HTTP ${status}`);
+  const body = jsonBody(status, text, fail);
   if (typeof body === 'object' && body !== null) {
     const error = ogmiosError((body as { error?: unknown }).error);
     // A server may echo a header in its error text, so the caller gets the error with the secrets redacted.
     if (error) return { error: secrets.length === 0 ? error : (scrub(error, secrets) as OgmiosError) };
-    if (response.status === 200 && 'result' in body) return { result: (body as { result: unknown }).result };
+    if (status === 200 && 'result' in body) return { result: (body as { result: unknown }).result };
   }
-  throw fail(`HTTP ${response.status} without result or error`);
+  throw fail(`HTTP ${status} without result or error`);
+}
+
+/** The result of a query. A JSON-RPC error leaves no usable answer and throws CHW_CHAIN_UNAVAILABLE, as every transport failure does. */
+export async function ogmiosQuery(conn: OgmiosConnection, method: string, params?: unknown): Promise<unknown> {
+  const answer = await ogmiosCall(conn, method, params);
+  if ('error' in answer) throw failure(conn, method, rpcError(answer.error));
+  return answer.result;
+}
+
+/** What read returns, a plain Error it throws becomes CHW_CHAIN_UNAVAILABLE 'unexpected answer: <message>'. */
+function shapeOf<T>(conn: OgmiosConnection, method: string, read: () => T): T {
+  try {
+    return read();
+  } catch (error) {
+    throw failure(conn, method, `unexpected answer: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+/** submitTransaction: a refusal comes back as it came, a JSON-RPC code below 0 is a transport failure. */
+export async function ogmiosSubmit(conn: OgmiosConnection, tx: Uint8Array): Promise<SubmitResult> {
+  const method = 'submitTransaction';
+  const answer = await ogmiosCall(conn, method, { transaction: { cbor: bytesToHex(tx) } });
+  if ('error' in answer) {
+    // Codes below 0 are JSON-RPC's own (bad request, unknown method, undecodable params): no ledger judged the transaction.
+    if (answer.error.code < 0) throw failure(conn, method, rpcError(answer.error));
+    return { ok: false, error: answer.error };
+  }
+  return shapeOf(conn, method, () => {
+    const id = (answer.result as { transaction?: { id?: unknown } } | null)?.transaction?.id;
+    if (!isHex(id, 32)) throw new Error('result.transaction.id must be 32 bytes of hex');
+    return { ok: true, txId: hexToBytes(id) };
+  });
 }
 
 // Native script clauses as Ogmios writes them (Allegra.hs encodeTimelock) to
@@ -167,14 +166,6 @@ function scriptRefFromOgmios(script: unknown): Uint8Array {
   return ref;
 }
 
-function addressFromOgmios(address: unknown): Uint8Array {
-  if (typeof address !== 'string' || address.length === 0) throw new Error('address must be a string');
-  // Shelley addresses come as bech32, Byron addresses as base58. A base address has
-  // 103 characters, so the 90 character limit of BIP-173 is switched off.
-  if (address.startsWith('addr')) return bech32.fromWords(bech32.decode(address as `${string}1${string}`, false).words);
-  return base58.decode(address);
-}
-
 function valueFromOgmios(value: unknown): { lovelace: bigint; assets?: MultiAsset } {
   if (typeof value !== 'object' || value === null) throw new Error('value must be an object');
   const { ada, ...policies } = value as Record<string, unknown>;
@@ -198,12 +189,17 @@ function valueFromOgmios(value: unknown): { lovelace: bigint; assets?: MultiAsse
 
 /** Ogmios UTxO JSON (v6 and v7) to the wallet's Utxo. Throws a plain Error on any other shape. */
 export function utxoFromOgmios(json: unknown): Utxo {
+  return readUtxo(json, addressFromText);
+}
+
+/** utxoFromOgmios with the address decoder of the answer the row came in. */
+function readUtxo(json: unknown, addressOf: (value: unknown) => Uint8Array): Utxo {
   if (typeof json !== 'object' || json === null) throw new Error('utxo must be an object');
   const { transaction, index, address, value, datum, datumHash, script } = json as Record<string, unknown>;
   const txId = (transaction as { id?: unknown } | undefined)?.id;
   if (!isHex(txId, 32)) throw new Error('utxo transaction.id must be 32 bytes of hex');
   const input: TxInput = { txId: hexToBytes(txId.toLowerCase()), index: jsonInteger(index, 'utxo index') };
-  const utxo: Utxo = { input, address: addressFromOgmios(address), ...valueFromOgmios(value) };
+  const utxo: Utxo = { input, address: addressOf(address), ...valueFromOgmios(value) };
   // Ogmios never sends datum and datumHash together (TransactionOutput in cardano.json).
   if (datum !== undefined) {
     if (!isHex(datum) || datum.length === 0) throw new Error('utxo datum must be hex');
@@ -218,40 +214,22 @@ export function utxoFromOgmios(json: unknown): Utxo {
 
 /** An Ogmios backed ChainProvider: a node of your own, a devnet, or a hosted Ogmios. */
 export function ogmiosProvider(opts: OgmiosConnection): ChainProvider {
-  const name = opts.provider ?? 'ogmios';
-  const secrets = opts.secrets ?? [];
-  const fail = (method: string, reason: string) => chainUnavailable(name, method, reason, secrets);
-
-  // A query that answers with a JSON-RPC error has no usable answer, only submit turns an error into a result.
-  async function query(method: string, params?: unknown): Promise<unknown> {
-    const answer = await ogmiosCall(opts, method, params);
-    if ('error' in answer) throw fail(method, `error ${answer.error.code}: ${answer.error.message}`);
-    return answer.result;
-  }
-
-  function shapeOf<T>(method: string, read: () => T): T {
-    try {
-      return read();
-    } catch (error) {
-      throw fail(method, `unexpected answer: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-
   async function utxos(params: unknown): Promise<Utxo[]> {
     const method = 'queryLedgerState/utxo';
-    const result = await query(method, params);
-    return shapeOf(method, () => {
+    const result = await ogmiosQuery(opts, method, params);
+    return shapeOf(opts, method, () => {
       if (!Array.isArray(result)) throw new Error('result must be a list');
-      return result.map(utxoFromOgmios);
+      const addressOf = addressDecoder();
+      return result.map((row) => readUtxo(row, addressOf));
     });
   }
 
   return {
-    name,
+    name: opts.provider ?? 'ogmios',
     async networkId() {
       const method = 'queryNetwork/genesisConfiguration';
-      const result = await query(method, { era: 'shelley' });
-      return shapeOf(method, () => {
+      const result = await ogmiosQuery(opts, method, { era: 'shelley' });
+      return shapeOf(opts, method, () => {
         const network = (result as { network?: unknown } | null)?.network;
         if (network === 'mainnet') return 1;
         if (network === 'testnet') return 0;
@@ -268,27 +246,14 @@ export function ogmiosProvider(opts: OgmiosConnection): ChainProvider {
     async stakeRegistered(stakeKeyHash) {
       const method = 'queryLedgerState/rewardAccountSummaries';
       const credential = bytesToHex(stakeKeyHash);
-      const result = await query(method, { keys: [credential] });
-      return shapeOf(method, () => {
+      const result = await ogmiosQuery(opts, method, { keys: [credential] });
+      return shapeOf(opts, method, () => {
         // Since v6.13 a list of summaries, before that a map keyed by credential. A key that is not registered is missing from both.
         if (Array.isArray(result)) return result.some((s) => (s as { credential?: unknown } | null)?.credential === credential);
         if (typeof result === 'object' && result !== null) return Object.hasOwn(result, credential);
         throw new Error('result must be a list or a map');
       });
     },
-    async submit(tx): Promise<SubmitResult> {
-      const method = 'submitTransaction';
-      const answer = await ogmiosCall(opts, method, { transaction: { cbor: bytesToHex(tx) } });
-      if ('error' in answer) {
-        // Codes below 0 are JSON-RPC's own (bad request, unknown method, undecodable params): no ledger judged the transaction.
-        if (answer.error.code < 0) throw fail(method, `error ${answer.error.code}: ${answer.error.message}`);
-        return { ok: false, error: answer.error };
-      }
-      return shapeOf(method, () => {
-        const id = (answer.result as { transaction?: { id?: unknown } } | null)?.transaction?.id;
-        if (!isHex(id, 32)) throw new Error('result.transaction.id must be 32 bytes of hex');
-        return { ok: true, txId: hexToBytes(id) };
-      });
-    },
+    submit: (tx) => ogmiosSubmit(opts, tx),
   };
 }

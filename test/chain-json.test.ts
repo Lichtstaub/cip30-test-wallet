@@ -30,6 +30,15 @@ describe('parseJsonBig', () => {
     expect(parseJsonBig('{"12345678901234567890":true,"b":false,"c":null}')).toEqual({ '12345678901234567890': true, b: false, c: null });
   });
 
+  it('reads a text without a run of 16 digits exactly as JSON.parse does', () => {
+    const text = '{"a":[1,-2.5,3e-7,123456789012345],"b":"x\\"y","c":{"d":null,"e":true},"f":"999999999999999"}';
+    expect(parseJsonBig(text)).toEqual(JSON.parse(text));
+  });
+
+  it('still quotes a 16 digit integer next to numbers that stay numbers', () => {
+    expect(parseJsonBig('{"a":1.5,"b":-2e3,"c":1234567890123456}')).toEqual({ a: 1.5, b: -2000, c: '1234567890123456' });
+  });
+
   it.each([
     ['a missing value', '{"a":}'],
     ['a long integer with a leading zero', '{"a":01234567890123456}'],

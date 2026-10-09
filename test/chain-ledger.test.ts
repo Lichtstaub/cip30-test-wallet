@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { baseAddressBytes, enterpriseAddressBytes } from '../src/core/addresses.js';
 import { bytesToHex, hexToBytes } from '../src/core/bytes.js';
 import { Tagged } from '../src/core/cbor/decode.js';
-import { txHash, type TxInput } from '../src/core/cbor/tx.js';
+import { outpoint, txHash, type TxInput } from '../src/core/cbor/tx.js';
 import { ChwError, TxSendErrorCode } from '../src/core/errors.js';
 import { keyHash, publicKey } from '../src/core/keys.js';
 import type { Utxo, WalletCredentials } from '../src/core/ledger.js';
@@ -27,8 +27,7 @@ const myAddress = baseAddressBytes(0, myPay, myStake);
 const ELSEWHERE = TEST_ADDRESS;
 
 const mine = (seed: string, lovelace = 10_000_000n): Utxo => ({ input: syntheticInput(seed, 0n), address: myAddress, lovelace });
-const key = (input: TxInput) => `${bytesToHex(input.txId)}#${input.index}`;
-const keys = (utxos: Utxo[]) => utxos.map((u) => key(u.input));
+const keys = (utxos: Utxo[]) => utxos.map((u) => outpoint(u.input));
 const idOf = (tx: Uint8Array) => bytesToHex(txHash(tx));
 const output = (tx: Uint8Array, index: bigint): TxInput => ({ txId: txHash(tx), index });
 
@@ -85,11 +84,11 @@ describe('the pending overlay', () => {
     expect(bytesToHex(await ledger.submit(tx1))).toBe(idOf(tx1));
     expect(chain.mempool).toHaveLength(1);
     expect(keys(await chain.ledger.getWalletUtxos())).toEqual(keys([a]));
-    expect(keys(await ledger.getWalletUtxos())).toEqual([key(output(tx1, 1n))]);
+    expect(keys(await ledger.getWalletUtxos())).toEqual([outpoint(output(tx1, 1n))]);
     expect(await ledger.pendingTxIds()).toEqual([idOf(tx1)]);
 
     expect(await chain.confirm()).toEqual([idOf(tx1)]);
-    expect(keys(await ledger.getWalletUtxos())).toEqual([key(output(tx1, 1n))]);
+    expect(keys(await ledger.getWalletUtxos())).toEqual([outpoint(output(tx1, 1n))]);
     expect(await ledger.pendingTxIds()).toEqual([]);
   });
 
@@ -103,15 +102,15 @@ describe('the pending overlay', () => {
     await ledger.submit(tx2);
     // The provider knows no output of tx1, tx2 stays because tx1 stays.
     expect(await ledger.pendingTxIds()).toEqual([idOf(tx1), idOf(tx2)]);
-    expect(keys(await ledger.getWalletUtxos())).toEqual([key(output(tx2, 0n))]);
+    expect(keys(await ledger.getWalletUtxos())).toEqual([outpoint(output(tx2, 0n))]);
 
     await chain.confirm(1);
     expect(await ledger.pendingTxIds()).toEqual([idOf(tx2)]);
-    expect(keys(await ledger.getWalletUtxos())).toEqual([key(output(tx2, 0n))]);
+    expect(keys(await ledger.getWalletUtxos())).toEqual([outpoint(output(tx2, 0n))]);
 
     await chain.confirm();
     expect(await ledger.pendingTxIds()).toEqual([]);
-    expect(keys(await ledger.getWalletUtxos())).toEqual([key(output(tx2, 0n))]);
+    expect(keys(await ledger.getWalletUtxos())).toEqual([outpoint(output(tx2, 0n))]);
   });
 
   it('shows every output once when the chain confirms between the pending check and the snapshot', async () => {
@@ -125,7 +124,7 @@ describe('the pending overlay', () => {
       await chain.confirm();
       return answer;
     });
-    expect(keys(await ledger.getWalletUtxos())).toEqual([key(output(tx1, 0n))]);
+    expect(keys(await ledger.getWalletUtxos())).toEqual([outpoint(output(tx1, 0n))]);
     expect(await ledger.pendingTxIds()).toEqual([]);
   });
 
@@ -146,8 +145,8 @@ describe('the pending overlay', () => {
     expect(chain.calls).toEqual(['unspentOutputs', 'utxosAt']);
     held.release();
     // The first read applies tx1 to its old snapshot, the second sees the block. Both show the change only.
-    expect(keys(await first)).toEqual([key(output(tx1, 0n))]);
-    expect(keys(await second)).toEqual([key(output(tx1, 0n))]);
+    expect(keys(await first)).toEqual([outpoint(output(tx1, 0n))]);
+    expect(keys(await second)).toEqual([outpoint(output(tx1, 0n))]);
     expect(chain.calls).toEqual(['unspentOutputs', 'utxosAt', 'unspentOutputs', 'utxosAt']);
     expect(await ledger.pendingTxIds()).toEqual([]);
   });
@@ -160,15 +159,15 @@ describe('the pending overlay', () => {
     const tx2 = pay([output(tx1, 1n)], [[myAddress, 6_600_000n]]);
     await ledger.submit(tx1);
     await ledger.submit(tx2);
-    expect(keys(await ledger.getWalletUtxos())).toEqual([key(b.input), key(output(tx2, 0n))]);
+    expect(keys(await ledger.getWalletUtxos())).toEqual([outpoint(b.input), outpoint(output(tx2, 0n))]);
 
     await chain.spendExternally(a.input);
     expect(chain.mempool).toHaveLength(0);
-    expect(keys(await ledger.getWalletUtxos())).toEqual([key(b.input)]);
+    expect(keys(await ledger.getWalletUtxos())).toEqual([outpoint(b.input)]);
     expect(await ledger.pendingTxIds()).toEqual([]);
     // Nothing comes back with the next block.
     await chain.confirm();
-    expect(keys(await ledger.getWalletUtxos())).toEqual([key(b.input)]);
+    expect(keys(await ledger.getWalletUtxos())).toEqual([outpoint(b.input)]);
   });
 
   it('a transaction with is_valid false takes only its collateral and adds only the collateral return', async () => {
@@ -192,11 +191,11 @@ describe('the pending overlay', () => {
     );
     await ledger.submit(tx);
     // The collateral return sits at index 2, the number of outputs.
-    expect(keys(await ledger.getWalletUtxos())).toEqual([key(a.input), key(output(tx, 2n))]);
+    expect(keys(await ledger.getWalletUtxos())).toEqual([outpoint(a.input), outpoint(output(tx, 2n))]);
     expect(await ledger.pendingTxIds()).toEqual([idOf(tx)]);
 
     await chain.confirm();
-    expect(keys(await ledger.getWalletUtxos())).toEqual([key(a.input), key(output(tx, 2n))]);
+    expect(keys(await ledger.getWalletUtxos())).toEqual([outpoint(a.input), outpoint(output(tx, 2n))]);
     expect(await ledger.pendingTxIds()).toEqual([]);
   });
 
@@ -232,7 +231,7 @@ describe('a provider that fails', () => {
       expect(e).toMatchObject({ code: 'CHW_CHAIN_UNAVAILABLE', message: `CHW_CHAIN_UNAVAILABLE: fake ${method} failed with HTTP 503` });
     }
     expect(await ledger.pendingTxIds()).toEqual([idOf(tx1)]);
-    expect(keys(await ledger.getWalletUtxos())).toEqual([key(output(tx1, 0n))]);
+    expect(keys(await ledger.getWalletUtxos())).toEqual([outpoint(output(tx1, 0n))]);
   });
 
   it('fails resolveInput of an outpoint it has not seen the same way, the next call works', async () => {
@@ -257,7 +256,7 @@ describe('a provider that fails', () => {
     expect(await ledger.pendingTxIds()).toEqual([]);
     expect(keys(await ledger.getWalletUtxos())).toEqual(keys([a]));
     await chain.confirm();
-    expect(keys(await ledger.getWalletUtxos())).toEqual([key(output(tx1, 0n))]);
+    expect(keys(await ledger.getWalletUtxos())).toEqual([outpoint(output(tx1, 0n))]);
   });
 
   it('a submit that fails in transport changes neither overlay nor mempool, the same transaction goes through afterwards', async () => {
@@ -410,6 +409,6 @@ describe('ChainLedger submit', () => {
     await ledger.submit(tx1);
     expect(chain.calls.filter((m) => m === 'submit')).toHaveLength(2);
     expect(await ledger.pendingTxIds()).toEqual([idOf(tx1)]);
-    expect(keys(await ledger.getWalletUtxos())).toEqual([key(output(tx1, 0n))]);
+    expect(keys(await ledger.getWalletUtxos())).toEqual([outpoint(output(tx1, 0n))]);
   });
 });

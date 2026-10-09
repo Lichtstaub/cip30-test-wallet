@@ -2,7 +2,7 @@
 // the mempool. Refusals and transport failures are scripted per call. Nothing
 // reaches a network.
 import { bytesEqual, bytesToHex, hexToBytes } from '../../src/core/bytes.js';
-import { parseTransaction, txHash, type TxInput } from '../../src/core/cbor/tx.js';
+import { outpoint, parseTransaction, txHash, type TxInput } from '../../src/core/cbor/tx.js';
 import { ChwError } from '../../src/core/errors.js';
 import { MemoryLedger, type Utxo, type WalletCredentials } from '../../src/core/ledger.js';
 import type { ChainProvider, OgmiosError, SubmitResult } from '../../src/host/chain/provider.js';
@@ -21,8 +21,6 @@ export interface FakeChainOptions {
   /** What networkId() answers, 0 when left out. */
   networkId?: 0 | 1;
 }
-
-const outpoint = (input: TxInput) => `${bytesToHex(input.txId)}#${input.index}`;
 
 /**
  * A ChainProvider over a MemoryLedger. submit puts a transaction into the
@@ -74,7 +72,7 @@ export class FakeChain implements ChainProvider {
       const { body, hash, isValid } = parseTransaction(bytes);
       const consumed = isValid ? body.inputs : body.collateralInputs;
       if (!consumed.some((i) => gone.has(outpoint(i)))) return true;
-      body.outputs.forEach((_, i) => gone.add(`${bytesToHex(hash)}#${i}`));
+      body.outputs.forEach((_, i) => gone.add(outpoint({ txId: hash, index: BigInt(i) })));
       return false;
     });
     return bytesToHex(txHash(tx));
@@ -92,7 +90,12 @@ export class FakeChain implements ChainProvider {
 
   /** Records the call, throws when a failure is scripted for it, reads the answer at once and returns it when no hold keeps it back. */
   private async answer<T>(method: FakeMethod, read: () => T | Promise<T>): Promise<T> {
-    this.enter(method);
+    this.calls.push(method);
+    const left = this.failures.get(method) ?? 0;
+    if (left > 0) {
+      this.failures.set(method, left - 1);
+      throw new ChwError('CHW_CHAIN_UNAVAILABLE', `fake ${method} failed with HTTP 503`);
+    }
     const value = await read();
     const hold = this.holds.get(method)?.shift();
     if (hold) {
@@ -100,16 +103,6 @@ export class FakeChain implements ChainProvider {
       await hold.gate;
     }
     return value;
-  }
-
-  /** Records the call and throws when a failure is scripted for it. */
-  private enter(method: FakeMethod): void {
-    this.calls.push(method);
-    const left = this.failures.get(method) ?? 0;
-    if (left > 0) {
-      this.failures.set(method, left - 1);
-      throw new ChwError('CHW_CHAIN_UNAVAILABLE', `fake ${method} failed with HTTP 503`);
-    }
   }
 
   networkId(): Promise<0 | 1> {

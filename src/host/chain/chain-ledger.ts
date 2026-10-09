@@ -1,5 +1,5 @@
 import { bytesEqual, bytesToHex } from '../../core/bytes.js';
-import { parseTransaction, type ParsedTransaction, type TxInput } from '../../core/cbor/tx.js';
+import { outpoint, parseTransaction, type ParsedTransaction, type TxInput } from '../../core/cbor/tx.js';
 import { ChwError, TxSendErrorCode, txSendError } from '../../core/errors.js';
 import { applyTransaction, type Ledger, type LedgerState, type Utxo, type WalletCredentials } from '../../core/ledger.js';
 import { rejectionInfo } from './ogmios-errors.js';
@@ -24,10 +24,6 @@ interface PendingTx {
 }
 
 const EMPTY: LedgerState = { owned: [], foreign: [], spent: [], stakeRegistered: false };
-
-function outpoint(input: TxInput): string {
-  return `${bytesToHex(input.txId)}#${input.index}`;
-}
 
 /** The first output of every outpoint, in order. */
 function unique(utxos: Utxo[]): Utxo[] {
