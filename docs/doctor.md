@@ -1,6 +1,6 @@
 # doctor
 
-`npx cip30-test-wallet doctor <url>` checks a deployed dApp for the traps that keep Cardano wallets from injecting.
+`npx cip30-test-wallet doctor <url>` checks a deployed dApp for the traps that keep Cardano wallets from injecting. `npx cip30-test-wallet --help`, or `-h` in its place, prints the usage with every flag. The help flag goes first, right after the package name. `doctor --help` takes `--help` for the URL and exits with 2.
 
 ## Static run
 
@@ -12,7 +12,7 @@ One `fetch`, redirects followed, the final URL is what gets judged. Only `http:`
 | The response status is outside 200 to 299 | `http-status` | error |
 | The response content type does not contain `text/html` | `not-html` | warning |
 | No enforced policy | `no-enforced-csp` | info |
-| Only a report-only policy | `report-only-csp` | info |
+| A report-only policy is present, alone or next to an enforced one | `report-only-csp` | info |
 | Enforced `script-src` (or `default-src` as fallback) without `'unsafe-eval'` | `eval-blocked` | warning |
 | Enforced policy that does not govern scripts | `eval-unrestricted` | info |
 | `'unsafe-inline'` next to a hash or nonce | `inline-hash-conflict` | info |
@@ -51,8 +51,8 @@ Human readable by default: the page, its content security policy (one directive 
 
 ## What doctor cannot see
 
-A policy that JavaScript inserts as a `<meta>` tag after the parser already ran scripts above it is invisible to doctor: a meta policy only governs what the parser processes after that tag, and doctor reads whatever meta tags are in the response body, not ones added later. A service worker that answers the page's own requests with a different response than the server sent is invisible too, doctor only sees what the network handed back. The static fetch carries no cookies, so a session-aware app can send it somewhere other than where a real signed-in browser would end up, when the deep run's browser lands somewhere else, `deep-url-differs` says so. The injected wallet is the project's public default test wallet, built from a published test mnemonic, it never holds funds and is safe to see in a trace.
+A policy that JavaScript inserts as a `<meta>` tag after the parser already ran scripts above it is invisible to doctor: a meta policy only governs what the parser processes after that tag, and doctor reads whatever meta tags are in the response body, not ones added later. A service worker that answers the page's own requests with a different response than the server sent is invisible too, doctor only sees what the network handed back. The static fetch carries no cookies, so a session-aware app can send it somewhere other than where a real signed-in browser would end up, when the deep run's browser ends up on another URL, `deep-url-differs` says so. The injected wallet is the project's default test wallet with its synthetic UTxOs, built from a published test mnemonic. Its keys are public anyway, so it is safe to see in a trace.
 
 ## Limits
 
-The injected wallet is the default test wallet, it never signs anything during a doctor run. The deep run cannot reproduce a mobile in-app browser, it measures the page under a desktop engine. WebKit is the engine behind the Eternl iOS in-app browser, which is why `--browser webkit` is worth running for a page destined for that browser, but the eval probe itself is engine-independent, it reports what actually happened under whichever engine ran it, not a WebKit-specific measurement.
+Doctor itself asks the injected wallet for no signature. The page under test can still call `signTx` or `signData`, after a `--click` for example, and the default test wallet answers as it does in a test. The deep run cannot reproduce a mobile in-app browser, it measures the page under a desktop engine. WebKit is the engine behind the Eternl iOS in-app browser, which is why `--browser webkit` is worth running for a page destined for that browser. The eval probe reports what happened under the engine that ran it, WebKit or any other.

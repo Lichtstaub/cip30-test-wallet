@@ -1,6 +1,6 @@
 # Recipes
 
-Complete, tested patterns for the tasks that come up when a dApp is tested with this wallet. The test snippets ran verbatim in Chromium, Firefox and WebKit against a small dApp built the way each recipe describes, the dApp snippets ran inside those dApps. The library recipes name the version they were tested with. The dev server recipe is a template, its pattern ran against an Astro app with that app's own module and function names.
+Complete patterns for the tasks that come up when a dApp is tested with this wallet. The library recipes and the snippets against the demo dApp ran verbatim in Chromium, Firefox and WebKit, the dApp snippets ran inside those dApps. The library recipes name the version they were tested with. Snippets that use a placeholder page such as `/checkout` are templates: their pattern ran against a real app with that app's own selectors. The dev server recipe ran against an Astro app with that app's own module and function names, and the devnet setup follows the one the package's CI runs.
 
 ## Read this first: where the wallet's funds live
 
@@ -65,7 +65,7 @@ An ESM bundle loads with `<script type="module" src="/app.js"></script>`.
 
 ## Evolution SDK
 
-Tested with `@evolution-sdk/evolution` 0.5.14.
+Tested with `@evolution-sdk/evolution` 0.5.14. The package's own tests use 0.6.0.
 
 A client built with `withCip30(api)` takes its UTxOs from the wallet's `getUtxos()`, no `availableUtxos` option needed. It asks Koios only for protocol parameters (`epoch_params`). It always signs with `signTx(tx, true)`, a partial signature.
 
@@ -394,7 +394,7 @@ The wallet's UTxOs stay as they were, a corrected transaction over the same inpu
 
 ## A dApp that spends from a script
 
-A dApp that spends from a contract builds the transaction from chain data. The wallet has to know every input it cannot find in its own UTxOs: the UTxO the contract locks and, when the validator is used as a reference script, the UTxO holding it. Without them `signTx` raises `CHW_UNRESOLVED_INPUT`. A dApp that attaches the validator to the transaction itself needs only the locked UTxO.
+A dApp that spends from a contract builds the transaction from chain data. The wallet has to know every input it cannot find in its own UTxOs: the UTxO the contract locks and, when the validator is used as a reference script, the UTxO holding it. Without them `signTx` raises `CHW_UNRESOLVED_INPUT`. A dApp that attaches the validator to the transaction itself needs only the locked UTxO. In [chain mode](../README.md#chain-mode) the wallet reads both from the chain and refuses `foreignUtxos`, the fragment below is for the default ledger.
 
 ```ts
 // The validator is an always succeeding Plutus V3 script compiled with aiken, its hash 5d0f74...02078e3 makes the script address.
@@ -410,7 +410,7 @@ test.use({
 
 This fragment only configures the wallet. A unit test checks that it is accepted and that the reference script hash matches the script address.
 
-The wallet signs for the collateral and every key the transaction needs from it. `signTx` never runs the validator. With `ledger: { checks: true }` `submitTx` runs it in Node, within the ExUnits its redeemer declares. A validator that fails or needs more than that is refused as `ValidationTagMismatch`, a script data hash that does not match as `ScriptIntegrityHashMismatch`, see [Ledger checks](../README.md#ledger-checks). Without the checks a redeemer or budget that a node would reject passes here.
+The wallet signs for the collateral and every key the transaction needs from it. `signTx` never runs the validator. With `ledger: { checks: true }` `submitTx` runs it in Node, within the ExUnits its redeemer declares. A validator that fails or needs more than that is refused as `ValidationTagMismatch`, a script data hash that does not match as `ScriptIntegrityHashMismatch`, see [Ledger checks](../README.md#ledger-checks). Without the checks and without a chain, a redeemer or budget that a node would reject passes here. In [chain mode](../README.md#chain-mode) the node runs the validator.
 
 ## Testing against a local devnet
 
@@ -499,7 +499,7 @@ test('the payment is submitted to the devnet', async ({ page, wallet }) => {
 });
 ```
 
-The package's own CI runs this setup, its browser test pays from chain UTxOs on the demo dApp in three engines and checks the balance before and after the block.
+The package's own CI runs a setup like this one, its browser test pays from chain UTxOs on the demo dApp in three engines and checks the balance before and after the block.
 
 ## Reading the journal
 

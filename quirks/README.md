@@ -1,6 +1,6 @@
 # Quirk catalogue
 
-Every switch in the wallet has a note here with where it was observed, when, what breaks in a dApp because of it, and its lifecycle status: `reported` (sent in, not reproduced), `confirmed` (reproduced against a current wallet version), `historical` (the wallet fixed it, kept because the spec does not rule the behaviour out). Historical quirks never run in a recommended bundle, you switch them on explicitly.
+Every switch in the wallet has a note here with where it was observed, when, what breaks in a dApp because of it, and its lifecycle status: `reported` (sent in, not reproduced) or `confirmed` (reproduced against a current wallet version). Every quirk is off until a test switches it on.
 
 No switch without a note. A quirk nobody can trace is the stale wallet profile this project exists to avoid.
 

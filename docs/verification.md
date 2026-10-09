@@ -1,8 +1,8 @@
 # Verification
 
-The two tables below record the milestone 1 and 1b spikes the package is built on. The numbers are those of the spike runs, the current suite is larger.
+The first two tables record the checks the signing core and the browser injection were first built on. The sections after them follow the features added since.
 
-## Milestone 1 exit criteria
+## Signing core
 
 | # | Criterion | Test | Result |
 |---|---|---|---|
@@ -10,16 +10,12 @@ The two tables below record the milestone 1 and 1b spikes the package is built o
 | 2 | Witness set accepted by Evolution, signature verifies | `test/witness.test.ts` | pass |
 | 3 | Mnemonic restore matches CSL, Evolution and the documented vector, signatures byte identical | `test/keys.test.ts`, `test/derive.test.ts` | pass |
 | 4 | Evolution merges our witness set without losing foreign witnesses, and a party that already signed counts as coverage | `test/witness.test.ts`, `test/sign-tx.test.ts` | pass |
-| 5 | At milestone 1, supported forms only: own key signs, uncovered foreign key refuses, script inputs, script credentials, guardrail scripts and unknown inputs raise a harness diagnosis. Since 0.7.0 script forms are signed, see Milestone 6. | `test/sign-tx.test.ts`, `test/sign-tx-governance.test.ts` | pass |
+| 5 | Supported forms only: own key signs, uncovered foreign key refuses, unknown inputs raise a harness diagnosis. Script inputs, script credentials and guardrail scripts raised one too until 0.7.0, which signs them, see [Scripts](#scripts). | `test/sign-tx.test.ts`, `test/sign-tx-governance.test.ts` | pass |
 | 6 | submitTx returns the transaction id Evolution computes | `test/submit.test.ts` | pass |
 
-Typecheck (`npm run typecheck`): pass, no errors. All 52 tests pass.
+The bundle check (`npm run bundle:check`) confirms on every change that the core and the page bundle contain no Node code, no WASM and no externals. These checks showed that the signing core works without WASM, the CIP-30 surface is built on it.
 
-Bundle check: sign-tx.js 91.8 KB, ledger.js 22.5 KB, addresses.js 12.3 KB (no Node, no WASM, no externals).
-
-Decision: the WASM-free core is viable. Milestone 2 builds the CIP-30 surface on it.
-
-## Milestone 1b exit criteria (browser and CSP)
+## Browser and CSP
 
 | # | Criterion | Chromium | Firefox | WebKit |
 |---|---|---|---|---|
@@ -35,11 +31,11 @@ Consequence for `doctor --deep`: row 2a is dropped as a probe path, it bypasses 
 
 Consequence for the fixture: the fixture does not reproduce the CSP trap (row 3), that remains the doctor's job. In the other direction, WebKit does enforce CSP on init-script code (row 2a), so a fixture bundle that contains `eval` or `new Function`, from the core or a dependency, is blocked in WebKit under a strict policy while it keeps working in Chromium and Firefox. The bundle check rejects both.
 
-## Milestone 5: values and collateral
+## Values and collateral
 
 UTxOs with native assets, datum hash, inline datum and reference script encode like Lace, coin-only UTxOs stay byte identical. Asset values and a token spend built with Evolution are checked against CSL in `test/utxo-values.test.ts` and `test/values-oracle.test.ts`.
 
-## Milestone 6: scripts
+## Scripts
 
 Script hashes match CSL for native scripts and Plutus V1 to V3, from the witness set and from reference scripts. A native script is hashed over the bytes it arrived in, like the ledger. Native scripts are evaluated after the ledger's evalTimelock, with its boundaries. Plutus spends with collateral, native multisig with a co-signer, native mint, a reference script, script withdrawals and a guardrail proposal, built by Evolution and CSL, are signed and verified with CSL in `test/scripts.test.ts`, `test/tx-scripts.test.ts`, `test/sign-tx-scripts.test.ts` and `test/scripts-oracle.test.ts`. A native mint is signed in the page in Chromium, Firefox and WebKit (`test-browser/scripts.spec.ts`).
 
@@ -54,3 +50,7 @@ With the ledger checks a submit is refused under the rule names of a released Co
 ## Plutus scripts under the ledger checks
 
 With the ledger checks the wallet checks datums, redeemers, the script data hash and whether the ledger can build the context of every script after the rules in cardano-ledger at `f9fd3acf`, and runs every Plutus script the transaction needs in Node. A Plutus V1 context the ledger cannot build next to a failing V3 script is refused for either script order and either `is_valid`, before any script runs. Redeemer indices follow the ledger's order, also for withdrawals and votes, where it differs from the order of the CBOR bytes. A V3 spend through a reference script, a V2 spend with an inline datum, a mint under a V2 and a V3 policy, a script withdrawal next to a key withdrawal, a script DRep vote next to a key DRep vote and two spends with V2 and V3 pass both phases, each script run at the index of its redeemer. The script data hash equals the one Evolution writes into the body and the one CSL computes. For the test scripts in `test/fixtures/plutus/`, compiled with aiken, the ExUnits the wallet computes equal those of aiken's own evaluator, except for a V3 script that does not return unit, which only the wallet refuses, as CIP-117 requires. An Evolution-built spend from a script that accepts passes, a declared budget below what the script needs and a failing script with `is_valid` true are refused with `ValidationTagMismatch`, and a failing script with `is_valid` false passes and spends only its collateral. `test/cert-state.test.ts`, `test/check-transaction.test.ts`, `test/errors.test.ts`, `test/evaluator-isolation.test.ts`, `test/evaluator-lazy.test.ts`, `test/failure-format.test.ts`, `test/ledger-binding.test.ts`, `test/ledger-checks.test.ts`, `test/ledger-options.test.ts`, `test/page-bundle.test.ts`, `test/phase-two-purposes.test.ts`, `test/phase-two-unavailable.test.ts`, `test/phase-two.test.ts`, `test/plutus-fixtures.test.ts`, `test/plutus-purposes.test.ts`, `test/plutus-rules.test.ts`, `test/protocol-params.test.ts`, `test/recipes-doc.test.ts`, `test/script-integrity.test.ts`, `test/slot-config.test.ts`, `test/tx-plutus-facts.test.ts` and `test/witness-rules.test.ts`, and in three engines `test-browser/ledger-checks.spec.ts`, where a spend signed in the page passes and a failing script reaches the page as a plain `{ code: 2, info }`.
+
+## Chain mode
+
+The Ogmios and Koios clients read recorded answers of both providers, Ogmios 6 and 7 and the public Koios preprod instance. The pending overlay, the mainnet lock and the binding to the page are checked without a network in `test/chain-ledger.test.ts`, `test/chain-binding.test.ts`, `test/chain-wiring.test.ts`, `test/chain-json.test.ts`, `test/attach-chain.test.ts`, `test/mainnet-lock.test.ts`, `test/ogmios.test.ts`, `test/ogmios-errors.test.ts` and `test/koios.test.ts`. Against a devnet on protocol 11 with cardano-node 11.0.1 and Ogmios 7.0.0, payments, stake registration, Plutus spends and refusals run through the wallet in `test-devnet/`, and `test-devnet/node-names.test.ts` checks that the rule names the ledger checks write are those the node prints. In three engines `test-browser/chain.spec.ts` pays from chain UTxOs on the demo dApp and checks the balance before and after the block.
