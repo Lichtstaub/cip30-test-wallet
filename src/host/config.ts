@@ -239,6 +239,10 @@ function chainUrl(value: unknown): string {
   if (!url || (url.protocol !== 'http:' && url.protocol !== 'https:')) {
     throw new Error('ledger.chain.url must be an absolute http or https URL such as http://localhost:1337');
   }
+  // fetch would refuse such a URL later with only "request failed", so say why here.
+  if (url.username !== '' || url.password !== '') {
+    throw new Error('ledger.chain.url must not carry a username or a password, fetch refuses such a URL');
+  }
   return value as string;
 }
 

@@ -382,6 +382,16 @@ describe('ogmiosProvider', () => {
     expect((await rejection(provider.utxosAt(hexToBytes(ADDRESS_A_HEX)))).message).toBe('CHW_CHAIN_UNAVAILABLE: ogmios queryLedgerState/utxo failed: unexpected answer: utxo transaction.id must be 32 bytes of hex');
   });
 
+  it('a script language named like an inherited Object key is as unsupported as any unknown language', async () => {
+    const utxo = (language: string) => ({ transaction: { id: 'e5'.repeat(32) }, index: 0, address: ADDRESS_A_BECH32, value: { ada: { lovelace: 1 } }, script: { language, cbor: '4e4d01000033222220051200120011' } });
+    const { fetch } = fakeFetch(json({ jsonrpc: '2.0', result: [utxo('plutus:v4')], id: null }), json({ jsonrpc: '2.0', result: [utxo('constructor')], id: null }));
+    const provider = ogmiosProvider({ url: URL_, fetch });
+    const unknown = await rejection(provider.utxosAt(hexToBytes(ADDRESS_A_HEX)));
+    const inherited = await rejection(provider.utxosAt(hexToBytes(ADDRESS_A_HEX)));
+    expect(unknown.message).toBe('CHW_CHAIN_UNAVAILABLE: ogmios queryLedgerState/utxo failed: unexpected answer: script language plutus:v4 is not supported');
+    expect(inherited.message).toBe(unknown.message.replace('plutus:v4', 'constructor'));
+  });
+
   it('submit sends the exact bytes as lower case hex and returns the id Ogmios reports', async () => {
     const { fetch, calls } = fakeFetch(answer('v7-submit-ok.json'));
     const result = await ogmiosProvider({ url: URL_, fetch }).submit(Uint8Array.of(0x84, 0xa0, 0xa0, 0xf5, 0xf6));

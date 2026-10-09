@@ -134,7 +134,11 @@ function nativeScriptCbor(json: unknown, depth = 0): CborValue {
   }
 }
 
-const PLUTUS_TAGS: Record<string, bigint> = { 'plutus:v1': 1n, 'plutus:v2': 2n, 'plutus:v3': 3n };
+const PLUTUS_TAGS = new Map<unknown, bigint>([
+  ['plutus:v1', 1n],
+  ['plutus:v2', 2n],
+  ['plutus:v3', 3n],
+]);
 
 /**
  * script = [0, native_script] / [1 to 3, plutus script bytes]. Plutus cbor is the
@@ -153,7 +157,7 @@ function scriptRefFromOgmios(script: unknown): Uint8Array {
     if (!native) throw new Error('native script cbor must be hex');
     ref = concat(Uint8Array.of(0x82, 0x00), native);
   } else {
-    const tag = typeof language === 'string' ? PLUTUS_TAGS[language] : undefined;
+    const tag = PLUTUS_TAGS.get(language);
     if (tag === undefined) throw new Error(`script language ${String(language)} is not supported`);
     if (!isHex(cbor) || cbor.length === 0) throw new Error(`${language} script cbor must be hex`);
     ref = encode([tag, hexToBytes(cbor)]);

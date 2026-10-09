@@ -212,6 +212,24 @@ describe('walletOptions.ledger.chain', () => {
     expect(() => prepareWallet(options as unknown as WalletOptions)).toThrow(message);
   });
 
+  it('refuses a chain url with a username or a password, without repeating either', () => {
+    const message = (options: unknown) => {
+      try {
+        prepareWallet(options as WalletOptions);
+      } catch (e) {
+        return (e as Error).message;
+      }
+      throw new Error('expected prepareWallet to throw');
+    };
+    const expected = 'ledger.chain.url must not carry a username or a password, fetch refuses such a URL';
+    for (const url of ['http://alice:hunter2@localhost:1337', 'http://alice@localhost:1337', 'http://:hunter2@localhost:1337']) {
+      const text = message({ ledger: { chain: { provider: 'ogmios', url } } });
+      expect(text).toBe(expected);
+      expect(text).not.toMatch(/hunter2|alice|localhost/);
+    }
+    expect(message({ ledger: { chain: { provider: 'koios', network: 'preprod', url: 'https://bob:swordfish@koios.example' } } })).toBe(expected);
+  });
+
   it('never repeats a url or a token in a message, either can carry credentials', () => {
     const message = (options: unknown) => {
       try {
