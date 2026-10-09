@@ -10,7 +10,9 @@ export interface KeyConfig {
 /**
  * Optional parts of an output. Assets map units (policy id hex plus asset name
  * hex) to decimal quantities. datumHash and inlineDatum exclude each other.
- * scriptRef is the CBOR hex of [language tag, script bytes].
+ * scriptRef is the CBOR hex of the script inside a script reference, without its
+ * tag 24 wrapper: [0, native_script] for a native script, [1 to 3, plutus script
+ * bytes] for a Plutus V1 to V3 script.
  */
 export interface UtxoExtras {
   assets?: Record<string, string>;
@@ -71,7 +73,7 @@ export interface QuirkConfig {
    * malformed transaction is still InvalidRequest. Undefined or false switches it off.
    */
   submitFails?: boolean | string;
-  /** The wallet does not support CIP-95: no extension announced, no namespace, like an older wallet. */
+  /** The wallet does not support CIP-95: no extension announced, no namespace and no DRep key in signTx, like an older wallet. */
   noCip95?: boolean;
   /** supportedExtensions and getExtensions claim CIP-95, but the enabled api has no cip95 namespace. */
   cip95NamespaceMissing?: boolean;

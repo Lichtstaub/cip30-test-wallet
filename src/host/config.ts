@@ -14,7 +14,7 @@ import { resolveProtocolParams, type ProtocolParams, type ProtocolParamsInput } 
 import { defaultNetwork, networkIdOf, SLOT_CONFIGS, type CardanoNetwork } from './slot-config.js';
 import { KOIOS_URLS } from './chain/koios-urls.js';
 
-/** Public test vector from the CSL documentation. Holds no funds, safe to ship. */
+/** Public test vector from the CSL documentation. Anyone can spend what is sent to its addresses, so it is safe to ship and never meant to hold funds. */
 export const DEFAULT_MNEMONIC = 'test walk nut penalty hip pave soap entry language right filter choice';
 
 /** The project logo as an inline SVG (media/logo.svg), so a dApp rendering <img src> does not re-request the document. */
@@ -34,18 +34,30 @@ export type ChainOptions =
   | { provider: 'koios'; network: 'mainnet' | 'preprod' | 'preview'; url?: string; token?: string; allowMainnetSigning?: boolean };
 
 export interface WalletOptions {
+  /** Key under window.cardano. Default 'chw'. */
   name?: string;
+  /** CIP-30 name. Default 'Test Wallet'. */
   displayName?: string;
+  /** CIP-30 icon. Default the project logo as an SVG data URI. */
   icon?: string;
+  /** 0 for the test networks, 1 for mainnet. Addresses follow it. Default 0. */
   networkId?: 0 | 1;
+  /**
+   * CIP-1852 account source. Default the public CSL test vector. The keys end up in the page and in
+   * traces, use a throwaway mnemonic, never one that holds real funds.
+   */
   mnemonic?: string;
+  /** CIP-1852 account, 0 to 2^31 - 1. Default 0. */
   accountIndex?: number;
-  /** Whether the fixture installs the provider into the page at all. Defaults to true. */
+  /** Whether the fixture or attachWallet injects the provider into the page. Default true. init-script refuses false. */
   install?: boolean;
+  /** Owned outputs, in order. Default one UTxO of 10 ADA. Not with ledger.chain. */
   utxos?: ({ lovelace: number | bigint | string } & UtxoExtrasInput)[];
+  /** Outputs the ledger knows but does not own, with txId, index and addressHex. Not with ledger.chain. */
   foreignUtxos?: ForeignUtxoInput[];
+  /** Reproduced wallet and user behaviour, see quirks/README.md. */
   quirks?: QuirkConfig;
-  /** CIP-95: report the stake key as registered. Defaults to false, a fresh wallet. */
+  /** CIP-95: report the stake key as registered. Defaults to false, a fresh wallet. Not with ledger.chain. */
   stakeRegistered?: boolean;
   /**
    * state: apply every submitted transaction to the wallet's UTxOs and registration (default true).
@@ -56,7 +68,8 @@ export interface WalletOptions {
    * drepRegistered counts the wallet's DRep as registered with drepDeposit (default false),
    * network picks the slot calendar Plutus scripts see (default preprod for networkId 0, mainnet for 1).
    * chain: UTxOs and the stake registration come from this chain provider and submitTx sends there.
-   * Needs the ledger in Node and replaces utxos, foreignUtxos, stakeRegistered and the checks.
+   * Needs the ledger in Node and throws together with utxos, foreignUtxos, stakeRegistered,
+   * state: false, checks: true and the checks-only options.
    */
   ledger?: {
     state?: boolean;

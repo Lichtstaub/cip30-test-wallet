@@ -13,7 +13,7 @@ export const APIErrorCode = {
 export const TxSignErrorCode = {
   ProofGeneration: 1,
   UserDeclined: 2,
-  // CIP-95: returned regardless of user consent for a pre-Conway certificate.
+  // CIP-95: returned regardless of user consent for certificate 5 or 6.
   DeprecatedCertificate: 3,
 } as const;
 
@@ -57,6 +57,9 @@ export function isCip30Error(value: unknown): value is Cip30Error {
 }
 
 /**
+ * CHW_UNRESOLVED_INPUT: an input, collateral input or reference input the ledger does not know, or in chain mode one the chain does not show unspent.
+ * CHW_UNRESOLVED_SCRIPT: a script the transaction needs that is neither in the witness set nor a reference script of an input or reference input.
+ * CHW_UNSUPPORTED_TX_FORM: a transaction form this release cannot reason about, from signTx at partialSign false or from submitTx under the ledger checks.
  * CHW_EVALUATOR_UNAVAILABLE: the ledger checks need the Plutus evaluator and could not load it.
  * CHW_EVALUATOR_FAILED: the Plutus evaluator stopped on a transaction other than with a script failure.
  * CHW_CHAIN_UNAVAILABLE: the chain provider gave no usable answer (no connection, timeout, an HTTP error, a body that is not the expected JSON, a JSON-RPC error of its own).
