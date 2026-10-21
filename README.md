@@ -16,7 +16,7 @@ A Playwright test in the trace viewer. The wallet is detected, connects on prepr
 
 **Status: 0.x.** The signing core, the Playwright fixture and the `doctor` command are covered by unit tests and by browser tests in Chromium, Firefox and WebKit, and they run in the end-to-end suites of real dApps. Until 1.0 a minor release can still change the API, the notes of each GitHub release say what changed.
 
-Coding agents start with [AGENTS.md](https://github.com/Lichtstaub/cip30-test-wallet/blob/main/AGENTS.md).
+The package also ships [AGENTS.md](https://github.com/Lichtstaub/cip30-test-wallet/blob/main/AGENTS.md), a short guide for coding agents that condenses the rules this README explains.
 
 ## What is in the box
 
@@ -176,18 +176,11 @@ Everything the run produces is readable by a program:
 - Wallet errors are CIP-30 `{ code, info }` objects. Harness problems are `ChwError`s with a stable code such as `CHW_UNSUPPORTED_TX_FORM`, `CHW_UNRESOLVED_INPUT` or `CHW_UNRESOLVED_SCRIPT` and a hint on what to change.
 - `doctor --json` prints the full report, and the exit code (0 clean, 1 findings, 2 run failed) is enough to gate a pipeline.
 
-So an agent that changes a wallet flow can check its own work: write or extend a Playwright test, run it, read the journal and the assertion output, fix, repeat. A few lines in your project's agent instructions are enough:
+So an agent that changes a wallet flow can check its own work: write or extend a Playwright test, run it, read the journal and the assertion output, fix, repeat.
 
-```md
-Wallet flows are tested with cip30-test-wallet (Playwright fixture, import from `cip30-test-wallet/playwright`).
-After changing connect, signing or submit code, run the wallet tests and check `wallet.calls()` and `expectSignedBy`.
-Reproduce user-side failures with `walletOptions.quirks` (see node_modules/cip30-test-wallet/quirks/README.md), never with a real wallet.
-Before writing a transaction test, read node_modules/cip30-test-wallet/AGENTS.md and node_modules/cip30-test-wallet/docs/recipes.md: by default the wallet's UTxOs exist only in the wallet, and anything that submits outside the wallet must be intercepted. This does not hold with `walletOptions.ledger.chain`, where the UTxOs are real and a submit reaches the chain.
-Before deploying, run `npx cip30-test-wallet doctor <url> --json` and treat exit code 1 as a failed check.
-On macOS, run the browser tests and `doctor --deep` outside the agent sandbox or with escalation, browsers crash at launch inside it.
-```
+[examples/agent-instructions.md](https://github.com/Lichtstaub/cip30-test-wallet/blob/main/examples/agent-instructions.md) holds a few lines to copy into your project's own agent instructions file.
 
-On macOS, Playwright browsers cannot start inside an agent sandbox such as Codex `--sandbox workspace-write`. Chromium, Firefox and WebKit all abort at launch because the sandbox blocks the window server, Playwright reports only a closed browser, and every abort opens a crash dialog. The agent has to run browser tests and `doctor --deep` outside the sandbox or with its escalation. `doctor --deep` detects the Codex sandbox and stops with that hint instead of launching, see [Running inside an agent sandbox](docs/recipes.md#running-inside-an-agent-sandbox).
+On macOS, Playwright browsers cannot start inside an agent sandbox such as Codex `--sandbox workspace-write`. Chromium, Firefox and WebKit all abort at launch because the sandbox blocks the window server, Playwright reports only a closed browser, and every abort opens a crash dialog. Browser tests and `doctor --deep` therefore run outside the sandbox, in the developer's own terminal or as a single command the developer approves. `doctor --deep` detects the Codex sandbox and stops with a hint instead of launching, see [Running inside an agent sandbox](docs/recipes.md#running-inside-an-agent-sandbox).
 
 ### Agents that drive the browser themselves
 
