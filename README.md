@@ -376,6 +376,10 @@ A consumer SDK expecting real-wallet behaviour can still misbehave against a spe
 
 `examples/minimal-dapp` is a framework-free page served under several content security policies: strict, permissive, strict as a meta tag, report-only and hashed, plus a strict variant that answers with status 403 for the doctor tests. It scans `window.cardano`, connects, checks the network, reads the balance, signs and submits a fixed transaction, casts a DRep vote, delegates its vote to its own DRep, signs a message with the stake key, and runs a DRep login that tries the bare DRep ID and the type 6 address in turn. `npm run serve:demo` starts it on port 4173, `npm run test:browser` runs the browser suite against it in Chromium, Firefox and WebKit. `npm run doctor:demo` runs `doctor --deep` against its strict, permissive and hashed variants in one go, arguments after `--` go to every run, for example `npm run doctor:demo -- --browser webkit`.
 
+## In a production dApp
+
+[DRepTalk](https://dreptalk.com), a Cardano governance forum built with Astro on Cloudflare Workers, runs its browser tests with this wallet in CI. The suite in [`e2e/`](https://github.com/katomm/dreptalk.com/tree/main/e2e) covers DRep and delegator sign-in with several wallet quirks, a vote delegation, and an info action submission whose signed transaction the test decodes and checks. The app's server reads Koios from a small local fixture server there, so the CI job needs no funds and no secrets. Runs against preprod are opt-in, by environment variable.
+
 ## doctor
 
 ```bash
