@@ -13,19 +13,6 @@ export const EVAL_PROBE = `
   catch (e) { window.__chwProbeEval = 'blocked'; }
 `;
 
-/** Init script that injects a stub CIP-30 provider, optionally after a delay. */
-export function walletStub(delayMs = 0): string {
-  const define = `
-    window.cardano = window.cardano || {};
-    window.cardano.chw = {
-      apiVersion: '1', name: 'chw', icon: '', supportedExtensions: [],
-      isEnabled: () => Promise.resolve(false),
-      enable: () => Promise.resolve({ getNetworkId: () => Promise.resolve(0) }),
-    };
-  `;
-  return delayMs > 0 ? `setTimeout(() => { ${define} }, ${delayMs});` : define;
-}
-
 /**
  * Third probe path: append the eval probe to the page's own first-party
  * script by intercepting its response. The probe then executes as part of
