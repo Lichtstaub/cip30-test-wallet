@@ -77,6 +77,31 @@ describe('runDoctor, static', () => {
     expect(ids(r)).toContain('http-status');
     expect(r.findings.find((f) => f.id === 'http-status')!.severity).toBe('error');
     expect(exitCode(r)).toBe(1);
+    const detail = r.findings.find((f) => f.id === 'http-status')!.detail;
+    expect(detail).toContain('The analysis above');
+    expect(detail).not.toContain('Node fetch sends no browser user agent');
+  });
+
+  it('names the code of a failed fetch, never the cause message', async () => {
+    const r = await runDoctor('https://example.invalid/', {
+      fetchImpl: async () => {
+        throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ENOTFOUND', message: 'getaddrinfo ENOTFOUND example.invalid' } });
+      },
+    });
+    expect(r.errors).toEqual(['could not fetch https://example.invalid/: fetch failed (ENOTFOUND)']);
+  });
+
+  it('keeps the plain message when the fetch error has no cause code', async () => {
+    const r = await runDoctor('https://example.invalid/', {
+      fetchImpl: async () => {
+        throw Object.assign(new TypeError('fetch failed'), { cause: 'x' });
+      },
+    });
+    expect(r.errors).toEqual(['could not fetch https://example.invalid/: fetch failed']);
+  });
+
+  it('rejects a click timeout below 1 ms', async () => {
+    await expect(runDoctor('https://example.invalid/', { clickTimeoutMs: 0 })).rejects.toThrow('--click-timeout needs a positive integer');
   });
 
   it('reports a non-html content type as a warning finding', async () => {

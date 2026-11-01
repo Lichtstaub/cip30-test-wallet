@@ -6,13 +6,14 @@ import { runDoctor, type DoctorOptions } from '../host/doctor.js';
 import { takeValue } from './args.js';
 import { parseInitScriptArgs, type InitScriptArgs } from './init-script-args.js';
 
-export const USAGE = `usage: cip30-test-wallet doctor <url> [--deep] [--browser chromium|firefox|webkit] [--click <selector>] [--expect <selector>] [--inject-after <ms>] [--timeout <ms>] [--settle <ms>] [--json]
+export const USAGE = `usage: cip30-test-wallet doctor <url> [--deep] [--browser chromium|firefox|webkit] [--click <selector>] [--click-timeout <ms>] [--expect <selector>] [--inject-after <ms>] [--timeout <ms>] [--settle <ms>] [--json]
 
 Checks a deployed dApp for the traps that keep Cardano wallets from injecting:
 secure context, content security policy versus eval, and with --deep, when the
 page touches window.cardano and whether an injected wallet is detected.
 --timeout bounds the static fetch (default 15000 ms), --settle bounds how long
-the deep run waits after load and click before reading the probes.
+the deep run waits after load and click before reading the probes,
+--click-timeout how long the click waits for its selector (default 5000 ms).
 Exit codes: 0 clean, 1 findings, 2 the run itself failed.
 
 usage: cip30-test-wallet init-script [--options <file.json>] [--network 0|1] [--name <name>] [--mnemonic-env <VAR>] [--out <file.js>]
@@ -64,6 +65,13 @@ export function parseArgs(argv: string[]): Parsed {
       if (!v) return { command: 'error', message: `${flag} needs a value` };
       i = v.next;
       options.click = v.value;
+    } else if (flag === '--click-timeout') {
+      const v = takeValue(rest, i);
+      if (!v) return { command: 'error', message: `${flag} needs a value` };
+      i = v.next;
+      const ms = Number(v.value);
+      if (!Number.isInteger(ms) || ms < 1) return { command: 'error', message: '--click-timeout needs a positive integer' };
+      options.clickTimeoutMs = ms;
     } else if (flag === '--expect') {
       const v = takeValue(rest, i);
       if (!v) return { command: 'error', message: `${flag} needs a value` };

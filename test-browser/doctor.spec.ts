@@ -90,8 +90,18 @@ test.describe('doctor --deep against the demo', () => {
 
   test('a bad click selector is reported as a finding and the deep facts still fill in', async ({ browser, browserName }) => {
     test.slow();
-    const r = await runDoctor(`${base}/permissive/`, { deep: true, browser: browserName, browserImpl: browser, click: '#does-not-exist' });
+    const start = Date.now();
+    const r = await runDoctor(`${base}/permissive/`, {
+      deep: true,
+      browser: browserName,
+      browserImpl: browser,
+      click: '#does-not-exist',
+      clickTimeoutMs: 500,
+      settleMs: 300,
+    });
+    expect(Date.now() - start).toBeLessThan(5000);
     expect(ids(r)).toContain('click-failed');
+    expect(r.findings.find((f) => f.id === 'click-failed')!.detail).toContain('timeout: 500');
     expect(r.deep).not.toBeNull();
     expect(typeof r.deep!.access.count).toBe('number');
   });

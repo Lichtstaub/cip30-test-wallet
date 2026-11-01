@@ -33,6 +33,17 @@ describe('parseArgs', () => {
     expect(parseArgs(['doctor', 'mailto:x'])).toMatchObject({ command: 'error', message: expect.stringMatching(/not a http or https url/) });
   });
 
+  it('parses --click-timeout into the options', () => {
+    const r = parseArgs(['doctor', 'https://x.example/', '--click-timeout', '250']);
+    expect(r).toEqual({ command: 'doctor', url: 'https://x.example/', json: false, options: { clickTimeoutMs: 250 } });
+  });
+
+  it('rejects a --click-timeout that is not a positive integer', () => {
+    for (const v of ['0', '-1', '1.5', 'x']) {
+      expect(parseArgs(['doctor', 'https://x.example/', '--click-timeout', v])).toEqual({ command: 'error', message: '--click-timeout needs a positive integer' });
+    }
+  });
+
   it('parses --timeout and --settle into the options', () => {
     const r = parseArgs(['doctor', 'https://x.example/', '--timeout', '5000', '--settle', '2500']);
     expect(r).toEqual({ command: 'doctor', url: 'https://x.example/', json: false, options: { timeoutMs: 5000, settleMs: 2500 } });

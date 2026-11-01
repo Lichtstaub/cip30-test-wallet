@@ -8,6 +8,8 @@ export interface DoctorOptions {
   browser?: 'chromium' | 'firefox' | 'webkit';
   /** Selector to click after load, for pages that touch window.cardano only after a user action. */
   click?: string;
+  /** How long the click waits for its selector, in milliseconds. */
+  clickTimeoutMs?: number;
   /** Selector that must become visible once a wallet is detected. */
   expect?: string;
   /** Delay before the injected wallet appears, to test late injection handling. */
@@ -137,6 +139,10 @@ export function staticFindings(report: DoctorReport, policies: Policy[], verdict
 }
 
 export async function runDoctor(url: string, options: DoctorOptions = {}): Promise<DoctorReport> {
+  if (options.clickTimeoutMs !== undefined && !(Number.isInteger(options.clickTimeoutMs) && options.clickTimeoutMs >= 1)) {
+    // Playwright reads a timeout of 0 as no timeout, a missing selector would then never return.
+    throw new Error('--click-timeout needs a positive integer');
+  }
   const report = emptyReport(url);
   const fetchImpl = options.fetchImpl ?? fetch;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -151,7 +157,8 @@ export async function runDoctor(url: string, options: DoctorOptions = {}): Promi
     if (e instanceof Error && e.name === 'TimeoutError') {
       report.errors.push(`fetch of ${url} timed out after ${timeoutMs} ms`);
     } else {
-      report.errors.push(`could not fetch ${url}: ${messageOf(e)}`);
+      const code = causeCode(e);
+      report.errors.push(`could not fetch ${url}: ${messageOf(e)}${code ? ` (${code})` : ''}`);
     }
     return report;
   }
@@ -174,7 +181,8 @@ export async function runDoctor(url: string, options: DoctorOptions = {}): Promi
       severity: 'error',
       title: `the server answered ${report.status}`,
       detail:
-        'The analysis below describes whatever the server returned (a challenge page, an error page, a redirect target), not necessarily the dApp. Node fetch sends no browser user agent, bot walls often answer it with a challenge.',
+        'The analysis above describes whatever the server returned (a challenge page, an error page, a redirect target), not necessarily the dApp. ' +
+        'The doctor fetches with a user agent naming itself, not a browser one, and bot walls often answer that with a challenge.',
     });
   }
   if (report.contentType !== null && !report.contentType.includes('text/html')) {
@@ -203,7 +211,15 @@ export async function runDoctor(url: string, options: DoctorOptions = {}): Promi
   return report;
 }
 
-const CLICK_TIMEOUT_MS = 5000;
+const DEFAULT_CLICK_TIMEOUT_MS = 5000;
+
+/** The code of a failed fetch's cause, such as ENOTFOUND or CERT_HAS_EXPIRED. Never the cause message, it can carry host and header details. */
+function causeCode(e: unknown): string | undefined {
+  const cause = e instanceof Error ? e.cause : undefined;
+  if (typeof cause !== 'object' || cause === null) return undefined;
+  const code = (cause as { code?: unknown }).code;
+  return typeof code === 'string' ? code : undefined;
+}
 
 /** Escapes a string for literal use inside a RegExp, so a query string or path segment cannot be misread as a glob or regex pattern. */
 function escapeForRegExp(s: string): string {
@@ -211,9 +227,9 @@ function escapeForRegExp(s: string): string {
 }
 
 /** Clicks the selector, swallowing a failure into a message instead of aborting the run, the deep run still reports whatever it observed. */
-async function tryClick(page: Page, selector: string): Promise<string | null> {
+async function tryClick(page: Page, selector: string, timeoutMs: number): Promise<string | null> {
   try {
-    await page.click(selector, { timeout: CLICK_TIMEOUT_MS });
+    await page.click(selector, { timeout: timeoutMs });
     return null;
   } catch (e) {
     return messageOf(e);
@@ -246,6 +262,7 @@ export function resolveRouteProbe(target: string | null, routed: boolean, state:
 async function deepRun(report: DoctorReport, policies: Policy[], options: DoctorOptions): Promise<void> {
   const browserName = options.browser ?? 'chromium';
   const settleMs = options.settleMs ?? 1500;
+  const clickTimeoutMs = options.clickTimeoutMs ?? DEFAULT_CLICK_TIMEOUT_MS;
   const injectAfterMs = options.injectAfterMs ?? 0;
   const url = report.finalUrl ?? report.url;
   const origin = new URL(url).origin;
@@ -275,7 +292,7 @@ async function deepRun(report: DoctorReport, policies: Policy[], options: Doctor
     let clickError: string | null = null;
     if (loadOptions.click) {
       clickAtMs = (await page.evaluate(() => Math.round(performance.now()))) as number;
-      clickError = await tryClick(page, loadOptions.click);
+      clickError = await tryClick(page, loadOptions.click, clickTimeoutMs);
     }
     await page.waitForTimeout(loadOptions.settleMs ?? 1500);
     const { state, scripts } = (await page.evaluate(() => ({
@@ -307,7 +324,7 @@ async function deepRun(report: DoctorReport, policies: Policy[], options: Doctor
     }
     await page.goto(loadUrl, { waitUntil: 'load' });
     let clickError: string | null = null;
-    if (loadOptions.click) clickError = await tryClick(page, loadOptions.click);
+    if (loadOptions.click) clickError = await tryClick(page, loadOptions.click, clickTimeoutMs);
     const settleWindow = Math.max(loadSettleMs, loadInjectAfterMs + 500);
     let expectVisible: boolean | null = null;
     if (loadOptions.expect) {
@@ -386,7 +403,7 @@ async function deepRun(report: DoctorReport, policies: Policy[], options: Doctor
           id: 'click-failed',
           severity: 'warning',
           title: `the click on ${options.click} did not complete`,
-          detail: `page.click('${options.click}', { timeout: ${CLICK_TIMEOUT_MS} }) failed: ${clickError}. Continuing with the observation load's data.`,
+          detail: `page.click('${options.click}', { timeout: ${clickTimeoutMs} }) failed: ${clickError}. Continuing with the observation load's data.`,
         });
       }
     } finally {
