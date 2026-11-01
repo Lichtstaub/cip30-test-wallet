@@ -305,15 +305,8 @@ function ledgerOptions(ledger: unknown, networkId: 0 | 1): { state: boolean; che
   for (const key of Object.keys(options)) {
     if (!(LEDGER_OPTIONS as readonly string[]).includes(key)) throw new Error(`ledger.${key} is not a ledger option, known: ${LEDGER_OPTIONS.join(', ')}`);
   }
-  // Only undefined takes the default. null fails the boolean check instead of switching a check off.
-  const booleanOption = (key: 'state' | 'checks' | 'drepRegistered', fallback: boolean): boolean => {
-    const value: unknown = options[key];
-    if (value === undefined) return fallback;
-    if (typeof value !== 'boolean') throw new Error(`ledger.${key} must be a boolean, got ${String(value)}`);
-    return value;
-  };
-  const state = booleanOption('state', true);
-  const checks = booleanOption('checks', false);
+  const state = booleanOption(options.state, 'ledger.state', true);
+  const checks = booleanOption(options.checks, 'ledger.checks', false);
   if (options.chain !== undefined) {
     const chain = chainOptions(options.chain, networkId);
     // Before the checks-only rule below, so each option names why a chain replaces it.
@@ -331,7 +324,7 @@ function ledgerOptions(ledger: unknown, networkId: 0 | 1): { state: boolean; che
   const slot = options.currentSlot;
   const slotOk = (typeof slot === 'number' && Number.isSafeInteger(slot) && slot >= 0) || (typeof slot === 'bigint' && slot >= 0n);
   if (slot !== undefined && (!slotOk || BigInt(slot) > MAX_UINT64)) throw new Error(`ledger.currentSlot must be a non-negative integer slot number as number or bigint, got ${String(slot)}`);
-  const drepRegistered = booleanOption('drepRegistered', false);
+  const drepRegistered = booleanOption(options.drepRegistered, 'ledger.drepRegistered', false);
   const network = ledgerNetwork(options.network, networkId);
   return {
     state,
@@ -348,8 +341,11 @@ export function normalizeMnemonic(mnemonic: string): string {
   return mnemonic.normalize('NFKD').trim().split(/\s+/).join(' ').toLowerCase();
 }
 
-function isDefaultMnemonic(normalized: string): boolean {
-  return normalized === DEFAULT_MNEMONIC;
+/** Only undefined takes the fallback. null fails instead of switching an option off. */
+function booleanOption(value: unknown, name: string, fallback: boolean): boolean {
+  if (value === undefined) return fallback;
+  if (typeof value !== 'boolean') throw new Error(`${name} must be a boolean, got ${String(value)}`);
+  return value;
 }
 
 /** Repeated prepareWallet calls with the same mnemonic and accountIndex do not re-derive. */
@@ -368,10 +364,7 @@ export function prepareWallet(options: WalletOptions = {}): PreparedWallet {
   const networkId = options.networkId ?? 0;
   validateNetworkId(networkId);
   const accountIndex = options.accountIndex ?? 0;
-  const allowMainnetSigning: unknown = options.allowMainnetSigning;
-  if (allowMainnetSigning !== undefined && typeof allowMainnetSigning !== 'boolean') {
-    throw new Error(`walletOptions.allowMainnetSigning must be a boolean, got ${String(allowMainnetSigning)}`);
-  }
+  const allowMainnetSigning = booleanOption(options.allowMainnetSigning, 'walletOptions.allowMainnetSigning', false);
   // The value is a secret, so the message never includes it.
   if (options.mnemonic !== undefined && typeof options.mnemonic !== 'string') throw new Error('walletOptions.mnemonic must be a string');
   const normalized = normalizeMnemonic(options.mnemonic ?? DEFAULT_MNEMONIC);
@@ -392,9 +385,9 @@ export function prepareWallet(options: WalletOptions = {}): PreparedWallet {
   const submitFails = submitFailsProblem(options.quirks?.submitFails);
   if (submitFails) throw new Error(submitFails);
   // The default mnemonic is public, its keys cannot move real funds. A custom one or a chain can.
-  const custom = options.mnemonic !== undefined && !isDefaultMnemonic(normalized);
-  const signLocked = networkId === 1 && allowMainnetSigning !== true && (ledger.chain !== undefined || custom);
-  if (networkId === 1 && custom && allowMainnetSigning === true) {
+  const custom = normalized !== DEFAULT_MNEMONIC;
+  const signLocked = networkId === 1 && !allowMainnetSigning && (ledger.chain !== undefined || custom);
+  if (networkId === 1 && custom && allowMainnetSigning) {
     console.warn('cip30-test-wallet: allowMainnetSigning is on with a custom mnemonic on mainnet, signTx signs transactions the dApp can submit with real funds');
   }
 

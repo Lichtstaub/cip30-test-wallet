@@ -54,8 +54,7 @@ describe('connectChain', () => {
     const { prepared, wallet } = walletOf({ networkId, ledger: { chain: OGMIOS }, ...(allow === undefined ? {} : { allowMainnetSigning: allow }) });
     const connected = await connectChain(prepared, new FakeChain({ wallet, networkId }));
     expect(prepared.config.signLocked === true).toBe(locked);
-    expect(Object.keys(connected)).toEqual(['ledger']);
-    expect(await connected.ledger.pendingTxIds()).toEqual([]);
+    expect(await connected.pendingTxIds()).toEqual([]);
   });
 
   it.each([

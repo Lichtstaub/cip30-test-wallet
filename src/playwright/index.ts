@@ -164,7 +164,7 @@ export async function attachWallet(page: Page, options: WalletOptions = {}): Pro
       throw error;
     }
   }
-  const ledger: Ledger = chain ? chain.ledger : walletLedger(prepared);
+  const ledger: Ledger = chain ?? walletLedger(prepared);
   if (installed) {
     // The binding first: the init script finds it at document start in every engine.
     await page.exposeBinding(LEDGER_BINDING, ledgerBinding(ledger));

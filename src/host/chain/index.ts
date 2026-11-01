@@ -20,9 +20,9 @@ const networkName = (id: 0 | 1) => (id === 1 ? 'mainnet (networkId 1)' : 'a test
  * page loads. prepareWallet sets the mainnet lock, connectChain only makes sure the provider
  * serves walletOptions.networkId.
  */
-export async function connectChain(prepared: PreparedWallet, provider: ChainProvider): Promise<{ ledger: ChainLedger }> {
+export async function connectChain(prepared: PreparedWallet, provider: ChainProvider): Promise<ChainLedger> {
   const reported = await provider.networkId();
   const expected = prepared.config.networkId;
   if (reported !== expected) throw new Error(`ledger.chain: ${provider.name} reports ${networkName(reported)}, walletOptions.networkId is ${expected}`);
-  return { ledger: chainLedger(prepared, provider) };
+  return chainLedger(prepared, provider);
 }
