@@ -41,6 +41,8 @@ export interface DeepFacts {
 }
 
 export interface DoctorReport {
+  /** Version of the JSON shape. New fields never change it, removing or reinterpreting a field raises it. */
+  schemaVersion: 1;
   url: string;
   finalUrl: string | null;
   status: number | null;
@@ -56,6 +58,7 @@ export interface DoctorReport {
 
 export function emptyReport(url: string): DoctorReport {
   return {
+    schemaVersion: 1,
     url,
     finalUrl: null,
     status: null,
