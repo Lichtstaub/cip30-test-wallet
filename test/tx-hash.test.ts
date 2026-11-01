@@ -12,6 +12,11 @@ const fixtureHex = readFileSync('test/fixtures/preprod-0a399be6.hex', 'utf8').tr
 const fixture = hexToBytes(fixtureHex);
 
 describe('exit criterion 1: body hash', () => {
+  it('reads the fixture as a 4-element CBOR array of 1695 bytes', () => {
+    expect(fixtureHex.slice(0, 2)).toBe('84');
+    expect(fixture.length).toBe(1695);
+  });
+
   it('slices the body without re-encoding and matches Evolution byte for byte', () => {
     const ours = parseTransaction(fixture).bodyBytes;
     const theirs = Transaction.extractBodyBytes(fixture);
