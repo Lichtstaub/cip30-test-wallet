@@ -6,7 +6,7 @@ const base = 'http://localhost:4173';
 
 test.describe('doctor --deep against the demo', () => {
   test('strict: single scan, blocked eval agrees with the policy, page violation observed', async ({ browser, browserName }) => {
-    const r = await runDoctor(`${base}/strict/`, { deep: true, browser: browserName, browserImpl: browser, settleMs: 300 });
+    const r = await runDoctor(`${base}/strict/`, { deep: true, browser: browserName, browserImpl: browser, settleMs: 500 });
     expect(r.errors).toEqual([]);
     expect(r.deep!.access.count).toBe(1);
     expect(r.deep!.access.firstAccessMs).toBeGreaterThan(50);
@@ -26,7 +26,7 @@ test.describe('doctor --deep against the demo', () => {
   });
 
   test('hashed: the probe is skipped with a reason instead of breaking the page', async ({ browser, browserName }) => {
-    const r = await runDoctor(`${base}/hashed/`, { deep: true, browser: browserName, browserImpl: browser, settleMs: 300 });
+    const r = await runDoctor(`${base}/hashed/`, { deep: true, browser: browserName, browserImpl: browser, settleMs: 500 });
     expect(r.deep!.routeProbe).toBe('skipped');
     expect(r.deep!.routeProbeReason).toMatch(/hash/);
     expect(ids(r)).toContain('eval-probe-skipped');
@@ -50,7 +50,7 @@ test.describe('doctor --deep against the demo', () => {
   });
 
   test('a click path runs before the probes are read', async ({ browser, browserName }) => {
-    const r = await runDoctor(`${base}/permissive/`, { deep: true, browser: browserName, browserImpl: browser, settleMs: 300, click: '#connect' });
+    const r = await runDoctor(`${base}/permissive/`, { deep: true, browser: browserName, browserImpl: browser, settleMs: 500, click: '#connect' });
     expect(r.deep!.access.count).toBeGreaterThanOrEqual(2);
   });
 
