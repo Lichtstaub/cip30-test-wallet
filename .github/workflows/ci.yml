@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: [20, 22]
+        node: [20, 22, 24]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -91,10 +91,28 @@ jobs:
           path: test-results/
           retention-days: 7
 
+  # The peer range promises the oldest Playwright this job runs. Older ones cannot load the specs.
+  browser-oldest-playwright:
+    name: browser, oldest playwright
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm i -D @playwright/test@1.53.0 --no-save
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test --project=chromium
+
   devnet:
     name: devnet, protocol 11
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Pull requests run the chain specs in Chromium only, pushes to main in all three engines.
+    env:
+      ENGINES: ${{ github.event_name == 'push' && 'chromium firefox webkit' || 'chromium' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -111,8 +129,8 @@ jobs:
           docker tag mirror.gcr.io/cardanosolutions/ogmios@sha256:8892ef5f77b94f1c95427cf9f2b40e6235a32b27a8b1e378db02289f3991617f cardanosolutions/ogmios:v7.0.0
       - run: npm ci
       - run: npm run test:devnet
-      - run: npx playwright install --with-deps chromium firefox webkit
-      - run: npm run test:devnet:browser
+      - run: npx playwright install --with-deps $ENGINES
+      - run: npm run test:devnet:browser -- $(printf -- '--project=%s ' $ENGINES)
       - name: Devnet containers and volumes left behind
         if: always()
         run: |
