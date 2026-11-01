@@ -22,7 +22,7 @@ export function expectSignedBy(
   options: { roles?: SignerRole[] } = {},
 ): void {
   // lastSubmittedTx() is async, a missing await is the likeliest way to get here without a string.
-  if (typeof (txHex as unknown as { then?: unknown } | null)?.then === 'function') {
+  if ((txHex as unknown) instanceof Promise) {
     throw new Error('expectSignedBy: got a Promise instead of the transaction hex, await wallet.lastSubmittedTx() before passing it');
   }
   if (typeof txHex !== 'string' || txHex.length === 0) {

@@ -1,6 +1,7 @@
 import type { Browser, BrowserContext, BrowserType, Page } from '@playwright/test';
 import { collectPolicies, evaluateEval, hasHashSources, inlineHashConflict, isSecureContextUrl, type EvalVerdict, type Policy } from '../checks/csp.js';
 import { addFinding, emptyReport, type DeepFacts, type DoctorReport } from '../checks/report.js';
+import { causeCode } from './chain/transport.js';
 import type { ObservedState } from './doctor-probes.js';
 
 export interface DoctorOptions {
@@ -141,7 +142,7 @@ export function staticFindings(report: DoctorReport, policies: Policy[], verdict
 export async function runDoctor(url: string, options: DoctorOptions = {}): Promise<DoctorReport> {
   if (options.clickTimeoutMs !== undefined && !(Number.isInteger(options.clickTimeoutMs) && options.clickTimeoutMs >= 1)) {
     // Playwright reads a timeout of 0 as no timeout, a missing selector would then never return.
-    throw new Error('--click-timeout needs a positive integer');
+    throw new Error('clickTimeoutMs needs a positive integer');
   }
   const report = emptyReport(url);
   const fetchImpl = options.fetchImpl ?? fetch;
@@ -212,14 +213,6 @@ export async function runDoctor(url: string, options: DoctorOptions = {}): Promi
 }
 
 const DEFAULT_CLICK_TIMEOUT_MS = 5000;
-
-/** The code of a failed fetch's cause, such as ENOTFOUND or CERT_HAS_EXPIRED. Never the cause message, it can carry host and header details. */
-function causeCode(e: unknown): string | undefined {
-  const cause = e instanceof Error ? e.cause : undefined;
-  if (typeof cause !== 'object' || cause === null) return undefined;
-  const code = (cause as { code?: unknown }).code;
-  return typeof code === 'string' ? code : undefined;
-}
 
 /** Escapes a string for literal use inside a RegExp, so a query string or path segment cannot be misread as a glob or regex pattern. */
 function escapeForRegExp(s: string): string {

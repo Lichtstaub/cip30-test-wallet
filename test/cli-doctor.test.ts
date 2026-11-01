@@ -23,6 +23,7 @@ describe('parseArgs', () => {
   it('rejects unknown flags, bad browsers and missing urls', () => {
     expect(parseArgs(['doctor'])).toMatchObject({ command: 'error' });
     expect(parseArgs(['doctor', 'https://x.example/', '--bogus'])).toMatchObject({ command: 'error' });
+    expect(parseArgs(['doctor', 'https://x.example/', 'toString'])).toEqual({ command: 'error', message: 'unknown flag toString', topic: 'doctor' });
     expect(parseArgs(['doctor', 'https://x.example/', '--browser', 'edge'])).toMatchObject({ command: 'error' });
     expect(parseArgs(['doctor', 'not a url'])).toMatchObject({ command: 'error' });
     expect(parseArgs([])).toEqual({ command: 'help' });

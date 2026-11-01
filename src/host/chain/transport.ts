@@ -25,13 +25,17 @@ export function chainUnavailable(provider: string, method: string, reason: strin
   return new ChwError('CHW_CHAIN_UNAVAILABLE', redact(`${provider} ${method} failed: ${reason}`, secrets));
 }
 
+/** The error code Node's fetch keeps in cause (ECONNREFUSED, ENOTFOUND, CERT_HAS_EXPIRED and the like). Never the cause message, it can name the host or a header value. */
+export function causeCode(error: unknown): string | undefined {
+  const code = (error instanceof Error ? (error.cause as { code?: unknown } | null | undefined) : undefined)?.code;
+  return typeof code === 'string' ? code : undefined;
+}
+
 /** Why a fetch rejected, for chainUnavailable: a timeout, or the error code Node's fetch keeps in cause. Never a message, one can name the host or a header value. */
 export function fetchFailure(error: unknown): string {
   if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) return `no answer within ${CHAIN_TIMEOUT_MS / 1000} s`;
-  // Node's fetch rejects with "fetch failed" and keeps the reason (ECONNREFUSED and the like) in cause.code.
-  const cause = error instanceof Error ? (error as Error & { cause?: unknown }).cause : undefined;
-  const code = typeof cause === 'object' && cause !== null ? (cause as { code?: unknown }).code : undefined;
-  return typeof code === 'string' ? `request failed: ${code}` : 'request failed';
+  const code = causeCode(error);
+  return code ? `request failed: ${code}` : 'request failed';
 }
 
 /**

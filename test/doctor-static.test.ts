@@ -101,7 +101,7 @@ describe('runDoctor, static', () => {
   });
 
   it('rejects a click timeout below 1 ms', async () => {
-    await expect(runDoctor('https://example.invalid/', { clickTimeoutMs: 0 })).rejects.toThrow('--click-timeout needs a positive integer');
+    await expect(runDoctor('https://example.invalid/', { clickTimeoutMs: 0 })).rejects.toThrow('clickTimeoutMs needs a positive integer');
   });
 
   it('reports a non-html content type as a warning finding', async () => {
