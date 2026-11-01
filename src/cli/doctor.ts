@@ -6,16 +6,17 @@ import { runDoctor, type DoctorOptions } from '../host/doctor.js';
 import { takeValue } from './args.js';
 import { parseInitScriptArgs, type InitScriptArgs } from './init-script-args.js';
 
-export const USAGE = `usage: cip30-test-wallet doctor <url> [--deep] [--browser chromium|firefox|webkit] [--click <selector>] [--expect <selector>] [--inject-after <ms>] [--timeout <ms>] [--settle <ms>] [--json]
+export const DOCTOR_USAGE = `usage: cip30-test-wallet doctor <url> [--deep] [--browser chromium|firefox|webkit] [--click <selector>] [--click-timeout <ms>] [--expect <selector>] [--inject-after <ms>] [--timeout <ms>] [--settle <ms>] [--json]
 
 Checks a deployed dApp for the traps that keep Cardano wallets from injecting:
 secure context, content security policy versus eval, and with --deep, when the
 page touches window.cardano and whether an injected wallet is detected.
 --timeout bounds the static fetch (default 15000 ms), --settle bounds how long
-the deep run waits after load and click before reading the probes.
-Exit codes: 0 clean, 1 findings, 2 the run itself failed.
+the deep run waits after load and click before reading the probes,
+--click-timeout how long the click waits for its selector (default 5000 ms).
+Exit codes: 0 clean, 1 findings, 2 the run itself failed.`;
 
-usage: cip30-test-wallet init-script [--options <file.json>] [--network 0|1] [--name <name>] [--mnemonic-env <VAR>] [--out <file.js>]
+export const INIT_SCRIPT_USAGE = `usage: cip30-test-wallet init-script [--options <file.json>] [--network 0|1] [--name <name>] [--mnemonic-env <VAR>] [--out <file.js>]
 
 Prints the test wallet as one init script, for browser drivers that load a
 script file before the page's own scripts, such as Playwright MCP with
@@ -24,19 +25,38 @@ fixture's walletOptions. --mnemonic-env names the environment variable that
 holds the mnemonic, so it stays out of the command line. The script contains
 the wallet's private keys, use test mnemonics only.`;
 
+export const USAGE = `${DOCTOR_USAGE}\n\n${INIT_SCRIPT_USAGE}`;
+
+const USAGES = { doctor: DOCTOR_USAGE, 'init-script': INIT_SCRIPT_USAGE } as const;
+
+type Topic = keyof typeof USAGES;
+
 type Parsed =
   | { command: 'doctor'; url: string; json: boolean; options: DoctorOptions }
   | { command: 'init-script'; args: InitScriptArgs }
-  | { command: 'help' }
-  | { command: 'error'; message: string };
+  | { command: 'help'; topic?: Topic }
+  | { command: 'error'; message: string; topic?: Topic };
 
 const BROWSERS = new Set(['chromium', 'firefox', 'webkit']);
 
+/** Millisecond flags, the option each sets and its lowest valid value. Playwright reads a click timeout of 0 as no timeout, so that one starts at 1. */
+const INT_FLAGS = {
+  '--click-timeout': ['clickTimeoutMs', 1],
+  '--inject-after': ['injectAfterMs', 0],
+  '--timeout': ['timeoutMs', 0],
+  '--settle': ['settleMs', 0],
+} as const satisfies Record<string, readonly [keyof DoctorOptions, number]>;
+
 export function parseArgs(argv: string[]): Parsed {
   if (argv.length === 0 || argv[0] === '--help' || argv[0] === '-h') return { command: 'help' };
-  if (argv[0] === 'init-script') return parseInitScriptArgs(argv.slice(1));
-  if (argv[0] !== 'doctor') return { command: 'error', message: `unknown command ${argv[0]}` };
-  const [, url, ...rest] = argv;
+  if (argv[0] !== 'doctor' && argv[0] !== 'init-script') return { command: 'error', message: `unknown command ${argv[0]}` };
+  // A help flag anywhere after the command wins over everything else, before the url is parsed.
+  if (argv.slice(1).some((a) => a === '--help' || a === '-h')) return { command: 'help', topic: argv[0] };
+  const parsed = argv[0] === 'init-script' ? parseInitScriptArgs(argv.slice(1)) : parseDoctorArgs(argv.slice(1));
+  return parsed.command === 'error' ? { ...parsed, topic: argv[0] } : parsed;
+}
+
+function parseDoctorArgs([url, ...rest]: string[]): Parsed {
   if (!url) return { command: 'error', message: 'missing url' };
   let parsedUrl: URL;
   try {
@@ -69,27 +89,14 @@ export function parseArgs(argv: string[]): Parsed {
       if (!v) return { command: 'error', message: `${flag} needs a value` };
       i = v.next;
       options.expect = v.value;
-    } else if (flag === '--inject-after') {
+    } else if (Object.hasOwn(INT_FLAGS, flag)) {
+      const [key, min] = INT_FLAGS[flag as keyof typeof INT_FLAGS];
       const v = takeValue(rest, i);
       if (!v) return { command: 'error', message: `${flag} needs a value` };
       i = v.next;
       const ms = Number(v.value);
-      if (!Number.isInteger(ms) || ms < 0) return { command: 'error', message: '--inject-after needs a non-negative integer' };
-      options.injectAfterMs = ms;
-    } else if (flag === '--timeout') {
-      const v = takeValue(rest, i);
-      if (!v) return { command: 'error', message: `${flag} needs a value` };
-      i = v.next;
-      const ms = Number(v.value);
-      if (!Number.isInteger(ms) || ms < 0) return { command: 'error', message: '--timeout needs a non-negative integer' };
-      options.timeoutMs = ms;
-    } else if (flag === '--settle') {
-      const v = takeValue(rest, i);
-      if (!v) return { command: 'error', message: `${flag} needs a value` };
-      i = v.next;
-      const ms = Number(v.value);
-      if (!Number.isInteger(ms) || ms < 0) return { command: 'error', message: '--settle needs a non-negative integer' };
-      options.settleMs = ms;
+      if (!Number.isInteger(ms) || ms < min) return { command: 'error', message: `${flag} needs a ${min === 0 ? 'non-negative' : 'positive'} integer` };
+      options[key] = ms;
     } else return { command: 'error', message: `unknown flag ${flag}` };
   }
   return { command: 'doctor', url, json, options };
@@ -98,11 +105,11 @@ export function parseArgs(argv: string[]): Parsed {
 export async function main(argv: string[], io: { out: (s: string) => void; err: (s: string) => void }): Promise<number> {
   const parsed = parseArgs(argv);
   if (parsed.command === 'help') {
-    io.out(USAGE);
+    io.out(parsed.topic ? USAGES[parsed.topic] : USAGE);
     return 0;
   }
   if (parsed.command === 'error') {
-    io.err(`${parsed.message}\n${USAGE}`);
+    io.err(`${parsed.message}\nrun cip30-test-wallet ${parsed.topic ? `${parsed.topic} ` : ''}--help for the usage`);
     return 2;
   }
   if (parsed.command === 'init-script') {
