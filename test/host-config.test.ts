@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { prepareWallet } from '../src/host/config.js';
+import { DEFAULT_MNEMONIC, normalizeMnemonic, prepareWallet } from '../src/host/config.js';
 import { EXPECTED_PAYMENT_ADDRESS, EXPECTED_PAYMENT_PUB_PREFIX, EXPECTED_REWARD_ADDRESS } from './fixtures/vectors.js';
 
 describe('prepareWallet', () => {
@@ -78,5 +78,20 @@ describe('prepareWallet', () => {
     expect(w.drepId).toBe('drep1y2jmg4g450lced7q9n34rq6d5vjwkm0ugx6h0894u6ur92s9txn3a');
     expect(w.config.stakeRegistered).toBe(false);
     expect(prepareWallet({ stakeRegistered: true }).config.stakeRegistered).toBe(true);
+  });
+});
+
+describe('normalizeMnemonic', () => {
+  it('collapses whitespace and case to the default form', () => {
+    expect(normalizeMnemonic('  Test  WALK nut\npenalty hip pave soap entry language right filter choice\n')).toBe(DEFAULT_MNEMONIC);
+  });
+
+  it('applies NFKD so fullwidth letters match', () => {
+    expect(normalizeMnemonic('ｔｅｓｔ walk nut penalty hip pave soap entry language right filter choice')).toBe(DEFAULT_MNEMONIC);
+  });
+
+  it('derives the same wallet from a differently written default mnemonic', () => {
+    const written = 'Test Walk Nut Penalty Hip Pave Soap Entry Language Right Filter Choice\n';
+    expect(prepareWallet({ mnemonic: written }).paymentPublicKeyHex).toBe(prepareWallet().paymentPublicKeyHex);
   });
 });

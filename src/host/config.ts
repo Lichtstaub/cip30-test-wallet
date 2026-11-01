@@ -340,14 +340,23 @@ function validateNetworkId(v: number): void {
   if (v !== 0 && v !== 1) throw new Error(`networkId must be 0 or 1, got ${v}`);
 }
 
+/** The one form a mnemonic is derived and compared in: NFKD, single spaces, lowercase. */
+export function normalizeMnemonic(mnemonic: string): string {
+  return mnemonic.normalize('NFKD').trim().split(/\s+/).join(' ').toLowerCase();
+}
+
+function isDefaultMnemonic(normalized: string): boolean {
+  return normalized === DEFAULT_MNEMONIC;
+}
+
 /** Repeated prepareWallet calls with the same mnemonic and accountIndex do not re-derive. */
 const accountCache = new Map<string, DerivedAccount>();
 
-function cachedDeriveAccount(mnemonic: string, accountIndex: number): DerivedAccount {
-  const key = `${accountIndex}:${mnemonic}`;
+function cachedDeriveAccount(normalized: string, accountIndex: number): DerivedAccount {
+  const key = `${accountIndex}:${normalized}`;
   const cached = accountCache.get(key);
   if (cached) return cached;
-  const account = deriveAccount(mnemonic, accountIndex);
+  const account = deriveAccount(normalized, accountIndex);
   accountCache.set(key, account);
   return account;
 }
@@ -356,7 +365,7 @@ export function prepareWallet(options: WalletOptions = {}): PreparedWallet {
   const networkId = options.networkId ?? 0;
   validateNetworkId(networkId);
   const accountIndex = options.accountIndex ?? 0;
-  const account = cachedDeriveAccount(options.mnemonic ?? DEFAULT_MNEMONIC, accountIndex);
+  const account = cachedDeriveAccount(normalizeMnemonic(options.mnemonic ?? DEFAULT_MNEMONIC), accountIndex);
   const paymentPub = publicKey(account.payment);
   const stakePub = publicKey(account.stake);
   const drepPub = publicKey(account.drep);
