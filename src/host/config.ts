@@ -372,6 +372,8 @@ export function prepareWallet(options: WalletOptions = {}): PreparedWallet {
   if (allowMainnetSigning !== undefined && typeof allowMainnetSigning !== 'boolean') {
     throw new Error(`walletOptions.allowMainnetSigning must be a boolean, got ${String(allowMainnetSigning)}`);
   }
+  // The value is a secret, so the message never includes it.
+  if (options.mnemonic !== undefined && typeof options.mnemonic !== 'string') throw new Error('walletOptions.mnemonic must be a string');
   const normalized = normalizeMnemonic(options.mnemonic ?? DEFAULT_MNEMONIC);
   const account = cachedDeriveAccount(normalized, accountIndex);
   const paymentPub = publicKey(account.payment);

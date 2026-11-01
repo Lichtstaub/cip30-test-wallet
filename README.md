@@ -252,7 +252,7 @@ The fixture injects into any URL, so this also works against a deployed site, no
 
 ## Keys and secrets
 
-The wallet's extended private keys are serialised into the page's init script by design, that is how an injected CIP-30 provider signs without a node process to call back into. So they appear in Playwright traces, HAR files and any dump of the page. The same holds for the file `init-script` writes, keep it out of version control. Use only throwaway mnemonics for tests, never one that holds real funds. The default mnemonic is the public CSL test vector. Its keys are known to everyone, so whatever is sent to its addresses can be spent by anyone.
+The wallet's extended private keys are serialised into the page's init script by design, that is how an injected CIP-30 provider signs without a node process to call back into. So they appear in Playwright traces, HAR files and any dump of the page. The same holds for the file `init-script` writes, keep it out of version control. Use only throwaway mnemonics for tests, never one that holds real funds. Offline, `networkId: 1` with a mnemonic of your own refuses `signTx` with `CHW_MAINNET_LOCKED` unless `walletOptions.allowMainnetSigning` is `true`, see **Mainnet** under [Chain mode](#chain-mode). The default mnemonic is the public CSL test vector. Its keys are known to everyone, so whatever is sent to its addresses can be spent by anyone.
 
 In [chain mode](#chain-mode) on a public network, use a mnemonic of your own and pass it through an environment variable. The default mnemonic is public, and its preprod address holds UTxOs other people sent there, which `getUtxos` then shows. A Koios `token` stays in Node, it never reaches the page, the journal or an error message.
 

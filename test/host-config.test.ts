@@ -90,6 +90,12 @@ describe('normalizeMnemonic', () => {
     expect(normalizeMnemonic('ｔｅｓｔ walk nut penalty hip pave soap entry language right filter choice')).toBe(DEFAULT_MNEMONIC);
   });
 
+  it('rejects a non-string mnemonic without echoing the value', () => {
+    const bad = { mnemonic: 123456789 } as unknown as Parameters<typeof prepareWallet>[0];
+    expect(() => prepareWallet(bad)).toThrow('walletOptions.mnemonic must be a string');
+    expect(() => prepareWallet(bad)).not.toThrow(/123456789/);
+  });
+
   it('derives the same wallet from a differently written default mnemonic', () => {
     const written = 'Test Walk Nut Penalty Hip Pave Soap Entry Language Right Filter Choice\n';
     expect(prepareWallet({ mnemonic: written }).paymentPublicKeyHex).toBe(prepareWallet().paymentPublicKeyHex);

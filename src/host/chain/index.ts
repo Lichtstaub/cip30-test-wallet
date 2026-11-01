@@ -17,7 +17,8 @@ const networkName = (id: 0 | 1) => (id === 1 ? 'mainnet (networkId 1)' : 'a test
 
 /**
  * The provider's network must be the one the wallet's addresses are for, checked before the
- * page loads. The mainnet lock follows from networkId alone, prepareWallet sets it.
+ * page loads. prepareWallet sets the mainnet lock, connectChain only makes sure the provider
+ * serves walletOptions.networkId.
  */
 export async function connectChain(prepared: PreparedWallet, provider: ChainProvider): Promise<{ ledger: ChainLedger }> {
   const reported = await provider.networkId();
