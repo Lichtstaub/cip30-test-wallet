@@ -76,6 +76,11 @@ describe.skipIf(!existsSync('dist/page.js'))('init-script output', () => {
     expect(window['__chw']).toBeDefined();
   });
 
+  it('locks signTx on mainnet with a custom mnemonic', () => {
+    const script = runInitScript({ networkId: 1, mnemonicEnv: 'E2E_MNEMONIC' }, { E2E_MNEMONIC: MNEMONIC })!;
+    expect(script).toContain('"signLocked":true');
+  });
+
   it('writes to --out instead of returning the script', () => {
     withTempDir((dir) => {
       const out = join(dir, 'wallet.js');

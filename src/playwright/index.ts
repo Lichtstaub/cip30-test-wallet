@@ -168,8 +168,7 @@ export async function attachWallet(page: Page, options: WalletOptions = {}): Pro
   if (installed) {
     // The binding first: the init script finds it at document start in every engine.
     await page.exposeBinding(LEDGER_BINDING, ledgerBinding(ledger));
-    const lock = chain?.signLocked ? { signLocked: true as const } : {};
-    const config = { ...prepared.config, ledger: { ...prepared.config.ledger!, binding: LEDGER_BINDING, ...lock } };
+    const config = { ...prepared.config, ledger: { ...prepared.config.ledger!, binding: LEDGER_BINDING } };
     await page.addInitScript({ content: initScript(config) });
   }
   return makeHandle(page, prepared, installed, ledger);

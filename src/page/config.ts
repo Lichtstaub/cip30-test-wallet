@@ -111,11 +111,12 @@ export interface PageConfig {
    * binding: name of a host function the page calls instead of keeping its own
    * ledger, set by the Playwright fixture. checks: the host ledger checks every
    * submitted transaction. chain: the host ledger reads a chain provider. For
-   * both the page only warns when it has no binding to reach them. signLocked:
-   * the chain is mainnet without allowMainnetSigning, signTx refuses. Absent
+   * both the page only warns when it has no binding to reach them. Absent
    * means the defaults.
    */
-  ledger?: { state: boolean; binding?: string; checks?: boolean; chain?: true; signLocked?: true };
+  ledger?: { state: boolean; binding?: string; checks?: boolean; chain?: true };
+  /** signTx refuses: mainnet in chain mode or with a custom mnemonic, without allowMainnetSigning. */
+  signLocked?: true;
 }
 
 export interface JournalEntry {

@@ -27,11 +27,10 @@ type ForeignUtxoInput = { txId: string; index: number; addressHex: string; lovel
  * A chain the wallet's ledger reads and submits to instead of keeping UTxOs in memory.
  * ogmios: an Ogmios server over HTTP, such as a devnet or an own node.
  * koios: the public Koios API of the network, url replaces its default, token goes along as a bearer token.
- * allowMainnetSigning: signTx signs when the chain is mainnet. Default false, signTx then throws CHW_MAINNET_LOCKED.
  */
 export type ChainOptions =
-  | { provider: 'ogmios'; url: string; allowMainnetSigning?: boolean }
-  | { provider: 'koios'; network: 'mainnet' | 'preprod' | 'preview'; url?: string; token?: string; allowMainnetSigning?: boolean };
+  | { provider: 'ogmios'; url: string }
+  | { provider: 'koios'; network: 'mainnet' | 'preprod' | 'preview'; url?: string; token?: string };
 
 export interface WalletOptions {
   /** Key under window.cardano. Default 'chw'. */
@@ -49,6 +48,11 @@ export interface WalletOptions {
   mnemonic?: string;
   /** CIP-1852 account, 0 to 2^31 - 1. Default 0. */
   accountIndex?: number;
+  /**
+   * signTx signs on mainnet (networkId 1) in chain mode or with a custom mnemonic. Default false,
+   * signTx then throws CHW_MAINNET_LOCKED. Offline with the default mnemonic signTx always signs.
+   */
+  allowMainnetSigning?: boolean;
   /** Whether the fixture or attachWallet injects the provider into the page. Default true. init-script refuses false. */
   install?: boolean;
   /** Owned outputs, in order. Default one UTxO of 10 ADA. Not with ledger.chain. */
@@ -219,8 +223,8 @@ function ledgerNetwork(value: unknown, networkId: 0 | 1): CardanoNetwork {
 }
 
 const CHAIN_OPTIONS = {
-  ogmios: ['provider', 'url', 'allowMainnetSigning'],
-  koios: ['provider', 'network', 'url', 'token', 'allowMainnetSigning'],
+  ogmios: ['provider', 'url'],
+  koios: ['provider', 'network', 'url', 'token'],
 } as const;
 const KOIOS_NETWORKS = ['mainnet', 'preprod', 'preview'] as const;
 /** RFC 6750 b64token: a valid header value, so fetch never refuses it with an error that repeats it. */
@@ -268,16 +272,15 @@ function chainOptions(value: unknown, networkId: 0 | 1): ChainOptions {
   const options = value as Record<string, unknown>;
   const provider = options['provider'];
   if (provider !== 'ogmios' && provider !== 'koios') throw new Error(`ledger.chain.provider must be ogmios or koios, got ${String(provider)}`);
+  // Before the unknown keys, so the old place of the option names the new one.
+  if ('allowMainnetSigning' in options) throw new Error('ledger.chain.allowMainnetSigning moved to walletOptions.allowMainnetSigning');
   const known: readonly string[] = CHAIN_OPTIONS[provider];
   for (const key of Object.keys(options)) {
     if (!known.includes(key)) throw new Error(`ledger.chain.${key} is not an option of provider ${String(provider)}, known: ${known.join(', ')}`);
   }
-  const allow = options['allowMainnetSigning'];
-  if (allow !== undefined && typeof allow !== 'boolean') throw new Error(`ledger.chain.allowMainnetSigning must be a boolean, got ${String(allow)}`);
-  const signing = allow === undefined ? {} : { allowMainnetSigning: allow };
   if (provider === 'ogmios') {
     if (options['url'] === undefined) throw new Error('ledger.chain.url is required for provider ogmios, the address of the Ogmios server such as http://localhost:1337');
-    return { provider: 'ogmios', url: chainUrl(options['url']), ...signing };
+    return { provider: 'ogmios', url: chainUrl(options['url']) };
   }
   const network = options['network'];
   if (typeof network !== 'string' || !(KOIOS_NETWORKS as readonly string[]).includes(network)) {
@@ -291,7 +294,7 @@ function chainOptions(value: unknown, networkId: 0 | 1): ChainOptions {
   if (token !== undefined && (typeof token !== 'string' || token === '')) throw new Error('ledger.chain.token must be a non-empty string');
   if (typeof token === 'string' && !BEARER_TOKEN.test(token)) throw new Error('ledger.chain.token must be a bearer token of letters, digits and - . _ ~ + /, with = only at the end');
   const url = options['url'] === undefined ? KOIOS_URLS[koiosNetwork] : chainUrl(options['url']);
-  return { provider: 'koios', network: koiosNetwork, url, ...(token === undefined ? {} : { token }), ...signing };
+  return { provider: 'koios', network: koiosNetwork, url, ...(token === undefined ? {} : { token }) };
 }
 
 /** Checked in Node, so a typo fails here instead of switching a check off without a word. */
@@ -365,7 +368,12 @@ export function prepareWallet(options: WalletOptions = {}): PreparedWallet {
   const networkId = options.networkId ?? 0;
   validateNetworkId(networkId);
   const accountIndex = options.accountIndex ?? 0;
-  const account = cachedDeriveAccount(normalizeMnemonic(options.mnemonic ?? DEFAULT_MNEMONIC), accountIndex);
+  const allowMainnetSigning: unknown = options.allowMainnetSigning;
+  if (allowMainnetSigning !== undefined && typeof allowMainnetSigning !== 'boolean') {
+    throw new Error(`walletOptions.allowMainnetSigning must be a boolean, got ${String(allowMainnetSigning)}`);
+  }
+  const normalized = normalizeMnemonic(options.mnemonic ?? DEFAULT_MNEMONIC);
+  const account = cachedDeriveAccount(normalized, accountIndex);
   const paymentPub = publicKey(account.payment);
   const stakePub = publicKey(account.stake);
   const drepPub = publicKey(account.drep);
@@ -381,6 +389,12 @@ export function prepareWallet(options: WalletOptions = {}): PreparedWallet {
   checkOwnedSums(utxos);
   const submitFails = submitFailsProblem(options.quirks?.submitFails);
   if (submitFails) throw new Error(submitFails);
+  // The default mnemonic is public, its keys cannot move real funds. A custom one or a chain can.
+  const custom = options.mnemonic !== undefined && !isDefaultMnemonic(normalized);
+  const signLocked = networkId === 1 && allowMainnetSigning !== true && (ledger.chain !== undefined || custom);
+  if (networkId === 1 && custom && allowMainnetSigning === true) {
+    console.warn('cip30-test-wallet: allowMainnetSigning is on with a custom mnemonic on mainnet, signTx signs transactions the dApp can submit with real funds');
+  }
 
   const config: PageConfig = {
     name: options.name ?? 'chw',
@@ -398,6 +412,7 @@ export function prepareWallet(options: WalletOptions = {}): PreparedWallet {
     stakeRegistered: options.stakeRegistered ?? false,
     // checks and chain only reach the page when set, so the page can warn when it has no host ledger. The chain options stay in Node.
     ledger: ledger.chain ? { state: true, chain: true } : ledger.checks ? { state: ledger.state, checks: true } : { state: ledger.state },
+    ...(signLocked ? { signLocked: true as const } : {}),
   };
 
   return {
