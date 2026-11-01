@@ -14,6 +14,16 @@ import { standardUnsignedTx } from './helpers/build-tx.js';
 import { enableChw } from './helpers/page.js';
 
 describe('expectSignedBy', () => {
+  it('names the missing transaction instead of failing inside the hex decoder', () => {
+    const prepared = prepareWallet();
+    expect(() => expectSignedBy(undefined as never, prepared)).toThrow(
+      /^expectSignedBy: no transaction to check, got undefined\. wallet\.lastSubmittedTx\(\) returns undefined until the dApp submitted one on this page$/,
+    );
+    expect(() => expectSignedBy('', prepared)).toThrow(/^expectSignedBy: no transaction to check, got ''\./);
+    expect(() => expectSignedBy(null as never, prepared)).toThrow(/^expectSignedBy: no transaction to check, got null\./);
+    expect(() => expectSignedBy(42 as never, prepared)).toThrow(/^expectSignedBy: no transaction to check, got number\./);
+  });
+
   it('passes for a transaction the wallet signed and fails for the unsigned one', async () => {
     const prepared = prepareWallet();
     const target: InstallTarget = {};

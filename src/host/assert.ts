@@ -21,6 +21,12 @@ export function expectSignedBy(
   wallet: { paymentPublicKeyHex: string; stakePublicKeyHex?: string; drepPublicKeyHex?: string },
   options: { roles?: SignerRole[] } = {},
 ): void {
+  if (typeof txHex !== 'string' || txHex.length === 0) {
+    const got = txHex === '' ? "''" : txHex === null ? 'null' : typeof txHex;
+    throw new Error(
+      `expectSignedBy: no transaction to check, got ${got}. wallet.lastSubmittedTx() returns undefined until the dApp submitted one on this page`,
+    );
+  }
   const roles = options.roles ?? ['payment'];
   // An empty list would pass without checking anything.
   if (roles.length === 0) throw new Error('expectSignedBy: roles must name at least one key');
