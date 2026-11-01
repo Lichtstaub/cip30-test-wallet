@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { main, parseArgs } from '../src/cli/doctor.js';
+import { INIT_SCRIPT_USAGE, main, parseArgs } from '../src/cli/doctor.js';
 import { resolveWalletOptions, runInitScript } from '../src/cli/init-script.js';
 import { runInBareWindow } from './helpers/page.js';
 
@@ -28,7 +28,7 @@ describe('init-script arguments', () => {
   });
 
   it('rejects unknown flags, missing values and bad networks', () => {
-    expect(parseArgs(['init-script', '--bogus'])).toMatchObject({ command: 'error', message: 'unknown flag --bogus' });
+    expect(parseArgs(['init-script', '--bogus'])).toEqual({ command: 'error', message: 'unknown flag --bogus', topic: 'init-script' });
     expect(parseArgs(['init-script', '--out'])).toMatchObject({ command: 'error', message: '--out needs a value' });
     expect(parseArgs(['init-script', '--network', '2'])).toMatchObject({ command: 'error' });
   });
@@ -82,6 +82,20 @@ describe.skipIf(!existsSync('dist/page.js'))('init-script output', () => {
       expect(runInitScript({ out }, {})).toBeUndefined();
       expect(readFileSync(out, 'utf8')).toContain('__chwInit(');
     });
+  });
+
+  it('points an argument error to the init-script help', async () => {
+    const err: string[] = [];
+    const code = await main(['init-script', '--bogus'], { out: () => {}, err: (s) => err.push(s) });
+    expect(code).toBe(2);
+    expect(err.join('\n')).toBe('unknown flag --bogus\nrun cip30-test-wallet init-script --help for the usage');
+  });
+
+  it('prints only the init-script usage for init-script --help', async () => {
+    const out: string[] = [];
+    const code = await main(['init-script', '--help'], { out: (s) => out.push(s), err: () => {} });
+    expect(code).toBe(0);
+    expect(out.join('\n')).toBe(INIT_SCRIPT_USAGE);
   });
 
   it('prints the script through main and exits 0', async () => {

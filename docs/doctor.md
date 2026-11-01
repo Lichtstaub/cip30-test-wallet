@@ -1,6 +1,6 @@
 # doctor
 
-`npx cip30-test-wallet doctor <url>` checks a deployed dApp for the traps that keep Cardano wallets from injecting. `npx cip30-test-wallet --help`, or `-h` in its place, prints the usage with every flag. The help flag goes first, right after the package name. `doctor --help` takes `--help` for the URL and exits with 2.
+`npx cip30-test-wallet doctor <url>` checks a deployed dApp for the traps that keep Cardano wallets from injecting. `npx cip30-test-wallet doctor --help`, or `-h`, prints the usage with every flag and exits with 0, wherever the flag stands after `doctor`. `npx cip30-test-wallet --help` prints the usage of both commands. An invalid argument prints the error and a pointer to `doctor --help` and exits with 2.
 
 ## Static run
 

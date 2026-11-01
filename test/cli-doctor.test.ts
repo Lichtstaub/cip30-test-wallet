@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { main, parseArgs } from '../src/cli/doctor.js';
+import { DOCTOR_USAGE, INIT_SCRIPT_USAGE, main, parseArgs, USAGE } from '../src/cli/doctor.js';
 
 describe('parseArgs', () => {
   it('parses the doctor command with flags', () => {
@@ -27,6 +27,15 @@ describe('parseArgs', () => {
     expect(parseArgs(['doctor', 'not a url'])).toMatchObject({ command: 'error' });
     expect(parseArgs([])).toEqual({ command: 'help' });
     expect(parseArgs(['--help'])).toEqual({ command: 'help' });
+    expect(parseArgs(['-h'])).toEqual({ command: 'help' });
+  });
+
+  it('takes --help or -h anywhere after a command as help for that command', () => {
+    expect(parseArgs(['doctor', '--help'])).toEqual({ command: 'help', topic: 'doctor' });
+    expect(parseArgs(['doctor', 'https://x.example/', '-h'])).toEqual({ command: 'help', topic: 'doctor' });
+    expect(parseArgs(['doctor', 'https://x.example/', '--bogus', '--help'])).toEqual({ command: 'help', topic: 'doctor' });
+    expect(parseArgs(['init-script', '--help'])).toEqual({ command: 'help', topic: 'init-script' });
+    expect(parseArgs(['init-script', '--network', '0', '-h'])).toEqual({ command: 'help', topic: 'init-script' });
   });
 
   it('rejects a url that is not http or https', () => {
@@ -40,7 +49,7 @@ describe('parseArgs', () => {
 
   it('rejects a --click-timeout that is not a positive integer', () => {
     for (const v of ['0', '-1', '1.5', 'x']) {
-      expect(parseArgs(['doctor', 'https://x.example/', '--click-timeout', v])).toEqual({ command: 'error', message: '--click-timeout needs a positive integer' });
+      expect(parseArgs(['doctor', 'https://x.example/', '--click-timeout', v])).toEqual({ command: 'error', message: '--click-timeout needs a positive integer', topic: 'doctor' });
     }
   });
 
@@ -55,12 +64,33 @@ describe('parseArgs', () => {
   });
 });
 
+describe('usage', () => {
+  it('combines both command usages into the top-level one', () => {
+    expect(USAGE).toBe(`${DOCTOR_USAGE}\n\n${INIT_SCRIPT_USAGE}`);
+  });
+});
+
 describe('main', () => {
-  it('prints usage and returns 2 on a parse error', async () => {
+  it('prints a one-line error with a pointer to the command help and returns 2', async () => {
     const err: string[] = [];
-    const code = await main(['doctor'], { out: () => undefined, err: (s) => err.push(s) });
+    const code = await main(['doctor', 'https://x.example/', '--bogus'], { out: () => undefined, err: (s) => err.push(s) });
     expect(code).toBe(2);
-    expect(err.join('\n')).toMatch(/usage/i);
+    expect(err.join('\n')).toBe('unknown flag --bogus\nrun cip30-test-wallet doctor --help for the usage');
+  });
+
+  it('points an unknown command to the top-level help', async () => {
+    const err: string[] = [];
+    const code = await main(['nope'], { out: () => undefined, err: (s) => err.push(s) });
+    expect(code).toBe(2);
+    expect(err.join('\n')).toBe('unknown command nope\nrun cip30-test-wallet --help for the usage');
+  });
+
+  it('prints only the doctor usage for doctor --help and returns 0', async () => {
+    const out: string[] = [];
+    const code = await main(['doctor', '--help'], { out: (s) => out.push(s), err: () => undefined });
+    expect(code).toBe(0);
+    expect(out.join('\n')).toBe(DOCTOR_USAGE);
+    expect(out.join('\n')).not.toContain('init-script [--options');
   });
 
   it('returns the report exit code and prints json when asked', async () => {
