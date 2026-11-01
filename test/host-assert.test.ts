@@ -24,6 +24,13 @@ describe('expectSignedBy', () => {
     expect(() => expectSignedBy(42 as never, prepared)).toThrow(/^expectSignedBy: no transaction to check, got number\./);
   });
 
+  it('names a missing await when handed the promise from lastSubmittedTx', () => {
+    const prepared = prepareWallet();
+    expect(() => expectSignedBy(Promise.resolve('84') as never, prepared)).toThrow(
+      /^expectSignedBy: got a Promise instead of the transaction hex, await wallet\.lastSubmittedTx\(\) before passing it$/,
+    );
+  });
+
   it('passes for a transaction the wallet signed and fails for the unsigned one', async () => {
     const prepared = prepareWallet();
     const target: InstallTarget = {};

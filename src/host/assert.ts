@@ -21,6 +21,10 @@ export function expectSignedBy(
   wallet: { paymentPublicKeyHex: string; stakePublicKeyHex?: string; drepPublicKeyHex?: string },
   options: { roles?: SignerRole[] } = {},
 ): void {
+  // lastSubmittedTx() is async, a missing await is the likeliest way to get here without a string.
+  if (typeof (txHex as unknown as { then?: unknown } | null)?.then === 'function') {
+    throw new Error('expectSignedBy: got a Promise instead of the transaction hex, await wallet.lastSubmittedTx() before passing it');
+  }
   if (typeof txHex !== 'string' || txHex.length === 0) {
     const got = txHex === '' ? "''" : txHex === null ? 'null' : typeof txHex;
     throw new Error(
