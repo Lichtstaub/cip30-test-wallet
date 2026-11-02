@@ -7,6 +7,8 @@ const isEnabled = (page: Page) => page.evaluate(() => (window as unknown as ChwW
 
 async function connect(page: Page): Promise<void> {
   await page.goto('/permissive/');
+  // Wait for the demo's wallet scan before clicking, as the other specs do.
+  await expect(page.locator('#wallets')).toHaveText('chw');
   await page.locator('#connect').click();
   await expect(page.locator('#connect-result')).toHaveText('network 0');
 }
