@@ -121,10 +121,24 @@ describe('revoke', () => {
     const p = api.signTx(unsigned(), true);
     await entered.promise;
     await control.revoke();
+    const rejected = rejectionOf(p);
     held.open();
     await tick();
     expect(control.release('signTx')).toBe(0);
-    expect(await rejectionOf(p)).toEqual(REVOKED);
+    expect(await rejected).toEqual(REVOKED);
+    const entry = control.journal.find((e) => e.method === 'signTx')!;
+    expect(entry.result).toBeUndefined();
+  });
+
+  it('gives no witness when the connection is revoked while signTx reads its inputs from the ledger', async () => {
+    const { target, control, held, entered } = bindingPage(new Set(), 'resolveInput');
+    const api = await chwProvider(target).enable();
+    const p = api.signTx(unsigned(), false);
+    await entered.promise;
+    await control.revoke();
+    const rejected = rejectionOf(p);
+    held.open();
+    expect(await rejected).toEqual(REVOKED);
     const entry = control.journal.find((e) => e.method === 'signTx')!;
     expect(entry.result).toBeUndefined();
   });

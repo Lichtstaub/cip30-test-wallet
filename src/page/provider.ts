@@ -287,7 +287,10 @@ export function buildApi(ctx: WalletContext, extensions: { cip: number }[] = [],
         // A wallet without CIP-95 has no DRep key, its DRep requirements are foreign.
         const drep = control.quirks.noCip95 ? {} : { drep: ctx.drep };
         live();
-        return coreSignTx(parsed, partialSign, { payment: ctx.payment, stake: ctx.stake, ...drep, ledger });
+        const witness = await coreSignTx(parsed, partialSign, { payment: ctx.payment, stake: ctx.stake, ...drep, ledger });
+        // coreSignTx waited for the ledger too, a revoked connection gets no witness.
+        live();
+        return witness;
       }),
     submitTx: (tx) =>
       record('submitTx', [tx], async () => {
