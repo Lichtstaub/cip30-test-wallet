@@ -64,7 +64,11 @@ function guardInstalled<T>(installed: boolean, run: () => Promise<T>): Promise<T
   return installed ? run() : Promise.reject(new Error(NOT_INSTALLED_FOR_TEST));
 }
 
-function makeHandle(page: Page, prepared: ReturnType<typeof prepareWallet>, installed: boolean, ledger: Ledger): WalletHandle {
+/**
+ * grants: the origins this handle remembers with rememberEnable, shared with the page binding.
+ * Passed in so a later revoke() on the handle can clear them, unused until then.
+ */
+function makeHandle(page: Page, prepared: ReturnType<typeof prepareWallet>, installed: boolean, ledger: Ledger, grants: Set<string>): WalletHandle {
   return {
     name: prepared.config.name,
     addresses: prepared.addresses,
@@ -165,13 +169,15 @@ export async function attachWallet(page: Page, options: WalletOptions = {}): Pro
     }
   }
   const ledger: Ledger = chain ?? walletLedger(prepared);
+  // One set per handle, so a remembered enable() never outlives the test or reaches another page.
+  const grants = new Set<string>();
   if (installed) {
     // The binding first: the init script finds it at document start in every engine.
-    await page.exposeBinding(LEDGER_BINDING, ledgerBinding(ledger));
+    await page.exposeBinding(LEDGER_BINDING, ledgerBinding(ledger, grants));
     const config = { ...prepared.config, ledger: { ...prepared.config.ledger!, binding: LEDGER_BINDING } };
     await page.addInitScript({ content: initScript(config) });
   }
-  return makeHandle(page, prepared, installed, ledger);
+  return makeHandle(page, prepared, installed, ledger, grants);
 }
 
 export const test = base.extend<{ walletOptions: WalletOptions; wallet: WalletHandle }>({

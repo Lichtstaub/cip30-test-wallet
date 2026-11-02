@@ -14,6 +14,14 @@ export type LedgerBinding = (op: string, arg?: unknown) => Promise<unknown>;
  */
 export type LedgerAnswer<T = unknown> = { value: T } | { error: Cip30Error } | { chwError: { code: ChwErrorCode; message: string } };
 
+/** One operation through the binding. Errors are thrown here, in the page, so the dApp gets the plain CIP-30 object and a test the ChwError with its code. */
+export async function askBinding(call: LedgerBinding, op: string, arg?: unknown): Promise<unknown> {
+  const answer = (await call(op, arg)) as LedgerAnswer;
+  if ('error' in answer) throw answer.error;
+  if ('chwError' in answer) throw new ChwError(answer.chwError.code, answer.chwError.message);
+  return answer.value;
+}
+
 /**
  * The page side of a ledger that lives in the host. Every call goes through
  * the binding as JSON, so the state outlives reloads, navigations and origin
@@ -23,12 +31,8 @@ export type LedgerAnswer<T = unknown> = { value: T } | { error: Cip30Error } | {
 export class BindingLedger implements Ledger {
   constructor(private readonly call: LedgerBinding) {}
 
-  /** One operation through the binding. Errors are thrown here, in the page, so the dApp gets the plain CIP-30 object and a test the ChwError with its code. */
-  private async ask(op: string, arg?: unknown): Promise<unknown> {
-    const answer = (await this.call(op, arg)) as LedgerAnswer;
-    if ('error' in answer) throw answer.error;
-    if ('chwError' in answer) throw new ChwError(answer.chwError.code, answer.chwError.message);
-    return answer.value;
+  private ask(op: string, arg?: unknown): Promise<unknown> {
+    return askBinding(this.call, op, arg);
   }
 
   async resolveInput(input: TxInput): Promise<Utxo | undefined> {

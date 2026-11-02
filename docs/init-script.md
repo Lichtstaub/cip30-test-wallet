@@ -53,6 +53,10 @@ Without the fixture there is no host to keep the ledger in. The wallet applies e
 
 The ledger checks (`ledger.checks`) and chain mode (`ledger.chain`) run in Node, so `init-script` refuses options that set them. Use the Playwright fixture or `attachWallet` for them.
 
+## Remembered enable()
+
+With `{ "rememberEnable": true }` in the options file the wallet remembers a successful `enable()` in the page's `sessionStorage`, under the key `__chw:enabled:<name>` of that origin. `isEnabled()` then answers `true` after a reload of the same tab and origin. A new tab starts without it. The page can delete the key, for example with `sessionStorage.clear()`, which takes effect from the next page load, the current document keeps a grant it already gave. When the storage cannot be read or written the wallet remembers nothing and raises no error. The Playwright fixture keeps the grant in Node instead, where the page cannot clear it. Without the option the wallet reads and writes no storage.
+
 ## Keys
 
 The file holds the wallet's extended private keys in plain text. Use a test mnemonic only and keep the file out of version control.

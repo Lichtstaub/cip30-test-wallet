@@ -64,9 +64,10 @@ export async function rejectionOf(p: Promise<unknown>): Promise<unknown> {
  * A page window whose binding behaves like Playwright's exposeBinding: arguments and answers go
  * through JSON, so nothing the page receives is a bigint or a Uint8Array, and a value the binding
  * throws arrives as a new Error with only its name and message, every other property lost.
+ * grants is the host's set of origins remembered with rememberEnable, held by the test.
  */
-export function pageWith(ledger: Ledger): InstallTarget & Record<string, unknown> {
-  const handler = ledgerBinding(ledger);
+export function pageWith(ledger: Ledger, grants?: Set<string>): InstallTarget & Record<string, unknown> {
+  const handler = ledgerBinding(ledger, grants);
   const json = (v: unknown) => JSON.parse(JSON.stringify(v ?? null));
   return {
     [LEDGER_BINDING]: async (op: string, arg?: unknown) => {

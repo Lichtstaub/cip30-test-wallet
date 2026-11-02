@@ -12,6 +12,7 @@ import { selectCollateral, selectForAmount } from '../core/select.js';
 import { addAssets, valueCbor, valueFromCbor, type MultiAsset } from '../core/value.js';
 import type { Control } from './control.js';
 import type { PageConfig } from './config.js';
+import { OPAQUE_ORIGIN, type EnableMemory } from './enable-memory.js';
 
 /** The payment, stake and DRep public keys and their key hashes, derived once at install time. */
 export interface WalletKeys {
@@ -27,6 +28,10 @@ export interface WalletContext {
   config: PageConfig;
   control: Control;
   ledger: Ledger;
+  /** Where a successful enable() is remembered, only with rememberEnable. */
+  memory?: EnableMemory;
+  /** The document's origin at the time of the call, 'null' when it is opaque or unknown. */
+  origin: () => string;
   payment: SigningKey;
   stake: SigningKey;
   drep: SigningKey;
@@ -81,8 +86,15 @@ function availableExtensions(control: Control): { cip: number }[] {
 
 /** Builds the injected provider. */
 export function buildProvider(ctx: WalletContext): Cip30Provider {
-  const { control, config } = ctx;
+  const { control, config, memory } = ctx;
   let enabled = false;
+
+  /** A grant remembered from an earlier document of this origin. */
+  const remembered = async (): Promise<boolean> => {
+    if (!memory) return false;
+    const origin = ctx.origin();
+    return origin !== OPAQUE_ORIGIN && (await memory.has(origin));
+  };
 
   return {
     apiVersion: '1',
@@ -92,12 +104,16 @@ export function buildProvider(ctx: WalletContext): Cip30Provider {
     get supportedExtensions() {
       return availableExtensions(control);
     },
-    isEnabled: () => control.record('isEnabled', [], async () => enabled),
+    isEnabled: () => control.record('isEnabled', [], async () => enabled || (await remembered())),
     enable: (options) =>
       control.record('enable', [options], async () => {
         const requested = requestedExtensions(options);
         if (control.quirks.enableRejected) throw apiError(APIErrorCode.Refused, 'user declined to connect the wallet');
         enabled = true;
+        if (memory) {
+          const origin = ctx.origin();
+          if (origin !== OPAQUE_ORIGIN) await memory.add(origin);
+        }
         const granted = availableExtensions(control).filter((s) => requested.some((r) => r.cip === s.cip));
         return buildApi(ctx, granted);
       }),
