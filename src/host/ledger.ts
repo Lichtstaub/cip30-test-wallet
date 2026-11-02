@@ -4,6 +4,7 @@ import { keyHash } from '../core/hash.js';
 import type { Ledger, LedgerWallet } from '../core/ledger.js';
 import { parseAddressArg } from '../core/sign-data.js';
 import type { LedgerAnswer } from '../page/binding-ledger.js';
+import { OPAQUE_ORIGIN } from '../page/enable-memory.js';
 import { buildLedger } from '../page/install.js';
 import { utxoToConfig } from '../page/utxo-config.js';
 import { ChainLedger } from './chain/chain-ledger.js';
@@ -70,7 +71,7 @@ async function answer<T>(run: () => Promise<T>): Promise<LedgerAnswer<T>> {
 
 /** Origins the page sends for the enable memory. A string other than the opaque 'null' and nothing else. */
 function grantOrigin(arg: unknown): string | undefined {
-  return typeof arg === 'string' && arg !== '' && arg !== 'null' ? arg : undefined;
+  return typeof arg === 'string' && arg !== '' && arg !== OPAQUE_ORIGIN ? arg : undefined;
 }
 
 /**

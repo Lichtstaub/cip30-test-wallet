@@ -99,25 +99,10 @@ export function buildProvider(ctx: WalletContext): { provider: Cip30Provider; re
   let generation = 0;
   let revokedBelow = 0;
 
-  /** A grant remembered from an earlier document of this origin. A store that fails means not remembered. */
+  /** A grant remembered from an earlier document of this origin. */
   const remembered = async (): Promise<boolean> => {
-    if (!memory) return false;
     const origin = ctx.origin();
-    if (origin === OPAQUE_ORIGIN) return false;
-    try {
-      return await memory.has(origin);
-    } catch {
-      return false;
-    }
-  };
-
-  /** Forgets the grant of the origin. A failing store is not an error of the connection, as with has and add. */
-  const forget = async (origin: string): Promise<void> => {
-    try {
-      await memory?.forget(origin);
-    } catch {
-      // Nothing the wallet could do about it, revoke() still ends the connection.
-    }
+    return memory !== undefined && origin !== OPAQUE_ORIGIN && (await memory.has(origin));
   };
 
   const revokedError = () => apiError(APIErrorCode.Refused, REVOKED_INFO);
@@ -138,16 +123,10 @@ export function buildProvider(ctx: WalletContext): { provider: Cip30Provider; re
         // A revoke() while this call waits for the store ends it, see below.
         const boundary = revokedBelow;
         const origin = ctx.origin();
-        if (memory && origin !== OPAQUE_ORIGIN) {
-          try {
-            await memory.add(origin);
-          } catch {
-            // Not remembered, the connection itself still stands, as with a failing sessionStorage.
-          }
-        }
+        if (memory && origin !== OPAQUE_ORIGIN) await memory.add(origin);
         if (revokedBelow !== boundary) {
           // revoke() forgot the grant before the store wrote it, forget it again.
-          await forget(origin);
+          await memory?.forget(origin);
           throw revokedError();
         }
         enabled = true;
@@ -164,7 +143,7 @@ export function buildProvider(ctx: WalletContext): { provider: Cip30Provider; re
     // enable() succeeded since the last revoke, and an enable() waiting for the store sees it.
     revokedBelow = ++generation;
     enabled = false;
-    await forget(ctx.origin());
+    await memory?.forget(ctx.origin());
   };
   return { provider, revoke };
 }

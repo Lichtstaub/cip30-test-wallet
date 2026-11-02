@@ -3,6 +3,7 @@ import { askBinding, type LedgerBinding } from './binding-ledger.js';
 /**
  * Where the wallet remembers a successful enable() per origin, with
  * rememberEnable only. An opaque origin, the string 'null', is never added.
+ * No method throws, a failing store means not remembered.
  */
 export interface EnableMemory {
   has(origin: string): Promise<boolean>;
@@ -15,13 +16,21 @@ export const OPAQUE_ORIGIN = 'null';
 
 /** The grants in Node, one set per wallet handle behind the ledger binding. The page cannot clear them. */
 export function bindingEnableMemory(call: LedgerBinding): EnableMemory {
+  // A failing host answers like an empty store, the connection itself does not depend on it.
+  const ask = async (op: string, origin: string): Promise<unknown> => {
+    try {
+      return await askBinding(call, op, origin);
+    } catch {
+      return undefined;
+    }
+  };
   return {
-    has: async (origin) => (await askBinding(call, 'enableHas', origin)) === true,
+    has: async (origin) => (await ask('enableHas', origin)) === true,
     add: async (origin) => {
-      if (origin !== OPAQUE_ORIGIN) await askBinding(call, 'enableAdd', origin);
+      if (origin !== OPAQUE_ORIGIN) await ask('enableAdd', origin);
     },
     forget: async (origin) => {
-      await askBinding(call, 'enableForget', origin);
+      await ask('enableForget', origin);
     },
   };
 }

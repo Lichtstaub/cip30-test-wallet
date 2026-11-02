@@ -1,26 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { APIErrorCode } from '../src/core/errors.js';
 import { prepareWallet, type WalletOptions } from '../src/host/config.js';
-import { walletLedger } from '../src/host/ledger.js';
+import { LEDGER_BINDING, walletLedger } from '../src/host/ledger.js';
 import type { PageConfig } from '../src/page/config.js';
 import { installWallet, type InstallTarget } from '../src/page/install.js';
-import { chwProvider, pageWith, rejectionOf, testConfig } from './helpers/page.js';
-
-/** A sessionStorage stand-in that keeps its entries in a Map the test can read. */
-function memoryStorage(): Storage & { entries: Map<string, string> } {
-  const entries = new Map<string, string>();
-  return {
-    entries,
-    get length() {
-      return entries.size;
-    },
-    clear: () => entries.clear(),
-    key: (i: number) => [...entries.keys()][i] ?? null,
-    getItem: (key: string) => entries.get(key) ?? null,
-    setItem: (key: string, value: string) => void entries.set(key, String(value)),
-    removeItem: (key: string) => void entries.delete(key),
-  };
-}
+import { chwProvider, memoryStorage, pageWith, rejectionOf, testConfig } from './helpers/page.js';
 
 /** A window with an origin and a sessionStorage, the way installWallet sees one in a browser. */
 function windowAt(origin: string, storage: Storage | undefined = memoryStorage()): InstallTarget {
@@ -137,7 +121,7 @@ describe('rememberEnable', () => {
     const ledger = walletLedger(prepareWallet());
     const binding = pageWith(ledger, grants);
     const target = Object.assign(binding, { location: { origin: 'https://dapp.test' }, sessionStorage: storage }) as InstallTarget;
-    const config = remembering({ ledger: { state: true, binding: Object.keys(binding).find((k) => k.startsWith('__chw'))! } });
+    const config = remembering({ ledger: { state: true, binding: LEDGER_BINDING } });
     installWallet(config, target);
     expect(await chwProvider(target).isEnabled()).toBe(false);
     await chwProvider(target).enable();
@@ -151,7 +135,7 @@ describe('rememberEnable', () => {
     const grants = new Set<string>();
     const binding = pageWith(walletLedger(prepareWallet()), grants);
     const target = Object.assign(binding, { location: { origin: 'null' } }) as InstallTarget;
-    const config = remembering({ ledger: { state: true, binding: Object.keys(binding).find((k) => k.startsWith('__chw'))! } });
+    const config = remembering({ ledger: { state: true, binding: LEDGER_BINDING } });
     installWallet(config, target);
     await chwProvider(target).enable();
     expect(grants.size).toBe(0);

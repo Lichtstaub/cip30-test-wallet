@@ -84,3 +84,19 @@ export function pageWith(ledger: Ledger, grants?: Set<string>): InstallTarget & 
     },
   };
 }
+
+/** A sessionStorage stand-in that keeps its entries in a Map the test can read. */
+export function memoryStorage(): Storage & { entries: Map<string, string> } {
+  const entries = new Map<string, string>();
+  return {
+    entries,
+    get length() {
+      return entries.size;
+    },
+    clear: () => entries.clear(),
+    key: (i: number) => [...entries.keys()][i] ?? null,
+    getItem: (key: string) => entries.get(key) ?? null,
+    setItem: (key: string, value: string) => void entries.set(key, String(value)),
+    removeItem: (key: string) => void entries.delete(key),
+  };
+}

@@ -8,27 +8,11 @@ import { installWallet, type InstallTarget } from '../src/page/install.js';
 import type { Cip30Api } from '../src/page/provider.js';
 import { attachWallet } from '../src/playwright/index.js';
 import { standardUnsignedTx } from './helpers/build-tx.js';
-import { chwProvider, pageWith, rejectionOf, testConfig } from './helpers/page.js';
+import { chwProvider, memoryStorage, pageWith, rejectionOf, testConfig } from './helpers/page.js';
 
 const REVOKED = { code: APIErrorCode.Refused, info: 'the wallet revoked the connection' };
 const ORIGIN = 'https://dapp.test';
 const unsigned = () => standardUnsignedTx('chw');
-
-/** A sessionStorage stand-in that keeps its entries in a Map the test can read. */
-function memoryStorage(): Storage & { entries: Map<string, string> } {
-  const entries = new Map<string, string>();
-  return {
-    entries,
-    get length() {
-      return entries.size;
-    },
-    clear: () => entries.clear(),
-    key: (i: number) => [...entries.keys()][i] ?? null,
-    getItem: (key: string) => entries.get(key) ?? null,
-    setItem: (key: string, value: string) => void entries.set(key, String(value)),
-    removeItem: (key: string) => void entries.delete(key),
-  };
-}
 
 /** A promise the test opens by hand. */
 function gate(): { promise: Promise<void>; open: () => void } {
