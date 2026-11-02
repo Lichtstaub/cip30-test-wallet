@@ -144,8 +144,8 @@ describe('walletOptions.ledger.chain', () => {
     expect(prepareWallet({ networkId: 1, ledger: { chain: { provider: 'koios', network: 'mainnet' } } }).chain).toEqual({ provider: 'koios', network: 'mainnet', url: 'https://api.koios.rest/api/v1' });
   });
 
-  it('koios: keeps an own url, the token and allowMainnetSigning in Node only', () => {
-    const chain = { provider: 'koios', network: 'mainnet', url: 'https://koios.example/api/v1', token: 'secret-token', allowMainnetSigning: true } as const;
+  it('koios: keeps an own url and the token in Node only', () => {
+    const chain = { provider: 'koios', network: 'mainnet', url: 'https://koios.example/api/v1', token: 'secret-token' } as const;
     const w = prepareWallet({ networkId: 1, ledger: { chain } });
     expect(w.chain).toEqual(chain);
     expect(JSON.stringify(w.config)).not.toContain('secret-token');
@@ -174,11 +174,10 @@ describe('walletOptions.ledger.chain', () => {
     ['chain that is a string', { ledger: { chain: 'ogmios' } }, 'ledger.chain must be an object, got ogmios'],
     ['an unknown provider', { ledger: { chain: { provider: 'blockfrost', url: 'https://example.com' } } }, 'ledger.chain.provider must be ogmios or koios, got blockfrost'],
     ['no provider', { ledger: { chain: { url: 'http://localhost:1337' } } }, 'ledger.chain.provider must be ogmios or koios, got undefined'],
-    ['an unknown ogmios key', { ledger: { chain: { ...OGMIOS, kupo: 'http://localhost:1442' } } }, 'ledger.chain.kupo is not an option of provider ogmios, known: provider, url, allowMainnetSigning'],
-    ['a token for ogmios', { ledger: { chain: { ...OGMIOS, token: 'x' } } }, 'ledger.chain.token is not an option of provider ogmios, known: provider, url, allowMainnetSigning'],
-    ['an unknown koios key', { ledger: { chain: { provider: 'koios', network: 'preprod', projectId: 'x' } } }, 'ledger.chain.projectId is not an option of provider koios, known: provider, network, url, token, allowMainnetSigning'],
-    ['allowMainnetSigning that is no boolean', { ledger: { chain: { ...OGMIOS, allowMainnetSigning: 'yes' } } }, 'ledger.chain.allowMainnetSigning must be a boolean, got yes'],
-    ['allowMainnetSigning that is null', { ledger: { chain: { ...OGMIOS, allowMainnetSigning: null } } }, 'ledger.chain.allowMainnetSigning must be a boolean, got null'],
+    ['an unknown ogmios key', { ledger: { chain: { ...OGMIOS, kupo: 'http://localhost:1442' } } }, 'ledger.chain.kupo is not an option of provider ogmios, known: provider, url'],
+    ['a token for ogmios', { ledger: { chain: { ...OGMIOS, token: 'x' } } }, 'ledger.chain.token is not an option of provider ogmios, known: provider, url'],
+    ['an unknown koios key', { ledger: { chain: { provider: 'koios', network: 'preprod', projectId: 'x' } } }, 'ledger.chain.projectId is not an option of provider koios, known: provider, network, url, token'],
+    ['allowMainnetSigning in its old place', { ledger: { chain: { ...OGMIOS, allowMainnetSigning: false } } }, 'ledger.chain.allowMainnetSigning moved to walletOptions.allowMainnetSigning'],
     ['ogmios without url', { ledger: { chain: { provider: 'ogmios' } } }, 'ledger.chain.url is required for provider ogmios, the address of the Ogmios server such as http://localhost:1337'],
     ['an empty url', { ledger: { chain: { provider: 'ogmios', url: '' } } }, URL_MESSAGE],
     ['a url without scheme', { ledger: { chain: { provider: 'ogmios', url: 'localhost:1337' } } }, URL_MESSAGE],

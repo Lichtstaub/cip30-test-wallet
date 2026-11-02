@@ -135,6 +135,13 @@ describe('formatters', () => {
     expect(JSON.parse(formatJson(r)).findings.map((f: { id: string }) => f.id)).toEqual(ids(r));
   });
 
+  it('json report starts with schemaVersion 1', async () => {
+    const r = await runDoctor(`${base}/strict/`);
+    const parsed = JSON.parse(formatJson(r));
+    expect(parsed.schemaVersion).toBe(1);
+    expect(Object.keys(parsed)[0]).toBe('schemaVersion');
+  });
+
   it('human output groups the report into sections and sorts findings by severity', async () => {
     const r = await runDoctor(`${base}/strict/`);
     r.findings.unshift({ id: 'late-info', severity: 'info', title: 'an info', detail: 'detail' });

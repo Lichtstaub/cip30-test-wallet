@@ -189,10 +189,15 @@ export function buildApi(ctx: WalletContext, extensions: { cip: number }[] = [])
         refuseDeprecatedCertificate(parsed.body);
         // Validates every governance field before any prompt quirk. No ledger needed, unresolved inputs are skipped.
         requirements(parsed.body, []);
-        // A chain provider on mainnet: a signature here could move real funds. Refused after the checks above,
-        // so a malformed transaction stays InvalidRequest, and before the ledger and the prompt quirks are touched.
-        if (config.ledger?.signLocked) {
-          throw new ChwError('CHW_MAINNET_LOCKED', 'the chain provider reports mainnet, signTx signs there only with walletOptions.ledger.chain.allowMainnetSigning: true');
+        // Mainnet with a chain or a custom mnemonic: a signature here could move real funds. Refused after the checks
+        // above, so a malformed transaction stays InvalidRequest, and before the ledger and the prompt quirks are touched.
+        if (config.signLocked) {
+          throw new ChwError(
+            'CHW_MAINNET_LOCKED',
+            config.ledger?.chain
+              ? 'the chain provider reports mainnet, signTx signs there only with walletOptions.allowMainnetSigning: true'
+              : 'walletOptions.networkId is 1 with a custom mnemonic, signTx signs there only with walletOptions.allowMainnetSigning: true',
+          );
         }
         if (partialSign) {
           try {

@@ -60,14 +60,16 @@ describe('attachWallet with ledger.chain', () => {
     vi.stubGlobal('fetch', genesisFetch('mainnet'));
     const { page, config } = fakePage();
     await attachWallet(page, { networkId: 1, ledger: { chain: OGMIOS } });
-    expect(config().ledger).toEqual({ state: true, chain: true, binding: LEDGER_BINDING, signLocked: true });
+    expect(config().ledger).toEqual({ state: true, chain: true, binding: LEDGER_BINDING });
+    expect(config().signLocked).toBe(true);
   });
 
   it('allowMainnetSigning: true leaves signTx unlocked on mainnet', async () => {
     vi.stubGlobal('fetch', genesisFetch('mainnet'));
     const { page, config } = fakePage();
-    await attachWallet(page, { networkId: 1, ledger: { chain: { ...OGMIOS, allowMainnetSigning: true } } });
+    await attachWallet(page, { networkId: 1, allowMainnetSigning: true, ledger: { chain: OGMIOS } });
     expect(config().ledger).toEqual({ state: true, chain: true, binding: LEDGER_BINDING });
+    expect(config().signLocked).toBeUndefined();
   });
 
   it.each([

@@ -12,4 +12,4 @@ Only the latest minor release receives fixes.
 
 cip30-test-wallet is a wallet for tests. Its private keys sit in the init script, in Playwright traces and in test output by design, and that is not a vulnerability. Use test mnemonics only.
 
-A vulnerability is any way in which `signTx` signs a mainnet transaction in chain mode without `allowMainnetSigning: true`. The offline mode has no mainnet lock, so offline signatures with `networkId: 1` are documented behavior and not a finding. The same holds for `signData` and `submitTx` in chain mode, which the lock does not cover.
+A vulnerability is any way in which `signTx` signs a transaction with `networkId: 1`, in chain mode or with a mnemonic other than the default, without `allowMainnetSigning: true`. Offline signatures on mainnet with the default mnemonic are documented behavior and not a finding, its keys are public. The same holds for `signData` and `submitTx`, which the lock does not cover.

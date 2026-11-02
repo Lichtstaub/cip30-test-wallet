@@ -56,3 +56,5 @@ The ledger checks (`ledger.checks`) and chain mode (`ledger.chain`) run in Node,
 ## Keys
 
 The file holds the wallet's extended private keys in plain text. Use a test mnemonic only and keep the file out of version control.
+
+With `networkId` 1 and a mnemonic of your own the script's `signTx` throws `CHW_MAINNET_LOCKED`, unless the options file sets `allowMainnetSigning: true`. Then the command warns on stderr, stdout and the file stay the script.

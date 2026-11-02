@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { INIT_SCRIPT_USAGE, main, parseArgs } from '../src/cli/doctor.js';
+import { DEFAULT_MNEMONIC } from '../src/host/config.js';
 import { resolveWalletOptions, runInitScript } from '../src/cli/init-script.js';
 import { runInBareWindow } from './helpers/page.js';
 
@@ -74,6 +75,17 @@ describe.skipIf(!existsSync('dist/page.js'))('init-script output', () => {
     const cardano = window['cardano'] as Record<string, { apiVersion: string }>;
     expect(cardano['eternl']!.apiVersion).toBe('1');
     expect(window['__chw']).toBeDefined();
+  });
+
+  it('locks signTx on mainnet with a custom mnemonic', () => {
+    const script = runInitScript({ networkId: 1, mnemonicEnv: 'E2E_MNEMONIC' }, { E2E_MNEMONIC: MNEMONIC })!;
+    expect(script).toContain('"signLocked":true');
+  });
+
+  it('does not lock signTx on mainnet for the default mnemonic written with capitals and a newline', () => {
+    const written = `${DEFAULT_MNEMONIC.toUpperCase()}\n`;
+    const script = runInitScript({ networkId: 1, mnemonicEnv: 'E2E_MNEMONIC' }, { E2E_MNEMONIC: written })!;
+    expect(script).not.toContain('"signLocked":true');
   });
 
   it('writes to --out instead of returning the script', () => {
