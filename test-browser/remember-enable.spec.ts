@@ -27,6 +27,14 @@ test.describe('rememberEnable', () => {
     expect(await wallet.calls('isEnabled')).toHaveLength(1);
   });
 
+  test('wallet.revoke() forgets the grant, a reload is not enabled', async ({ page, wallet }) => {
+    await connect(page);
+    await wallet.revoke();
+    expect(await isEnabled(page)).toBe(false);
+    await page.reload();
+    expect(await isEnabled(page)).toBe(false);
+  });
+
   test('a new test starts without a grant', async ({ page }) => {
     await page.goto('/permissive/');
     expect(await isEnabled(page)).toBe(false);
@@ -39,5 +47,31 @@ test.describe('without rememberEnable', () => {
     expect(await isEnabled(page)).toBe(true);
     await page.reload();
     expect(await isEnabled(page)).toBe(false);
+  });
+});
+
+test.describe('revoke', () => {
+  test('wallet.revoke() ends an api enabled in a same-origin iframe', async ({ page, wallet }) => {
+    // A small route on the demo origin without a CSP, the demo variants do not allow framing.
+    await page.route('**/frames/**', (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: route.request().url().endsWith('/outer') ? '<!doctype html><iframe name="inner" src="/frames/inner"></iframe>' : '<!doctype html><title>inner</title>',
+      }),
+    );
+    await page.goto('/frames/outer');
+    const inner = page.frame({ name: 'inner' })!;
+    await inner.waitForFunction(() => (window as unknown as { cardano?: Record<string, unknown> }).cardano?.['chw'] !== undefined);
+    type ApiWindow = { cardano: Record<string, { enable(): Promise<{ getNetworkId(): Promise<number> }> }>; api?: { getNetworkId(): Promise<number> } };
+    expect(
+      await inner.evaluate(async () => {
+        const w = window as unknown as ApiWindow;
+        w.api = await w.cardano['chw']!.enable();
+        return w.api.getNetworkId();
+      }),
+    ).toBe(0);
+    await wallet.revoke();
+    const error = await inner.evaluate(() => (window as unknown as ApiWindow).api!.getNetworkId().then(() => undefined, (e: unknown) => e));
+    expect(error).toEqual({ code: -3, info: 'the wallet revoked the connection' });
   });
 });

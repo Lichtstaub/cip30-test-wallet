@@ -129,7 +129,8 @@ export function installWallet(config: PageConfig, target: InstallTarget): Contro
     rewardAddress,
     keys,
   };
-  const provider = buildProvider(ctx);
+  const { provider, revoke } = buildProvider(ctx);
+  control.onRevoke(revoke);
 
   const define = () => {
     // Three shapes of window.cardano: absent (define a fresh writable property), an accessor

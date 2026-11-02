@@ -52,6 +52,13 @@ export interface WalletHandle {
   release(method: 'signTx'): Promise<number>;
   /** Fails every hanging signTx with TxSignError UserDeclined. Resolves to how many calls it settled. */
   reject(method: 'signTx'): Promise<number>;
+  /**
+   * Revokes the connection: forgets every origin remembered with rememberEnable and revokes in
+   * every frame of the page. Each api that enable() gave out so far fails with APIError Refused
+   * from then on, a hanging signTx at once, and isEnabled() answers false until the next enable().
+   * Before the first navigation and with install: false it only forgets the origins.
+   */
+  revoke(): Promise<void>;
 }
 
 const NOT_INSTALLED_ON_PAGE = 'the test wallet is not installed on this page: navigate first, or window.cardano is not writable';
@@ -64,10 +71,18 @@ function guardInstalled<T>(installed: boolean, run: () => Promise<T>): Promise<T
   return installed ? run() : Promise.reject(new Error(NOT_INSTALLED_FOR_TEST));
 }
 
-/**
- * grants: the origins this handle remembers with rememberEnable, shared with the page binding.
- * Passed in so a later revoke() on the handle can clear them, unused until then.
- */
+/** Playwright's errors for a frame that went away while the call ran, nothing is left to revoke there. */
+const GONE_FRAME = /detached|Execution context was destroyed/;
+
+/** Revokes in every frame of the page, then throws the first failure that was not a frame going away. */
+async function revokeFrames(page: Page): Promise<void> {
+  const results = await Promise.allSettled(page.frames().map((frame) => frame.evaluate(() => (window as unknown as ChwWindow).__chw?.revoke())));
+  for (const result of results) {
+    if (result.status === 'rejected' && !GONE_FRAME.test(String((result.reason as Error | undefined)?.message ?? result.reason))) throw result.reason;
+  }
+}
+
+/** grants: the origins this handle remembers with rememberEnable, shared with the page binding. */
 function makeHandle(page: Page, prepared: ReturnType<typeof prepareWallet>, installed: boolean, ledger: Ledger, grants: Set<string>): WalletHandle {
   return {
     name: prepared.config.name,
@@ -134,6 +149,11 @@ function makeHandle(page: Page, prepared: ReturnType<typeof prepareWallet>, inst
           [method, NOT_INSTALLED_ON_PAGE] as const,
         ),
       ),
+    revoke: async () => {
+      grants.clear();
+      // A frame without the wallet answers undefined through the optional call.
+      if (installed) await revokeFrames(page);
+    },
   };
 }
 

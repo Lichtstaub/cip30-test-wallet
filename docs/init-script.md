@@ -44,6 +44,7 @@ Without the fixture there is no `wallet` handle. The same controls are on `windo
 | `journal` | Array of `{ method, args, result?, error?, t }`, one entry per CIP-30 call, key material never included |
 | `setQuirk(name, value)` | Flips a quirk at runtime. Throws for an unknown name, for the install-time quirks `lateInjection` and `answersEveryKey`, and for a `submitFails` value other than `true`, `false`, `undefined` or a non-empty string |
 | `release('signTx')`, `reject('signTx')` | Ends a hanging `signTx` and returns how many calls it settled |
+| `revoke()` | Disconnects the dApp in the current frame and resolves. Every api that `enable()` gave out there so far rejects each call with `APIError` Refused, `info` `the wallet revoked the connection`, a hanging `signTx` at once, and `isEnabled()` answers `false` until the next `enable()`. With `rememberEnable` it also deletes the `sessionStorage` key of the current origin. Other origins stay remembered, a script cannot reach their storage. Not journaled |
 
 Like the fixture's journal, this state lives in the page and resets on every navigation. Read the journal before the agent navigates away.
 
@@ -55,7 +56,7 @@ The ledger checks (`ledger.checks`) and chain mode (`ledger.chain`) run in Node,
 
 ## Remembered enable()
 
-With `{ "rememberEnable": true }` in the options file the wallet remembers a successful `enable()` in the page's `sessionStorage`, under the key `__chw:enabled:<name>` of that origin. `isEnabled()` then answers `true` after a reload of the same tab and origin. A new tab starts without it. The page can delete the key, for example with `sessionStorage.clear()`, which takes effect from the next page load, the current document keeps a grant it already gave. When the storage cannot be read or written the wallet remembers nothing and raises no error. The Playwright fixture keeps the grant in Node instead, where the page cannot clear it. Without the option the wallet reads and writes no storage.
+With `{ "rememberEnable": true }` in the options file the wallet remembers a successful `enable()` in the page's `sessionStorage`, under the key `__chw:enabled:<name>` of that origin. `isEnabled()` then answers `true` after a reload of the same tab and origin. A new tab starts without it. The page can delete the key, for example with `sessionStorage.clear()`, which takes effect from the next page load, the current document keeps a grant it already gave. `window.__chw.revoke()` deletes the key of the current origin and disconnects the current document at once. When the storage cannot be read or written the wallet remembers nothing and raises no error. The Playwright fixture keeps the grant in Node instead, where the page cannot clear it. Without the option the wallet reads and writes no storage.
 
 ## Keys
 
