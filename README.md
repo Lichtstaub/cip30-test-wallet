@@ -145,6 +145,8 @@ test('commit writes the expected metadata', async ({ page, wallet }) => {
 - `npx cip30-test-wallet doctor <url>` checks the deployed site for the content security policy and detection problems that break wallets in mobile in-app browsers, see [doctor](#doctor).
 - Let a coding agent run and extend these tests on its own, see [CI and coding agents](#ci-and-coding-agents).
 
+A dApp that reconnects silently after a reload is testable with `walletOptions: { rememberEnable: true }`: `isEnabled()` then answers `true` for an origin that enabled the wallet before. `wallet.revoke()` disconnects it, the way a user removes the dApp from the wallet's connected sites, every api it holds rejects with `APIError` Refused.
+
 The full option and handle reference is in [docs/fixture-api.md](docs/fixture-api.md).
 
 ## Building and submitting transactions
@@ -201,7 +203,7 @@ npx cip30-test-wallet init-script --network 0 --out wallet.js
 }
 ```
 
-Every page the agent opens then has the wallet in `window.cardano`. The agent reads the journal and controls the wallet with its evaluate tool through `window.__chw`: `journal`, `setQuirk(name, value)`, `release('signTx')` and `reject('signTx')`. Quirks, UTxOs and a mnemonic from an environment variable go in through `--options` and `--mnemonic-env`. Tested with Playwright MCP against the demo dApp under a strict content security policy. Details in [docs/init-script.md](docs/init-script.md).
+Every page the agent opens then has the wallet in `window.cardano`. The agent reads the journal and controls the wallet with its evaluate tool through `window.__chw`: `journal`, `setQuirk(name, value)`, `release('signTx')`, `reject('signTx')` and `revoke()`. Quirks, UTxOs and a mnemonic from an environment variable go in through `--options` and `--mnemonic-env`. Tested with Playwright MCP against the demo dApp under a strict content security policy. Details in [docs/init-script.md](docs/init-script.md).
 
 Inside your own Playwright code, without the test runner, `attachWallet(page, options)` installs the same wallet and returns the `wallet` handle. It keeps the ledger in Node, like the fixture. Call it before the first navigation, once per page, and never on a page the `test` fixture already set up:
 

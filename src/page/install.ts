@@ -8,6 +8,7 @@ import { MemoryLedger, type Ledger, type LedgerWallet, type Utxo } from '../core
 import { BindingLedger, type LedgerBinding } from './binding-ledger.js';
 import type { KeyConfig, PageConfig } from './config.js';
 import { Control } from './control.js';
+import { bindingEnableMemory, OPAQUE_ORIGIN, sessionEnableMemory, type EnableMemory } from './enable-memory.js';
 import { buildProvider, type WalletContext } from './provider.js';
 import { parseUtxoExtras, utxoFromConfig } from './utxo-config.js';
 
@@ -15,6 +16,10 @@ import { parseUtxoExtras, utxoFromConfig } from './utxo-config.js';
 export interface InstallTarget {
   cardano?: Record<string, unknown>;
   __chw?: Control;
+  /** The document's location, read for its origin when rememberEnable is set. */
+  location?: { origin?: string };
+  /** Read only with rememberEnable and no ledger binding. */
+  sessionStorage?: Storage;
 }
 
 function toSigningKey(k: KeyConfig, what: string): SigningKey {
@@ -50,11 +55,17 @@ export function buildLedger(config: PageConfig, wallet: LedgerWallet): MemoryLed
   });
 }
 
-/** The ledger the provider talks to: the host's through a binding when the host announced one, otherwise one in the page. */
-function pageLedger(config: PageConfig, target: InstallTarget, wallet: LedgerWallet): Ledger {
+/** The host binding the config names, when the page has it. */
+function hostBinding(config: PageConfig, target: InstallTarget): LedgerBinding | undefined {
   const name = config.ledger?.binding;
   const call = name ? (target as Record<string, unknown>)[name] : undefined;
-  if (typeof call === 'function') return new BindingLedger(call as LedgerBinding);
+  return typeof call === 'function' ? (call as LedgerBinding) : undefined;
+}
+
+/** The ledger the provider talks to: the host's through a binding when the host announced one, otherwise one in the page. */
+function pageLedger(config: PageConfig, target: InstallTarget, wallet: LedgerWallet, call: LedgerBinding | undefined): Ledger {
+  const name = config.ledger?.binding;
+  if (call) return new BindingLedger(call);
   // A safety net: the fixture's binding and init script both reach every frame of the page.
   // The ledger key that needs the ledger in Node and what the page misses without it, named in the warning.
   const [key, missing = ''] = config.ledger?.chain
@@ -65,6 +76,22 @@ function pageLedger(config: PageConfig, target: InstallTarget, wallet: LedgerWal
   if (name) console.warn(`[cip30-test-wallet] ledger binding ${name} is missing on this page, the wallet keeps its own ledger until the next load and wallet.utxos() will not see it${missing}`);
   else if (key) console.warn(`[cip30-test-wallet] ledger.${key} is set but this page has no ledger binding${missing}`);
   return buildLedger(config, wallet);
+}
+
+/**
+ * Exactly one store for rememberEnable: the host's set when the page has the binding,
+ * otherwise the page's sessionStorage. Without the option there is none, and the wallet
+ * reads and writes no storage.
+ */
+function enableMemory(config: PageConfig, target: InstallTarget, call: LedgerBinding | undefined): EnableMemory | undefined {
+  if (!config.rememberEnable) return undefined;
+  return call ? bindingEnableMemory(call) : sessionEnableMemory(() => target.sessionStorage, config.name);
+}
+
+/** The document's origin, the opaque 'null' when the target has none. */
+function originOf(target: InstallTarget): string {
+  const origin = target.location?.origin;
+  return typeof origin === 'string' && origin !== '' ? origin : OPAQUE_ORIGIN;
 }
 
 /**
@@ -87,8 +114,23 @@ export function installWallet(config: PageConfig, target: InstallTarget): Contro
 
   const control = new Control(config.quirks);
   const keys = { paymentPub, stakePub, drepPub, paymentHash: keyHash(paymentPub), stakeHash: keyHash(stakePub), drepHash: keyHash(drepPub) };
-  const ctx: WalletContext = { config, control, ledger: pageLedger(config, target, { baseAddress, paymentKeyHash: keys.paymentHash, stakeKeyHash: keys.stakeHash }), payment, stake, drep, baseAddress, rewardAddress, keys };
-  const provider = buildProvider(ctx);
+  const call = hostBinding(config, target);
+  const memory = enableMemory(config, target, call);
+  const ctx: WalletContext = {
+    config,
+    control,
+    ledger: pageLedger(config, target, { baseAddress, paymentKeyHash: keys.paymentHash, stakeKeyHash: keys.stakeHash }, call),
+    ...(memory ? { memory } : {}),
+    origin: () => originOf(target),
+    payment,
+    stake,
+    drep,
+    baseAddress,
+    rewardAddress,
+    keys,
+  };
+  const { provider, revoke } = buildProvider(ctx);
+  control.onRevoke(revoke);
 
   const define = () => {
     // Three shapes of window.cardano: absent (define a fresh writable property), an accessor

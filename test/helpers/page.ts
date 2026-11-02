@@ -64,9 +64,10 @@ export async function rejectionOf(p: Promise<unknown>): Promise<unknown> {
  * A page window whose binding behaves like Playwright's exposeBinding: arguments and answers go
  * through JSON, so nothing the page receives is a bigint or a Uint8Array, and a value the binding
  * throws arrives as a new Error with only its name and message, every other property lost.
+ * grants is the host's set of origins remembered with rememberEnable, held by the test.
  */
-export function pageWith(ledger: Ledger): InstallTarget & Record<string, unknown> {
-  const handler = ledgerBinding(ledger);
+export function pageWith(ledger: Ledger, grants?: Set<string>): InstallTarget & Record<string, unknown> {
+  const handler = ledgerBinding(ledger, grants);
   const json = (v: unknown) => JSON.parse(JSON.stringify(v ?? null));
   return {
     [LEDGER_BINDING]: async (op: string, arg?: unknown) => {
@@ -81,5 +82,21 @@ export function pageWith(ledger: Ledger): InstallTarget & Record<string, unknown
       }
       return json(answer);
     },
+  };
+}
+
+/** A sessionStorage stand-in that keeps its entries in a Map the test can read. */
+export function memoryStorage(): Storage & { entries: Map<string, string> } {
+  const entries = new Map<string, string>();
+  return {
+    entries,
+    get length() {
+      return entries.size;
+    },
+    clear: () => entries.clear(),
+    key: (i: number) => [...entries.keys()][i] ?? null,
+    getItem: (key: string) => entries.get(key) ?? null,
+    setItem: (key: string, value: string) => void entries.set(key, String(value)),
+    removeItem: (key: string) => void entries.delete(key),
   };
 }

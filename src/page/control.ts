@@ -1,6 +1,9 @@
 import { apiError, APIErrorCode, TxSignErrorCode, txSignError } from '../core/errors.js';
 import { INSTALL_TIME_QUIRKS, QUIRK_NAMES, submitFailsProblem, type HangableMethod, type JournalEntry, type QuirkConfig, type QuirkName } from './config.js';
 
+/** The info of the Refused error every call of a revoked api fails with. */
+export const REVOKED_INFO = 'the wallet revoked the connection';
+
 interface Deferred {
   resolve: () => void;
   reject: (e: unknown) => void;
@@ -15,6 +18,7 @@ export class Control {
   readonly journal: JournalEntry[] = [];
   readonly quirks: QuirkConfig;
   private readonly pending = new Map<HangableMethod, Deferred[]>();
+  private revokeHook: (() => Promise<void>) | undefined;
 
   constructor(quirks: QuirkConfig) {
     this.quirks = { ...quirks };
@@ -50,9 +54,32 @@ export class Control {
 
   /** Fails every hanging call of the method the way a user cancelling would. Returns how many it settled. */
   reject(method: HangableMethod): number {
+    return this.abort(method, txSignError(TxSignErrorCode.UserDeclined, 'user declined to sign the transaction'));
+  }
+
+  /** Fails every hanging call of the method with the given error. Returns how many it settled. */
+  abort(method: HangableMethod, error: unknown): number {
     const list = this.take(method);
-    for (const d of list) d.reject(txSignError(TxSignErrorCode.UserDeclined, 'user declined to sign the transaction'));
+    for (const d of list) d.reject(error);
     return list.length;
+  }
+
+  /**
+   * Revokes the connection in this document: every api that enable() gave out so far
+   * fails with Refused from now on, a hanging signTx fails with it at once, and with
+   * rememberEnable the grant of the current origin is forgotten. A later enable()
+   * connects again. Not a CIP-30 call, so it is not journaled.
+   */
+  async revoke(): Promise<void> {
+    // The hook ends the api generations synchronously, before the hanging calls fail.
+    const forgotten = this.revokeHook?.();
+    this.abort('signTx', apiError(APIErrorCode.Refused, REVOKED_INFO));
+    await forgotten;
+  }
+
+  /** Set once by installWallet: the provider's part of revoke(). */
+  onRevoke(hook: () => Promise<void>): void {
+    this.revokeHook = hook;
   }
 
   /** Runs fn and journals method, arguments (trailing undefined entries trimmed), result or error. */

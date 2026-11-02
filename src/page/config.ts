@@ -117,6 +117,8 @@ export interface PageConfig {
   ledger?: { state: boolean; binding?: string; checks?: boolean; chain?: true };
   /** signTx refuses: mainnet in chain mode or with a custom mnemonic, without allowMainnetSigning. */
   signLocked?: true;
+  /** isEnabled() remembers a successful enable() per origin across reloads and navigations. Absent means it does not. */
+  rememberEnable?: true;
 }
 
 export interface JournalEntry {

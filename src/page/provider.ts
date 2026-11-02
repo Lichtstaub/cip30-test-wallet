@@ -10,8 +10,9 @@ import { requirements } from '../core/requirements.js';
 import { parseTxHex, refuseDeprecatedCertificate, resolveInputs, signTx as coreSignTx } from '../core/sign-tx.js';
 import { selectCollateral, selectForAmount } from '../core/select.js';
 import { addAssets, valueCbor, valueFromCbor, type MultiAsset } from '../core/value.js';
-import type { Control } from './control.js';
+import { REVOKED_INFO, type Control } from './control.js';
 import type { PageConfig } from './config.js';
+import { OPAQUE_ORIGIN, type EnableMemory } from './enable-memory.js';
 
 /** The payment, stake and DRep public keys and their key hashes, derived once at install time. */
 export interface WalletKeys {
@@ -27,6 +28,10 @@ export interface WalletContext {
   config: PageConfig;
   control: Control;
   ledger: Ledger;
+  /** Where a successful enable() is remembered, only with rememberEnable. */
+  memory?: EnableMemory;
+  /** The document's origin at the time of the call, 'null' when it is opaque or unknown. */
+  origin: () => string;
   payment: SigningKey;
   stake: SigningKey;
   drep: SigningKey;
@@ -79,12 +84,30 @@ function availableExtensions(control: Control): { cip: number }[] {
   return control.quirks.noCip95 ? [] : [{ cip: CIP95 }];
 }
 
-/** Builds the injected provider. */
-export function buildProvider(ctx: WalletContext): Cip30Provider {
-  const { control, config } = ctx;
-  let enabled = false;
+/** Throws Refused once the connection behind an api was revoked. */
+export type LiveCheck = () => void;
 
-  return {
+/**
+ * Builds the injected provider and its part of revoke(). Every successful enable() gives
+ * out a new api generation. revoke() moves the boundary above every generation given out
+ * so far, an api below the boundary is ended for good. An enable() after it gets a
+ * generation above the boundary.
+ */
+export function buildProvider(ctx: WalletContext): { provider: Cip30Provider; revoke: () => Promise<void> } {
+  const { control, config, memory } = ctx;
+  let enabled = false;
+  let generation = 0;
+  let revokedBelow = 0;
+
+  /** A grant remembered from an earlier document of this origin. */
+  const remembered = async (): Promise<boolean> => {
+    const origin = ctx.origin();
+    return memory !== undefined && origin !== OPAQUE_ORIGIN && (await memory.has(origin));
+  };
+
+  const revokedError = () => apiError(APIErrorCode.Refused, REVOKED_INFO);
+
+  const provider: Cip30Provider = {
     apiVersion: '1',
     name: config.displayName,
     icon: config.icon,
@@ -92,16 +115,37 @@ export function buildProvider(ctx: WalletContext): Cip30Provider {
     get supportedExtensions() {
       return availableExtensions(control);
     },
-    isEnabled: () => control.record('isEnabled', [], async () => enabled),
+    isEnabled: () => control.record('isEnabled', [], async () => enabled || (await remembered())),
     enable: (options) =>
       control.record('enable', [options], async () => {
         const requested = requestedExtensions(options);
         if (control.quirks.enableRejected) throw apiError(APIErrorCode.Refused, 'user declined to connect the wallet');
+        // A revoke() while this call waits for the store ends it, see below.
+        const boundary = revokedBelow;
+        const origin = ctx.origin();
+        if (memory && origin !== OPAQUE_ORIGIN) await memory.add(origin);
+        if (revokedBelow !== boundary) {
+          // revoke() forgot the grant before the store wrote it, forget it again.
+          await memory?.forget(origin);
+          throw revokedError();
+        }
         enabled = true;
+        const gen = ++generation;
         const granted = availableExtensions(control).filter((s) => requested.some((r) => r.cip === s.cip));
-        return buildApi(ctx, granted);
+        return buildApi(ctx, granted, () => {
+          if (gen < revokedBelow) throw revokedError();
+        });
       }),
   };
+
+  const revoke = async (): Promise<void> => {
+    // Every revoke takes a generation number of its own, so the boundary moves even when no
+    // enable() succeeded since the last revoke, and an enable() waiting for the store sees it.
+    revokedBelow = ++generation;
+    enabled = false;
+    await memory?.forget(ctx.origin());
+  };
+  return { provider, revoke };
 }
 
 /** CIP-30 caps collateral at about 5 ADA ("something like 5 ADA"), Lace uses exactly this. */
@@ -139,8 +183,14 @@ function collateralAmount(params: unknown): bigint {
   return value;
 }
 
-export function buildApi(ctx: WalletContext, extensions: { cip: number }[] = []): Cip30Api {
+/** live throws Refused once the api was revoked, checked on entry of every method. */
+export function buildApi(ctx: WalletContext, extensions: { cip: number }[] = [], live: LiveCheck = () => {}): Cip30Api {
   const { control, config, ledger } = ctx;
+  const record = <T>(method: string, args: unknown[], fn: () => Promise<T>): Promise<T> =>
+    control.record(method, args, async () => {
+      live();
+      return fn();
+    });
   const baseHex = bytesToHex(ctx.baseAddress);
   const rewardHex = bytesToHex(ctx.rewardAddress);
   // CIP-30 "used" means the address appeared in a transaction. A configured UTxO counts, and so
@@ -148,18 +198,18 @@ export function buildApi(ctx: WalletContext, extensions: { cip: number }[] = [])
   const isUsed = async () => config.utxos.length > 0 || (await ledger.getWalletUtxos()).length > 0;
 
   const api: Cip30Api = {
-    getNetworkId: () => control.record('getNetworkId', [], async () => config.networkId),
+    getNetworkId: () => record('getNetworkId', [], async () => config.networkId),
     getUsedAddresses: (paginate) =>
-      control.record('getUsedAddresses', [paginate], async () => {
+      record('getUsedAddresses', [paginate], async () => {
         const used = (await isUsed()) ? [baseHex] : [];
         return paginate === undefined ? used : paginateList(used, paginate);
       }),
-    getUnusedAddresses: () => control.record('getUnusedAddresses', [], async () => ((await isUsed()) ? [] : [baseHex])),
-    getChangeAddress: () => control.record('getChangeAddress', [], async () => baseHex),
-    getRewardAddresses: () => control.record('getRewardAddresses', [], async () => [rewardHex]),
-    getExtensions: () => control.record('getExtensions', [], async () => extensions.map((e) => ({ ...e }))),
+    getUnusedAddresses: () => record('getUnusedAddresses', [], async () => ((await isUsed()) ? [] : [baseHex])),
+    getChangeAddress: () => record('getChangeAddress', [], async () => baseHex),
+    getRewardAddresses: () => record('getRewardAddresses', [], async () => [rewardHex]),
+    getExtensions: () => record('getExtensions', [], async () => extensions.map((e) => ({ ...e }))),
     getUtxos: (amount, paginate) =>
-      control.record('getUtxos', [amount, paginate], async () => {
+      record('getUtxos', [amount, paginate], async () => {
         let utxos = await ledger.getWalletUtxos();
         if (amount !== undefined) {
           const { coin, assets } = parseValue(amount);
@@ -171,7 +221,7 @@ export function buildApi(ctx: WalletContext, extensions: { cip: number }[] = [])
         return utxos.map((u) => bytesToHex(encodeUtxo(u)));
       }),
     getBalance: () =>
-      control.record('getBalance', [], async () => {
+      record('getBalance', [], async () => {
         const utxos = await ledger.getWalletUtxos();
         const coin = utxos.reduce((sum, u) => sum + u.lovelace, 0n);
         const assets: MultiAsset = new Map();
@@ -179,7 +229,7 @@ export function buildApi(ctx: WalletContext, extensions: { cip: number }[] = [])
         return bytesToHex(encode(valueCbor(coin, assets)));
       }),
     signTx: (tx, partialSign = false) =>
-      control.record('signTx', [tx, partialSign], async () => {
+      record('signTx', [tx, partialSign], async () => {
         // A string "false" is truthy and would switch the form check off.
         if (typeof partialSign !== 'boolean') throw apiError(APIErrorCode.InvalidRequest, 'partialSign must be a boolean');
         // Parsed once, before any prompt quirk: a real wallet refuses a
@@ -209,26 +259,32 @@ export function buildApi(ctx: WalletContext, extensions: { cip: number }[] = [])
             // A ledger failure is reported by coreSignTx below, not warned about here.
           }
         }
+        // partialSign waited for the ledger above, the connection may have been revoked meanwhile.
+        live();
         if (control.quirks.signHangs) await control.wait('signTx');
         if (control.quirks.signRejected) throw txSignError(TxSignErrorCode.UserDeclined, 'user declined to sign the transaction');
         // A wallet without CIP-95 has no DRep key, its DRep requirements are foreign.
         const drep = control.quirks.noCip95 ? {} : { drep: ctx.drep };
-        return coreSignTx(parsed, partialSign, { payment: ctx.payment, stake: ctx.stake, ...drep, ledger });
+        live();
+        const witness = await coreSignTx(parsed, partialSign, { payment: ctx.payment, stake: ctx.stake, ...drep, ledger });
+        // coreSignTx waited for the ledger too, a revoked connection gets no witness.
+        live();
+        return witness;
       }),
     submitTx: (tx) =>
-      control.record('submitTx', [tx], async () => {
+      record('submitTx', [tx], async () => {
         const { bytes } = parseTxHex(tx);
         // Before the ledger, so a refused transaction changes no UTxO.
         const fails = control.quirks.submitFails;
         if (fails) throw txSendError(TxSendErrorCode.Failure, fails === true ? 'the node refused the transaction' : fails);
         return bytesToHex(await ledger.submit(bytes));
       }),
-    signData: (addr, payload) => control.record('signData', [addr, payload], () => signDataWith(ctx, addr, payload, 'cip30')),
+    signData: (addr, payload) => record('signData', [addr, payload], () => signDataWith(ctx, addr, payload, 'cip30')),
   };
-  if (extensions.some((e) => e.cip === CIP95) && !control.quirks.cip95NamespaceMissing) api.cip95 = buildCip95Api(ctx);
+  if (extensions.some((e) => e.cip === CIP95) && !control.quirks.cip95NamespaceMissing) api.cip95 = buildCip95Api(ctx, record);
   if (!control.quirks.noCollateral) {
     const collateral = (method: string) => (params?: unknown) =>
-      control.record(method, [params], async () => {
+      record(method, [params], async () => {
         const amount = collateralAmount(params);
         const selected = selectCollateral(await ledger.getWalletUtxos(), amount);
         return selected === null ? null : selected.map((u) => bytesToHex(encodeUtxo(u)));
@@ -239,8 +295,7 @@ export function buildApi(ctx: WalletContext, extensions: { cip: number }[] = [])
   return api;
 }
 
-function buildCip95Api(ctx: WalletContext): Cip95Api {
-  const { control } = ctx;
+function buildCip95Api(ctx: WalletContext, record: Control['record']): Cip95Api {
   const stakeHex = bytesToHex(ctx.keys.stakePub);
   // CIP-95: these endpoints take no parameters, passing one is InvalidRequest.
   // An explicit undefined counts as absent, wrappers often forward optional
@@ -248,7 +303,7 @@ function buildCip95Api(ctx: WalletContext): Cip95Api {
   const noArgs =
     <T>(method: string, run: () => Promise<T>) =>
     (...args: unknown[]) =>
-      control.record(`cip95.${method}`, args, async () => {
+      record(`cip95.${method}`, args, async () => {
         if (args.some((a) => a !== undefined)) throw apiError(APIErrorCode.InvalidRequest, `${method} takes no parameters`);
         return run();
       });
@@ -256,7 +311,7 @@ function buildCip95Api(ctx: WalletContext): Cip95Api {
     getPubDRepKey: noArgs('getPubDRepKey', async () => bytesToHex(ctx.keys.drepPub)),
     getRegisteredPubStakeKeys: noArgs('getRegisteredPubStakeKeys', async () => ((await ctx.ledger.getStakeRegistered()) ? [stakeHex] : [])),
     getUnregisteredPubStakeKeys: noArgs('getUnregisteredPubStakeKeys', async () => ((await ctx.ledger.getStakeRegistered()) ? [] : [stakeHex])),
-    signData: (addr, payload) => control.record('cip95.signData', [addr, payload], () => signDataWith(ctx, addr, payload, 'cip95')),
+    signData: (addr, payload) => record('cip95.signData', [addr, payload], () => signDataWith(ctx, addr, payload, 'cip95')),
   };
 }
 

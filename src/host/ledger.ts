@@ -4,6 +4,7 @@ import { keyHash } from '../core/hash.js';
 import type { Ledger, LedgerWallet } from '../core/ledger.js';
 import { parseAddressArg } from '../core/sign-data.js';
 import type { LedgerAnswer } from '../page/binding-ledger.js';
+import { OPAQUE_ORIGIN } from '../page/enable-memory.js';
 import { buildLedger } from '../page/install.js';
 import { utxoToConfig } from '../page/utxo-config.js';
 import { ChainLedger } from './chain/chain-ledger.js';
@@ -68,8 +69,17 @@ async function answer<T>(run: () => Promise<T>): Promise<LedgerAnswer<T>> {
   }
 }
 
-/** The host side of the binding: one operation name and a JSON argument, answered in JSON. */
-export function ledgerBinding(ledger: Ledger) {
+/** Origins the page sends for the enable memory. A string other than the opaque 'null' and nothing else. */
+function grantOrigin(arg: unknown): string | undefined {
+  return typeof arg === 'string' && arg !== '' && arg !== OPAQUE_ORIGIN ? arg : undefined;
+}
+
+/**
+ * The host side of the binding: one operation name and a JSON argument, answered in JSON.
+ * grants holds the origins that enabled the wallet with rememberEnable, one set per wallet
+ * handle, so a grant outlives reloads and navigations but never reaches another test.
+ */
+export function ledgerBinding(ledger: Ledger, grants: Set<string> = new Set()) {
   return async (_source: unknown, op: string, arg?: unknown): Promise<unknown> => {
     switch (op) {
       case 'resolveInput': {
@@ -85,6 +95,21 @@ export function ledgerBinding(ledger: Ledger) {
         return answer(() => ledger.getStakeRegistered());
       case 'submit':
         return answer(async () => bytesToHex(await ledger.submit(hexToBytes(arg as string))));
+      case 'enableHas':
+        return answer(async () => {
+          const origin = grantOrigin(arg);
+          return origin !== undefined && grants.has(origin);
+        });
+      case 'enableAdd':
+        return answer(async () => {
+          const origin = grantOrigin(arg);
+          if (origin !== undefined) grants.add(origin);
+        });
+      case 'enableForget':
+        return answer(async () => {
+          const origin = grantOrigin(arg);
+          if (origin !== undefined) grants.delete(origin);
+        });
       default:
         throw new Error(`unknown ledger operation ${op}`);
     }

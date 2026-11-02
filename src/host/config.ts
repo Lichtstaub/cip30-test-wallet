@@ -53,6 +53,12 @@ export interface WalletOptions {
    * signTx then throws CHW_MAINNET_LOCKED. Offline with the default mnemonic signTx always signs.
    */
   allowMainnetSigning?: boolean;
+  /**
+   * isEnabled() answers true after a successful enable() of the same origin, across reloads and
+   * navigations of the page. The fixture and attachWallet keep the grant in Node, init-script in
+   * the page's sessionStorage. Default false, the wallet then reads and writes no storage.
+   */
+  rememberEnable?: boolean;
   /** Whether the fixture or attachWallet injects the provider into the page. Default true. init-script refuses false. */
   install?: boolean;
   /** Owned outputs, in order. Default one UTxO of 10 ADA. Not with ledger.chain. */
@@ -365,6 +371,7 @@ export function prepareWallet(options: WalletOptions = {}): PreparedWallet {
   validateNetworkId(networkId);
   const accountIndex = options.accountIndex ?? 0;
   const allowMainnetSigning = booleanOption(options.allowMainnetSigning, 'walletOptions.allowMainnetSigning', false);
+  const rememberEnable = booleanOption(options.rememberEnable, 'walletOptions.rememberEnable', false);
   // The value is a secret, so the message never includes it.
   if (options.mnemonic !== undefined && typeof options.mnemonic !== 'string') throw new Error('walletOptions.mnemonic must be a string');
   const normalized = normalizeMnemonic(options.mnemonic ?? DEFAULT_MNEMONIC);
@@ -408,6 +415,7 @@ export function prepareWallet(options: WalletOptions = {}): PreparedWallet {
     // checks and chain only reach the page when set, so the page can warn when it has no host ledger. The chain options stay in Node.
     ledger: ledger.chain ? { state: true, chain: true } : ledger.checks ? { state: ledger.state, checks: true } : { state: ledger.state },
     ...(signLocked ? { signLocked: true as const } : {}),
+    ...(rememberEnable ? { rememberEnable: true as const } : {}),
   };
 
   return {
